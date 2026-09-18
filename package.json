@@ -1,6 +1,6 @@
 {
   "name": "torn-recruitment-agency",
-  "version": "4.8.2",
+  "version": "4.8.3",
   "private": true,
   "description": "Tests and tooling for R4G3RUNN3R's Torn Recruitment Agency userscript",
   "scripts": {

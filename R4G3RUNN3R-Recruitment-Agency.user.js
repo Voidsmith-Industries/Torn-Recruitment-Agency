@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         R4G3RUNN3R's Recruitment Agency
 // @namespace    r4g3runn3r.recruitment.agency
-// @version      4.8.2
+// @version      4.8.3
 // @description  Sortable Company and Faction recruitment search with status, organisation, work-stat and Last Online filters plus safe messaging.
 // @author       R4G3RUNN3R[3877028]
 // @license      MIT
@@ -39,14 +39,14 @@
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/76a95ba6e009dc16682cc8ef2ef689394f65edf8/src/v47-faction-opportunity-ui.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/76a95ba6e009dc16682cc8ef2ef689394f65edf8/src/v47-faction-platform.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/76a95ba6e009dc16682cc8ef2ef689394f65edf8/src/v45-app.js
-// @downloadURL  https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/main/dist/recruitment-agency.user.js
-// @updateURL    https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/main/dist/recruitment-agency.user.js
+// @downloadURL  https://voidsmithindustries.com/torn/install/recruitment-agency.user.js
+// @updateURL    https://voidsmithindustries.com/torn/install/recruitment-agency.user.js
 // ==/UserScript==
 
 (() => {
   'use strict';
-  const INSTALLER_VERSION = '4.8.2';
-  const EXPECTED_APP_VERSION = '4.8.2';
+  const INSTALLER_VERSION = '4.8.3';
+  const EXPECTED_APP_VERSION = '4.8.3';
   const DOM_GUARD = 'data-r4g3-ra-v45-owner';
   const RA_ROOT_SELECTOR = '#ra-app,#ra-hover,#ra-context,#ra-help-popover';
   const SHELL_STYLE_ID = 'ra-v454-shell-css';
