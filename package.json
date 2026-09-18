@@ -11,7 +11,7 @@
   "devDependencies": {
     "fake-indexeddb": "6.2.5",
     "jsdom": "26.1.0",
-    "puppeteer-core": "23.11.1"
+    "puppeteer-core": "25.11.0"
   },
   "engines": {
     "node": ">=20"
