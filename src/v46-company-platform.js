@@ -70,7 +70,13 @@
   function sortTieBreak(a,b){const byName=text(a.name).localeCompare(text(b.name),undefined,{sensitivity:'base'});if(byName)return byName;return text(a.userId).localeCompare(text(b.userId),undefined,{numeric:true});}
   function sortRows(rows,sortState=DEFAULT_SORT,now=Date.now()){const key=SORT_KEYS.has(text(sortState?.key))?text(sortState.key):DEFAULT_SORT.key;const direction=sortState?.direction==='desc'?'desc':'asc';const sign=direction==='asc'?1:-1;return [...(Array.isArray(rows)?rows:[])].sort((a,b)=>{const av=sortValue(a,key,now),bv=sortValue(b,key,now),am=av===null||av===undefined,bm=bv===null||bv===undefined;if(am!==bm)return am?1:-1;if(am&&bm)return sortTieBreak(a,b);const cmp=key==='player'?String(av).localeCompare(String(bv)):Number(av)-Number(bv);return cmp?cmp*sign:sortTieBreak(a,b);});}
   function toggleSort(current,key){const nextKey=SORT_KEYS.has(text(key))?text(key):DEFAULT_SORT.key;if(text(current?.key)===nextKey)return{key:nextKey,direction:current?.direction==='asc'?'desc':'asc'};return{key:nextKey,direction:nextKey==='player'?'asc':'desc'};}
-  const makeId=prefix=>`${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+  let idSequence=0;
+  function makeId(prefix){
+    const uuid=globalThis.crypto?.randomUUID?.();
+    if(uuid)return `${prefix}-${uuid}`;
+    idSequence=(idSequence+1)%1000000;
+    return `${prefix}-${Date.now()}-${idSequence}`;
+  }
   const terminalStage=stage=>['Hired','Rejected'].includes(text(stage));
 
   function isCompanyRoute(value){return COMPANY_ROUTES.includes(text(value));}
