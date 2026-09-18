@@ -1,8 +1,12 @@
 # Torn Recruitment Agency
 
-R4G3RUNN3R's Recruitment Agency **v4.8.3** is a streamlined Torn recruitment workspace built around a simple default flow: Search → Results → Last Online → Message. Search now actively acquires candidates from configured Torn recruitment forum feeds and Torn's official v2 user search instead of merely filtering browser-local rows. Company and Faction recruitment remain isolated workflows over one shared Player Intelligence identity, while the deeper pipeline, Scout, Smart Match, campaign, analytics, and operational workspaces remain optional features that users can enable from Settings.
+R4G3RUNN3R's Recruitment Agency **v4.8.4** is a streamlined Torn recruitment workspace built around a simple default flow: Search → Results → Last Online → Message. Search now actively acquires candidates from configured Torn recruitment forum feeds and Torn's official v2 user search instead of merely filtering browser-local rows. Company and Faction recruitment remain isolated workflows over one shared Player Intelligence identity, while the deeper pipeline, Scout, Smart Match, campaign, analytics, and operational workspaces remain optional features that users can enable from Settings.
 
 The Scout, Results, Global Intelligence, Smart Match, Forum Discovery, Company Recruitment, and Faction Recruitment modules are clean-room implementations. They do not call, authenticate against, or depend on `rs.dnonetwork.com` or another proprietary Recruit Scout grading backend.
+
+## v4.8.4 userscript icon
+
+**v4.8.4** is a presentation-only userscript metadata patch. It adds the dedicated Voidsmith magnifying-glass icon for Recruitment Agency while preserving the verified v4.8.3 application runtime and website-hosted install/update authority. No recruitment behavior, permissions, API access, storage or workflow logic changed.
 
 ## v4.8.3 Voidsmith website distribution
 
@@ -320,7 +324,7 @@ v4.8 Settings keeps the default interface small and moves advanced surfaces behi
 
 Install [`R4G3RUNN3R-Recruitment-Agency.user.js`](R4G3RUNN3R-Recruitment-Agency.user.js) in Tampermonkey or another compatible userscript manager.
 
-The public userscript metadata and runtime version are **4.8.3**. The bundled public release is self-contained, while the source wrapper retains immutable module pinning for development/review. The source wrapper's INSTALLER_VERSION and EXPECTED_APP_VERSION both report 4.8.3. `@updateURL` and `@downloadURL` point to https://voidsmithindustries.com/torn/install/recruitment-agency.user.js; GitHub remains the source/history and contribution repository rather than the install/update authority.
+The public userscript metadata version is **4.8.4** and carries the dedicated inline SVG magnifying-glass icon. The verified application runtime remains **4.8.3**. The bundled public release is self-contained, while the source wrapper retains immutable module pinning for development/review. The source wrapper's INSTALLER_VERSION reports 4.8.4 and EXPECTED_APP_VERSION remains 4.8.3. `@updateURL` and `@downloadURL` point to https://voidsmithindustries.com/torn/install/recruitment-agency.user.js; GitHub remains the source/history and contribution repository rather than the install/update authority.
 
 A Torn API key is stored only in the browser database used by Recruitment Agency. Torn API requests are made directly from the browser through the application scheduler.
 

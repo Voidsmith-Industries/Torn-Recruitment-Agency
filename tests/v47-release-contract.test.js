@@ -9,12 +9,12 @@ const readme=fs.readFileSync(path.join(root,'README.md'),'utf8');
 
 const V482_PIN='76a95ba6e009dc16682cc8ef2ef689394f65edf8';
 
-test('release package version is 4.8.3',()=>{
-  assert.equal(pkg.version,'4.8.3');
+test('release package version is 4.8.4',()=>{
+  assert.equal(pkg.version,'4.8.4');
 });
 
-test('README identifies v4.8.3 as the active distribution release',()=>{
-  assert.match(readme,/Recruitment Agency \*\*v4\.8\.3\*\*/);
+test('README identifies v4.8.4 as the active icon release',()=>{
+  assert.match(readme,/Recruitment Agency \*\*v4\.8\.4\*\*/);
   assert.match(readme,/Search[^\n]*Results[^\n]*Last Online[^\n]*Message/i);
   assert.match(readme,/END \/ MAN \/ INT/i);
   assert.match(readme,/private chat/i);
@@ -23,8 +23,8 @@ test('README identifies v4.8.3 as the active distribution release',()=>{
   assert.match(readme,/DB15/);
 });
 
-test('README install and history sections describe the released v4.8.3 runtime identity',()=>{
-  assert.match(readme,/public userscript metadata and runtime version are \*\*4\.8\.3\*\*/i);
+test('README install and history sections describe the released v4.8.4 shell identity',()=>{
+  assert.match(readme,/public userscript metadata version is \*\*4\.8\.4\*\*/i);
   assert.match(readme,new RegExp(V482_PIN));
   assert.match(readme,/EXPECTED_APP_VERSION[^\n]*4\.8\.3/i);
   assert.match(readme,/\*\*v4\.8\.2\*\*[^\n]*(?:search|forum|api)/i);
