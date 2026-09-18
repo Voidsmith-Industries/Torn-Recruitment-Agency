@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         R4G3RUNN3R's Recruitment Agency
 // @namespace    r4g3runn3r.recruitment.agency
-// @version      4.8.3
+// @version      4.8.4
 // @description  Sortable Company and Faction recruitment search with status, organisation, work-stat and Last Online filters plus safe messaging.
 // @author       R4G3RUNN3R[3877028]
+// @icon         data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%2311170d%22%2F%3E%3Ccircle%20cx%3D%2228%22%20cy%3D%2228%22%20r%3D%2213%22%20fill%3D%22none%22%20stroke%3D%22%23f3f7ee%22%20stroke-width%3D%226%22%2F%3E%3Cpath%20d%3D%22M37.5%2037.5L50%2050%22%20fill%3D%22none%22%20stroke%3D%22%23d9ff52%22%20stroke-width%3D%227%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E
 // @license      MIT
 // @match        https://www.torn.com/*
 // @noframes
@@ -5750,7 +5751,7 @@
 /* userscript bootstrap */
 (() => {
   'use strict';
-  const INSTALLER_VERSION = '4.8.3';
+  const INSTALLER_VERSION = '4.8.4';
   const EXPECTED_APP_VERSION = '4.8.3';
   const DOM_GUARD = 'data-r4g3-ra-v45-owner';
   const RA_ROOT_SELECTOR = '#ra-app,#ra-hover,#ra-context,#ra-help-popover';

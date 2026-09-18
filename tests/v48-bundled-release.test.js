@@ -15,12 +15,13 @@ function build() {
 test('GitHub release builder emits one self-contained userscript with no remote runtime requires', () => {
   const dist = build();
   assert.match(dist, /^\/\/ ==UserScript==/);
-  assert.match(dist, /@version\s+4\.8\.3/);
+  assert.match(dist, /@version\s+4\.8\.4/);
+  assert.match(dist, /@icon\s+data:image\/svg\+xml,/);
   assert.doesNotMatch(dist, /^\/\/ @require\s+/m);
   assert.match(dist, /RA_V46DomainCore/);
   assert.match(dist, /RA_V47FactionPlatform/);
   assert.match(dist, /RA_V45App/);
-  assert.match(dist, /const INSTALLER_VERSION = '4\.8\.3'/);
+  assert.match(dist, /const INSTALLER_VERSION = '4\.8\.4'/);
 });
 
 test('bundled release preserves Voidsmith website update URLs', () => {
