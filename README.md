@@ -320,7 +320,7 @@ v4.8 Settings keeps the default interface small and moves advanced surfaces behi
 
 Install [`R4G3RUNN3R-Recruitment-Agency.user.js`](R4G3RUNN3R-Recruitment-Agency.user.js) in Tampermonkey or another compatible userscript manager.
 
-The public userscript metadata and runtime version are **4.8.3**. The bundled public release is self-contained, while the source wrapper retains immutable module pinning for development/review. `@updateURL` and `@downloadURL` point to https://voidsmithindustries.com/torn/install/recruitment-agency.user.js; GitHub remains the source/history and contribution repository rather than the install/update authority.
+The public userscript metadata and runtime version are **4.8.3**. The bundled public release is self-contained, while the source wrapper retains immutable module pinning for development/review. The source wrapper's INSTALLER_VERSION and EXPECTED_APP_VERSION both report 4.8.3. `@updateURL` and `@downloadURL` point to https://voidsmithindustries.com/torn/install/recruitment-agency.user.js; GitHub remains the source/history and contribution repository rather than the install/update authority.
 
 A Torn API key is stored only in the browser database used by Recruitment Agency. Torn API requests are made directly from the browser through the application scheduler.
 
