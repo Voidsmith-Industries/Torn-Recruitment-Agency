@@ -29,7 +29,13 @@
   function text(value){return String(value??'').trim();}
   function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
   function uniqueIds(values){return [...new Set((Array.isArray(values)?values:[]).map(text).filter(value=>/^\d+$/.test(value)&&Number(value)>0))];}
-  function makeId(prefix){return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,9)}`;}
+  let idSequence=0;
+  function makeId(prefix){
+    const uuid=globalThis.crypto?.randomUUID?.();
+    if(uuid)return `${prefix}-${uuid}`;
+    idSequence=(idSequence+1)%1000000;
+    return `${prefix}-${Date.now()}-${idSequence}`;
+  }
 
   function applyUpgrade(db){
     if(!db||!db.objectStoreNames||typeof db.createObjectStore!=='function')throw new Error('A compatible IndexedDB database is required.');
