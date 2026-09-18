@@ -12,7 +12,7 @@ function build() {
   return fs.readFileSync(DIST, 'utf8');
 }
 
-test('VPS release builder emits one self-contained userscript with no remote runtime requires', () => {
+test('GitHub release builder emits one self-contained userscript with no remote runtime requires', () => {
   const dist = build();
   assert.match(dist, /^\/\/ ==UserScript==/);
   assert.match(dist, /@version\s+4\.8\.2/);
@@ -23,9 +23,9 @@ test('VPS release builder emits one self-contained userscript with no remote run
   assert.match(dist, /const INSTALLER_VERSION = '4\.8\.2'/);
 });
 
-test('bundled release preserves Voidsmith update URLs', () => {
+test('bundled release preserves Voidsmith GitHub update URLs', () => {
   const dist = build();
-  const stable = 'https://voidsmithindustries.com/torn/recruitment-agency/recruitment-agency.user.js';
-  assert.ok(dist.includes(`// @downloadURL  ${stable}`));
-  assert.ok(dist.includes(`// @updateURL    ${stable}`));
+  const stable = 'https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/main/dist/recruitment-agency.user.js';
+  assert.ok(dist.includes('// @downloadURL  ' + stable));
+  assert.ok(dist.includes('// @updateURL    ' + stable));
 });
