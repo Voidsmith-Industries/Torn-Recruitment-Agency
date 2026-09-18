@@ -71,7 +71,7 @@
 
   function parseWorkStats(value) {
     const raw = String(value == null ? '' : value).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const number = '([0-9]+(?:[,.][0-9]+)*(?:\s*[kKmMbB])?)';
+    const number = '([0-9]+(?:[,.][0-9]+)*(?:\\s*[kKmMbB])?)';
     const read = (fullPattern, abbreviation) => {
       const patterns = [
         new RegExp('\\b(?:' + fullPattern + ')\\b\\s*(?:[:=\\-]\\s*|\\s+)' + number, 'i'),
