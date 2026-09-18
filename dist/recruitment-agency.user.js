@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         R4G3RUNN3R's Recruitment Agency
 // @namespace    r4g3runn3r.recruitment.agency
-// @version      4.8.2
+// @version      4.8.3
 // @description  Sortable Company and Faction recruitment search with status, organisation, work-stat and Last Online filters plus safe messaging.
 // @author       R4G3RUNN3R[3877028]
 // @license      MIT
@@ -10,8 +10,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
-// @downloadURL  https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/main/dist/recruitment-agency.user.js
-// @updateURL    https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/main/dist/recruitment-agency.user.js
+// @downloadURL  https://voidsmithindustries.com/torn/install/recruitment-agency.user.js
+// @updateURL    https://voidsmithindustries.com/torn/install/recruitment-agency.user.js
 // ==/UserScript==
 
 
@@ -5193,7 +5193,7 @@
     throw new Error('Recruitment Agency v4.5 core modules are required.');
   }
 
-  const SCRIPT_VERSION = '4.8.2';
+  const SCRIPT_VERSION = '4.8.3';
   const DB_NAME = 'tornWorkerDB';
   const DB_VERSION = V47FactionStorage.DB_VERSION;
   const API_BASE = 'https://api.torn.com/v2';
@@ -5750,8 +5750,8 @@
 /* userscript bootstrap */
 (() => {
   'use strict';
-  const INSTALLER_VERSION = '4.8.2';
-  const EXPECTED_APP_VERSION = '4.8.2';
+  const INSTALLER_VERSION = '4.8.3';
+  const EXPECTED_APP_VERSION = '4.8.3';
   const DOM_GUARD = 'data-r4g3-ra-v45-owner';
   const RA_ROOT_SELECTOR = '#ra-app,#ra-hover,#ra-context,#ra-help-popover';
   const SHELL_STYLE_ID = 'ra-v454-shell-css';
