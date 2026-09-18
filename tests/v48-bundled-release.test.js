@@ -15,17 +15,17 @@ function build() {
 test('GitHub release builder emits one self-contained userscript with no remote runtime requires', () => {
   const dist = build();
   assert.match(dist, /^\/\/ ==UserScript==/);
-  assert.match(dist, /@version\s+4\.8\.2/);
+  assert.match(dist, /@version\s+4\.8\.3/);
   assert.doesNotMatch(dist, /^\/\/ @require\s+/m);
   assert.match(dist, /RA_V46DomainCore/);
   assert.match(dist, /RA_V47FactionPlatform/);
   assert.match(dist, /RA_V45App/);
-  assert.match(dist, /const INSTALLER_VERSION = '4\.8\.2'/);
+  assert.match(dist, /const INSTALLER_VERSION = '4\.8\.3'/);
 });
 
-test('bundled release preserves Voidsmith GitHub update URLs', () => {
+test('bundled release preserves Voidsmith website update URLs', () => {
   const dist = build();
-  const stable = 'https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/main/dist/recruitment-agency.user.js';
+  const stable = 'https://voidsmithindustries.com/torn/install/recruitment-agency.user.js';
   assert.ok(dist.includes('// @downloadURL  ' + stable));
   assert.ok(dist.includes('// @updateURL    ' + stable));
 });
