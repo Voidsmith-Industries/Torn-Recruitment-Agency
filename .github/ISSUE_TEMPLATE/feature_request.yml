@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an improvement to Recruitment Agency
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired behavior without including secrets or private data.
+    validations:
+      required: true
