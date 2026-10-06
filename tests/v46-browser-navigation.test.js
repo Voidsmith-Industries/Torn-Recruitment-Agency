@@ -37,11 +37,13 @@ test('v4.8 domain switch and core route persist without exposing optional naviga
   assert.equal(document.querySelector('[data-nav-toggle="faction-recruitment"]'),null);
   assert.equal(document.querySelector('[data-nav-toggle="intelligence"]'),null);
   assert.ok(document.querySelector('[data-page="company-candidates"]'));
-  assert.ok(document.querySelector('[data-domain="faction"]'));
+  assert.ok(document.getElementById('ra-workspace-domain'));
   assert.equal(document.querySelector('[data-page="settings"]'),null);
   assert.ok(document.getElementById('ra-settings-button'));
 
-  document.querySelector('[data-domain="faction"]').click();
+  const workspace=document.getElementById('ra-workspace-domain');
+  workspace.value='faction';
+  workspace.dispatchEvent(new window.Event('change',{bubbles:true}));
   await tick(80);
   let meta=await readMeta(App1._test.state.db);
   assert.equal(meta.settings.activeDomain,'faction');
