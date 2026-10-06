@@ -48,9 +48,9 @@ test('Company sidebar navigation commits canonical route before asynchronous ren
 
 test('Faction mode switch commits the canonical core route before rendering completes',async()=>{
   await withApp(async App=>{
-    const workspace=document.getElementById('ra-workspace-domain');
-    workspace.value='faction';
-    workspace.dispatchEvent(new window.Event('change',{bubbles:true}));
+    const workspace=document.getElementById('ra-workspace-toggle');
+    workspace.click();
+    document.querySelector('[data-workspace-domain="faction"]').click();
     await settle(20);
     assert.equal(App._test.state.page,'faction-candidates','Faction switch must select the Faction core route');
     await settle(180);
@@ -63,9 +63,9 @@ test('a newer route wins over an older asynchronous render',async()=>{
   await withApp(async App=>{
     document.querySelector('[data-page="company-candidates"]').click();
     assert.equal(App._test.state.page,'company-candidates');
-    const workspace=document.getElementById('ra-workspace-domain');
-    workspace.value='faction';
-    workspace.dispatchEvent(new window.Event('change',{bubbles:true}));
+    const workspace=document.getElementById('ra-workspace-toggle');
+    workspace.click();
+    document.querySelector('[data-workspace-domain="faction"]').click();
     await settle(250);
     assert.equal(App._test.state.page,'faction-candidates');
     assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
