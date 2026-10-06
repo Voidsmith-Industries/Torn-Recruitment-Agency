@@ -37,7 +37,7 @@ test('v4.8 domain switch and core route persist without exposing optional naviga
   assert.equal(document.querySelector('[data-nav-toggle="faction-recruitment"]'),null);
   assert.equal(document.querySelector('[data-nav-toggle="intelligence"]'),null);
   assert.ok(document.querySelector('[data-page="company-candidates"]'));
-  assert.ok(document.getElementById('ra-workspace-domain'));
+  assert.ok(document.getElementById('ra-workspace-toggle'));
   assert.equal(document.querySelector('[data-page="settings"]'),null);
   assert.ok(document.getElementById('ra-settings-button'));
 
