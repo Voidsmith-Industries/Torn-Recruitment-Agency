@@ -85,7 +85,7 @@
     launcherEnabled:true, includeInactive:false, activePage:'company-candidates', activeDomain:'company', navigation:{expandedGroups:['company-recruitment']}, optionalModules:{...DEFAULT_OPTIONAL_MODULES}, apiKey:'', ownCompanyName:'',
     recruitment:Runtime.normalizeRecruitmentSettings({companyThreadId:'15907925',factionThreadId:'15909136',trainingThreadId:'',recentImportDays:30,maxPagesPerFeed:20,candidateActiveAgeDays:30,explicitTrainBuyersOnly:true,companyType:'',companyRecruitmentMessage:Messaging.DEFAULT_COMPANY_RECRUITMENT_MESSAGE,factionName:'',factionRecruitmentMessage:Messaging.DEFAULT_FACTION_RECRUITMENT_MESSAGE}),
     scout:{rate:75,workers:3,budget:900,historyGapMs:0,maxCandidates:60,scoring:ScoutCore.DEFAULT_SCORING},
-    candidates:{view:'table',visibleColumns:[...DEFAULT_VISIBLE_COLUMNS],filters:{search:'',stage:'',source:'',lookingFor:'',currentCompany:'',minMatch:'',minFit:'',activeOnly:false,moreOpen:false,minMan:'',minInt:'',minEnd:'',minActivity30:''}},
+    candidates:{view:'table',resultsLayout:'expanded',playerCard:{openOnName:true,allowPopout:true,rememberPanel:true,autoOpenRow:false,pinned:false},visibleColumns:[...DEFAULT_VISIBLE_COLUMNS],filters:{search:'',stage:'',source:'',lookingFor:'',currentCompany:'',minMatch:'',minFit:'',activeOnly:false,moreOpen:false,minMan:'',minInt:'',minEnd:'',minActivity30:''}},
     match:{activeProfileId:''},
     global:{enabled:true,endpoint:'',lookupCacheMs:30*60*1000,maxRetryAttempts:5}
   });
@@ -150,7 +150,7 @@
   const repositories=V46Storage.createRepositories(idb);
   const companyRepositories=V46CompanyStorage.createRepositories(idb,V46CompanyCore);
   const factionRepositories=V47FactionStorage.createRepositories(idb,V47FactionCore);
-  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name)=>recruitCandidate(domain,userId,name),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),_test:{state,repositories,companyRepositories,factionRepositories}};
+  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name)=>recruitCandidate(domain,userId,name),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
 
   function mergeSettings(raw={}) {
     const base=defaultSettings();
@@ -166,7 +166,7 @@
       navigation:{...base.navigation,...navigationSettings,expandedGroups:V46Navigation.normalizeExpandedGroups(Object.hasOwn(navigationSettings,'expandedGroups')?navigationSettings.expandedGroups:base.navigation.expandedGroups)},
       recruitment:Runtime.normalizeRecruitmentSettings({...base.recruitment,...(raw.recruitment||{})}),
       scout:{...base.scout,...scout,rate:clampRate(scout.rate),workers:Math.max(1,Math.min(8,number(scout.workers,3))),budget:Math.max(1,number(scout.budget,900)),maxCandidates:Math.max(1,number(scout.maxCandidates,60)),scoring:ScoutCore.normalizeScoring(scout.scoring||base.scout.scoring)},
-      candidates:{...base.candidates,...candidateSettings,visibleColumns:Array.isArray(candidateSettings.visibleColumns)&&candidateSettings.visibleColumns.length?[...new Set(['player',...candidateSettings.visibleColumns])]:[...DEFAULT_VISIBLE_COLUMNS],filters:{...base.candidates.filters,...(candidateSettings.filters||{})}},
+      candidates:{...base.candidates,...candidateSettings,resultsLayout:candidateSettings.resultsLayout==='compact'?'compact':'expanded',playerCard:{...base.candidates.playerCard,...(candidateSettings.playerCard||{})},visibleColumns:Array.isArray(candidateSettings.visibleColumns)&&candidateSettings.visibleColumns.length?[...new Set(['player',...candidateSettings.visibleColumns])]:[...DEFAULT_VISIBLE_COLUMNS],filters:{...base.candidates.filters,...(candidateSettings.filters||{})}},
       match:{...base.match,...(raw.match||{})}, global:{...base.global,...(raw.global||{})}
     };
   }
