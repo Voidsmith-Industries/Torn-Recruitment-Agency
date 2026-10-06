@@ -5,13 +5,14 @@ const App = require('../src/v45-app');
 
 test('v4.9 workspace selector is a single top-level Company/Faction dropdown', () => {
   const company = App._test.workspaceSelectHtml('company');
-  assert.match(company, /id="ra-workspace-domain"/);
-  assert.match(company, /<option value="company" selected>Company<\/option>/);
-  assert.match(company, /<option value="faction" >Faction<\/option>/);
+  assert.match(company, /id="ra-workspace-toggle"/);
+  assert.match(company, /data-workspace-domain="company"/);
+  assert.match(company, /data-workspace-domain="faction"/);
+  assert.match(company, /id="ra-workspace-label">Company<\/span>/);
   assert.doesNotMatch(company, /ra-domain-switch/);
 
   const faction = App._test.workspaceSelectHtml('faction');
-  assert.match(faction, /<option value="faction" selected>Faction<\/option>/);
+  assert.match(faction, /id="ra-workspace-label">Faction<\/span>/);
 });
 
 test('v4.9 sidebar navigation renders only the active recruitment domain', () => {
