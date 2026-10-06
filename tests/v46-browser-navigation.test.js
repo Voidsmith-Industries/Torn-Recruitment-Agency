@@ -41,9 +41,9 @@ test('v4.8 domain switch and core route persist without exposing optional naviga
   assert.equal(document.querySelector('[data-page="settings"]'),null);
   assert.ok(document.getElementById('ra-settings-button'));
 
-  const workspace=document.getElementById('ra-workspace-domain');
-  workspace.value='faction';
-  workspace.dispatchEvent(new window.Event('change',{bubbles:true}));
+  const workspace=document.getElementById('ra-workspace-toggle');
+  workspace.click();
+  document.querySelector('[data-workspace-domain="faction"]').click();
   await tick(80);
   let meta=await readMeta(App1._test.state.db);
   assert.equal(meta.settings.activeDomain,'faction');
