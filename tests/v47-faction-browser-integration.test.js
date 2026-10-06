@@ -31,9 +31,9 @@ test('real app upgrades to DB15, exposes Faction repositories, renders Faction r
   assert.ok(App1._test.factionRepositories);
   assert.equal(typeof App1._test.factionRepositories.config.get,'function');
 
-  const workspace=document.getElementById('ra-workspace-domain');
-  workspace.value='faction';
-  workspace.dispatchEvent(new window.Event('change',{bubbles:true}));
+  const workspace=document.getElementById('ra-workspace-toggle');
+  workspace.click();
+  document.querySelector('[data-workspace-domain="faction"]').click();
   await tick(80);
   assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
   let meta=await readMeta(App1._test.state.db);
@@ -48,7 +48,7 @@ test('real app upgrades to DB15, exposes Faction repositories, renders Faction r
   assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
   meta=await readMeta(App2._test.state.db);
   assert.equal(meta.settings.activePage,'faction-candidates');
-  assert.equal(document.getElementById('ra-workspace-domain').value,'faction');
+  assert.equal(document.getElementById('ra-workspace-label').textContent,'Faction');
   App2._test.state.db.close();
   dom2.window.close();
   await deleteDb();
