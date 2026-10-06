@@ -77,7 +77,8 @@ test('primary navigation and in-page controls survive a hostile document-capture
     await physicalClick(page,'#ra-company-search-apply');
     assert.equal(await page.$eval('#ra-page-title',e=>e.textContent),'Company Candidates','core Company search control must not change route');
 
-    await physicalClick(page,'[data-domain="faction"]');
+    await physicalClick(page,'#ra-workspace-domain');
+    await page.select('#ra-workspace-domain','faction');
     await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Faction Candidates',{timeout:5000});
     await page.waitForSelector('#ra-faction-filter-search',{visible:true});
     await physicalClick(page,'#ra-faction-search-apply');
