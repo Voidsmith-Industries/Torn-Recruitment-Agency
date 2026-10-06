@@ -36,9 +36,9 @@ test('Faction controls stay on the route the recruiter navigated to',async()=>{
   await App._test.repositories.faction.ensure('123',{pipelineStage:'Prospect',waivers:[]},{source:'route-stickiness-test',observedAt:100});
 
   assert.equal(App._test.state.page,'company-candidates');
-  const workspace=document.getElementById('ra-workspace-domain');
-  workspace.value='faction';
-  workspace.dispatchEvent(new window.Event('change',{bubbles:true}));
+  const workspace=document.getElementById('ra-workspace-toggle');
+  workspace.click();
+  document.querySelector('[data-workspace-domain="faction"]').click();
   await tick(120);
   assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
   assert.equal(App._test.state.page,'faction-candidates');
