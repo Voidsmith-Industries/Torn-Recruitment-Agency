@@ -8,9 +8,9 @@ const appSource = fs.readFileSync(path.join(ROOT, 'src', 'v45-app.js'), 'utf8');
 const wrapperSource = fs.readFileSync(path.join(ROOT, 'R4G3RUNN3R-Recruitment-Agency.user.js'), 'utf8');
 
 test('v4.9 shell provides one top-level Company/Faction workspace selector', () => {
-  assert.match(appSource, /id=\\?"ra-workspace-domain/);
-  assert.match(appSource, /<option value=\\?"company/);
-  assert.match(appSource, /<option value=\\?"faction/);
+  assert.match(appSource, /id=\\?"ra-workspace-toggle/);
+  assert.match(appSource, /data-workspace-domain=\\?"company/);
+  assert.match(appSource, /data-workspace-domain=\\?"faction/);
   assert.doesNotMatch(appSource, /class=\\?"ra-domain-switch/);
 });
 
