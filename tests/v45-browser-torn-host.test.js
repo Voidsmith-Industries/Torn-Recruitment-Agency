@@ -101,9 +101,11 @@ test('public v4.7.2 runtime remains physically clickable on the real Torn host p
 
     await physicalClick(page, '[data-page="company-candidates"]');
     await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Candidates', { timeout: 10000 });
-    await physicalClick(page, '[data-domain="faction"]');
+    await physicalClick(page, '#ra-workspace-domain');
+    await page.select('#ra-workspace-domain', 'faction');
     await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Candidates', { timeout: 10000 });
-    await physicalClick(page, '[data-domain="company"]');
+    await physicalClick(page, '#ra-workspace-domain');
+    await page.select('#ra-workspace-domain', 'company');
     await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Candidates', { timeout: 10000 });
 
     await physicalClick(page, '#ra-settings-button');
