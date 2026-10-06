@@ -30,4 +30,4 @@ test('collapsible navigation is button-based and keeps Settings outside the side
 
 test('contextual help is header-anchored and viewport clamped',()=>{assert.match(app,/function helpButton/);assert.match(app,/function positionHelp/);assert.match(app,/getBoundingClientRect/);assert.match(app,/innerWidth-width-margin/);assert.match(app,/innerHeight-height-margin/);});
 
-test('v4.8 premium themes keep high-contrast text',()=>{assert.match(app,/--ra-text:#f0f0f3/);assert.match(app,/:root\[data-ra-theme=\"light\"\][^}]*--ra-text:#17171b/);assert.match(app,/--ra-accent:#b94a4a/);});
+test('v4.9 Voidsmith themes keep high-contrast text with purple brand accents',()=>{assert.match(app,/--ra-text:#f6f1fb/);assert.match(app,/:root\[data-ra-theme=\"light\"\][^}]*--ra-text:#1d1722/);assert.match(app,/--ra-accent:#9b4dff/);assert.match(app,/--ra-accent2:#d06cff/);});
