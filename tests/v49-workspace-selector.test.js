@@ -102,7 +102,7 @@ test('v4.9 Player Card is domain-sensitive and reads local intelligence without 
     userId:'321', name:'DualContext', level:75, man:10, int:20, end:30,
     currentCompany:'Acme Co', currentFaction:'Night Watch', activity30:90, fit:77
   });
-  await put(db, 'companyRecruitment', { userId:'321', domain:'company', pipelineStage:'Contacted', availability:'Available' });
+  await put(db, 'companyRecruitment', { userId:'321', domain:'company', pipelineStage:'Contacted', availability:'Available', doNotContact:true });
   await put(db, 'factionRecruitment', { userId:'321', domain:'faction', pipelineStage:'Prospect', availability:'Unknown' });
 
   await App._test.openPlayerCard('company', '321', { force:true });
@@ -110,6 +110,8 @@ test('v4.9 Player Card is domain-sensitive and reads local intelligence without 
   assert.match(document.getElementById('ra-drawer').textContent, /Acme Co/);
   assert.doesNotMatch(document.getElementById('ra-drawer').textContent, /Faction Status/);
   assert.doesNotMatch(document.getElementById('ra-drawer').textContent, /Night Watch/);
+  assert.equal(document.getElementById('ra-card-recruit').disabled, true);
+  assert.equal(document.getElementById('ra-card-recruit').textContent, 'Do Not Contact');
 
   await App._test.openPlayerCard('faction', '321', { force:true });
   assert.match(document.getElementById('ra-drawer').textContent, /Faction Status/);
