@@ -385,6 +385,12 @@
     return known.length?Math.min(...known):null;
   }
 
+  function domainStageOf(row={},domain='company') {
+    const record=candidateRecordOf(row,domain);
+    const stage=text(row?.pipelineStage||record?.pipelineStage);
+    return stage||(domain==='faction'?'Prospect':'Not Contacted');
+  }
+
   function prospectProvenance(row={},options={}) {
     const domain=options.domain==='faction'?'faction':'company';
     const record=candidateRecordOf(row,domain);
@@ -412,7 +418,7 @@
     const now=timestamp(options.nowMs)||Date.now();
     const ageMs=lastObservedAt===null?null:Math.max(0,now-lastObservedAt);
     const freshness=ageMs===null?'Unknown':ageMs<=86400000?'Fresh':ageMs<=7*86400000?'Recent':ageMs<=30*86400000?'Aging':'Stale';
-    const stage=pipelineStageOf(row);
+    const stage=domainStageOf(row,domain);
     const explicitForum=sources.includes('Recruitment Forum');
     const passiveSource=sources.includes('Work-Stat Leaderboard')||sources.includes('Torn User Search');
     const terminal=['Hired','Rejected','Joined'].includes(stage);
@@ -485,10 +491,10 @@
       if(age<Math.max(1,finite(exclusionWindowDays)??7)*86400000)return .2;
       return .85;
     }
-    const stage=pipelineStageOf(row);
-    if(stage==='Not Contacted')return 1;
-    if(stage==='Shortlisted')return .9;
-    if(stage==='Contacted')return .35;
+    const stage=domainStageOf(row,domain);
+    if(stage==='Not Contacted'||stage==='Prospect')return 1;
+    if(stage==='Shortlisted'||stage==='Evaluating')return .9;
+    if(stage==='Contacted'||stage==='Invite Ready')return .35;
     if(stage==='Replied')return .55;
     if(stage==='Hired'||stage==='Rejected'||stage==='Joined')return 0;
     return null;
@@ -539,9 +545,9 @@
     const work=workStatFactor(row,requirements);
     if(Object.values(requirements).some(value=>finite(value)!==null&&finite(value)>0))add('requirements','Work-stat match',weights.requirements,work.factor,work.reason,work.coverage);
 
-    const elig=eligibilityFactor(row);
+    const elig=options.useEligibility===false?null:eligibilityFactor(row);
     add('eligibility','Role / eligibility match',weights.eligibility,elig,
-      elig===null?'No role or eligibility evaluation is available.':'Uses the existing domain eligibility/match evaluation.');
+      options.useEligibility===false?'Role/profile-specific scoring is deferred until a shared role profile is selected.':elig===null?'No role or eligibility evaluation is available.':'Uses the existing domain eligibility/match evaluation.');
 
     const activity=activityFactor(row?.lastActive??row?.lastActionTs??row?.playerRecord?.lastActive??row?.player?.lastActive,now);
     add('activity','Recent activity',weights.activity,activity,
@@ -604,6 +610,7 @@
     activeFilterCount,
     RECRUITMENT_FIT_DEFAULT_WEIGHTS,
     normalizeSourceLabel,
+    domainStageOf,
     prospectProvenance,
     recruitmentFit
   });
