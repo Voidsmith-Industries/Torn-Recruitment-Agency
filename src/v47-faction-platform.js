@@ -25,8 +25,8 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging}=D;
-  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging)throw new Error('Faction platform dependencies are required.');
+  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
+  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('Faction platform dependencies are required.');
 
   const FACTION_ROUTES=Object.freeze([
     'faction-overview','faction-today','faction-discover','faction-candidates','faction-pipeline',
