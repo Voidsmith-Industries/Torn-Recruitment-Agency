@@ -71,12 +71,19 @@ test('v4.9 result layouts default to expanded intelligence and keep compact mode
   const row = {
     userId:'123', name:'Candidate', level:50, age:1200, man:100, int:200, end:300,
     activity30:88, activeStreak:10, currentOrganizationLabel:'None', pipelineStage:'Not Contacted',
-    lastActive:Date.now()-60_000, onlineStatus:'Online', doNotContact:false
+    lastActive:Date.now()-60_000, onlineStatus:'Online', doNotContact:false,
+    recruitmentFit:86.4, recruitmentConfidence:'High', prospectState:'Active Lead',
+    prospectProvenance:{sources:['Recruitment Forum'],state:'Active Lead',freshness:'Fresh'}
   };
   const companyExpanded = CompanyUI.renderCandidates([row], { total:1, layout:'expanded' });
   assert.match(companyExpanded, />Level</);
   assert.match(companyExpanded, />30d Active</);
   assert.match(companyExpanded, />Recruit Fit</);
+  assert.match(companyExpanded, />Source</);
+  assert.match(companyExpanded, /86\.4/);
+  assert.match(companyExpanded, /High/);
+  assert.match(companyExpanded, /Recruitment Forum/);
+  assert.match(companyExpanded, /Active Lead/);
   assert.match(companyExpanded, /data-player-card="123"/);
   assert.match(companyExpanded, /data-player-domain="company"/);
 
