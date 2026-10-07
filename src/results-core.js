@@ -334,6 +334,249 @@
     return sortRows(applyFilters(rows, filters, nowMs), sortState, nowMs);
   }
 
+
+  const RECRUITMENT_FIT_DEFAULT_WEIGHTS = Object.freeze({
+    requirements:28,
+    eligibility:20,
+    activity:15,
+    scoutFit:12,
+    organization:10,
+    intent:15,
+    contact:10
+  });
+
+  function uniqueText(values=[]) {
+    const seen=new Set(),out=[];
+    for(const value of values){const cleaned=text(value);if(!cleaned)continue;const key=cleaned.toLowerCase();if(seen.has(key))continue;seen.add(key);out.push(cleaned);}
+    return out;
+  }
+
+  function normalizeSourceLabel(value) {
+    const raw=text(value),key=lower(raw);
+    if(!raw)return '';
+    if(/job seeker|company forum|faction forum|recruitment forum|forum/.test(key))return 'Recruitment Forum';
+    if(/leaderboard|work[- ]?stat/.test(key))return 'Work-Stat Leaderboard';
+    if(/user search|api search|torn search|search/.test(key))return 'Torn User Search';
+    if(/scout/.test(key))return 'Scout';
+    if(/global|existing intelligence|player intelligence/.test(key))return 'Existing Intelligence';
+    if(/manual/.test(key))return 'Manual';
+    return raw;
+  }
+
+  function candidateRecordOf(row,domain='company') {
+    if(domain==='faction')return row?.factionRecord||row?.candidateLocal||row?.candidate||{};
+    return row?.companyRecord||row?.candidateLocal||row?.candidate||{};
+  }
+
+  function timestamp(value) {
+    const n=finite(value);
+    if(n!==null&&n>0)return n < 1e12 ? n*1000 : n;
+    const parsed=Date.parse(value);
+    return Number.isFinite(parsed)?parsed:null;
+  }
+
+  function latestTimestamp(values=[]) {
+    const known=values.map(timestamp).filter(v=>v!==null);
+    return known.length?Math.max(...known):null;
+  }
+
+  function earliestTimestamp(values=[]) {
+    const known=values.map(timestamp).filter(v=>v!==null);
+    return known.length?Math.min(...known):null;
+  }
+
+  function prospectProvenance(row={},options={}) {
+    const domain=options.domain==='faction'?'faction':'company';
+    const record=candidateRecordOf(row,domain);
+    const candidate=candidateOf(row);
+    const player=row?.playerRecord||row?.player||row;
+    const latestSource=row?.latestSource||candidate?.latestSource||{};
+    const rawSources=uniqueText([
+      ...(Array.isArray(record?.discoverySources)?record.discoverySources:[]),
+      ...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),
+      ...(Array.isArray(row?.discoverySources)?row.discoverySources:[]),
+      row?.sourceType,candidate?.sourceType,latestSource?.sourceType,latestSource?.source
+    ]);
+    const sources=uniqueText(rawSources.map(normalizeSourceLabel));
+    const firstDiscoveredAt=earliestTimestamp([
+      record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,candidate?.firstSeenAt,row?.createdAt,row?.firstSeenAt,
+      latestSource?.postedAt,latestSource?.observedAt
+    ]);
+    const lastObservedAt=latestTimestamp([
+      record?.updatedAt,record?.stageChangedAt,candidate?.updatedAt,candidate?.lastSeenAt,row?.updatedAt,row?.lastSeenPost,row?.lastObservedAt,
+      player?.updatedAt,player?.lastSeenAt,player?.lastScoutAt,latestSource?.postedAt,latestSource?.observedAt
+    ]);
+    const lastEnrichedAt=latestTimestamp([
+      row?.lastEnrichedAt,player?.lastEnrichedAt,player?.lastScoutAt,row?.scout?.capturedAt
+    ]);
+    const now=timestamp(options.nowMs)||Date.now();
+    const ageMs=lastObservedAt===null?null:Math.max(0,now-lastObservedAt);
+    const freshness=ageMs===null?'Unknown':ageMs<=86400000?'Fresh':ageMs<=7*86400000?'Recent':ageMs<=30*86400000?'Aging':'Stale';
+    const stage=pipelineStageOf(row);
+    const explicitForum=sources.includes('Recruitment Forum');
+    const passiveSource=sources.includes('Work-Stat Leaderboard')||sources.includes('Torn User Search');
+    const terminal=['Hired','Rejected','Joined'].includes(stage);
+    let state='Known Candidate';
+    if(!terminal&&ageMs!==null&&ageMs>60*86400000)state='Reactivation Candidate';
+    else if(!terminal&&(explicitForum||['Shortlisted','Contacted','Replied'].includes(stage)))state='Active Lead';
+    else if(!terminal&&passiveSource)state='Passive Prospect';
+    return Object.freeze({
+      sources:Object.freeze(sources),
+      rawSources:Object.freeze(rawSources),
+      firstDiscoveredAt,
+      lastObservedAt,
+      lastEnrichedAt,
+      freshness,
+      state
+    });
+  }
+
+  function activityFactor(lastActive,nowMs=Date.now()) {
+    const ts=timestamp(lastActive);
+    if(ts===null)return null;
+    const age=Math.max(0,nowMs-ts);
+    if(age<=3600000)return 1;
+    if(age<=86400000)return .9;
+    if(age<=3*86400000)return .75;
+    if(age<=7*86400000)return .55;
+    if(age<=30*86400000)return .25;
+    return 0;
+  }
+
+  function organizationFactor(row,domain='company') {
+    const direct=domain==='faction'
+      ? text(row?.currentFaction||row?.factionName||row?.currentOrganizationLabel)
+      : text(row?.currentCompany||row?.currentOrganizationLabel);
+    if(!direct||/^unknown$/i.test(direct))return null;
+    if(/^(none|no company|no faction|unemployed)$/i.test(direct))return 1;
+    return .25;
+  }
+
+  function intentFactor(provenance) {
+    const sources=provenance?.sources||[];
+    if(sources.includes('Recruitment Forum'))return 1;
+    if(sources.includes('Torn User Search'))return .65;
+    if(sources.includes('Work-Stat Leaderboard'))return .55;
+    if(sources.includes('Existing Intelligence')||sources.includes('Scout'))return .45;
+    if(sources.includes('Manual'))return .4;
+    return sources.length?.4:null;
+  }
+
+  function eligibilityFactor(row) {
+    const score=finite(row?.eligibilityScore??row?.matchScore??row?.specialistMatchScore);
+    if(score!==null)return Math.max(0,Math.min(1,score>1?score/100:score));
+    const label=lower(row?.eligibility);
+    if(!label||label==='unknown')return null;
+    if(label.includes('eligible by waiver'))return .8;
+    if(label==='eligible'||label.includes('eligible'))return 1;
+    if(label.includes('not currently eligible')||label.includes('ineligible'))return 0;
+    return null;
+  }
+
+  function contactFactor(row,domain='company',nowMs=Date.now(),exclusionWindowDays=7) {
+    const record=candidateRecordOf(row,domain);
+    const outcomes=Array.isArray(record?.outcomes)?record.outcomes:[];
+    const lastContactAt=latestTimestamp([
+      row?.lastContactAt,record?.lastContactAt,
+      ...outcomes.map(item=>item?.at??item?.createdAt??item?.timestamp)
+    ]);
+    if(lastContactAt!==null){
+      const age=Math.max(0,nowMs-lastContactAt);
+      if(age<Math.max(1,finite(exclusionWindowDays)??7)*86400000)return .2;
+      return .85;
+    }
+    const stage=pipelineStageOf(row);
+    if(stage==='Not Contacted')return 1;
+    if(stage==='Shortlisted')return .9;
+    if(stage==='Contacted')return .35;
+    if(stage==='Replied')return .55;
+    if(stage==='Hired'||stage==='Rejected'||stage==='Joined')return 0;
+    return null;
+  }
+
+  function workStatFactor(row,requirements={}) {
+    const specs=[
+      ['man',finite(requirements.minMan??requirements.man)],
+      ['int',finite(requirements.minInt??requirements.int)],
+      ['end',finite(requirements.minEnd??requirements.end)]
+    ].filter(([,threshold])=>threshold!==null&&threshold>0);
+    if(!specs.length)return {factor:null,coverage:0,reason:'No work-stat requirement configured.'};
+    let known=0,total=0;
+    for(const[key,threshold]of specs){
+      const value=finite(row?.[key]??row?.stats?.[key]);
+      if(value===null)continue;
+      known++;
+      total+=Math.max(0,Math.min(1,value/threshold));
+    }
+    if(!known)return {factor:null,coverage:0,reason:'Required work stats are not known.'};
+    return{
+      factor:total/known,
+      coverage:known/specs.length,
+      reason:`${known}/${specs.length} configured work-stat requirement${specs.length===1?'':'s'} measured.`
+    };
+  }
+
+  function recruitmentFit(row={},options={}) {
+    const domain=options.domain==='faction'?'faction':'company';
+    const now=timestamp(options.nowMs)||Date.now();
+    const weights={...RECRUITMENT_FIT_DEFAULT_WEIGHTS,...(options.weights||{})};
+    const requirements=options.requirements||{};
+    const provenance=prospectProvenance(row,{domain,nowMs:now});
+    const components=[];
+    let possibleWeight=0,knownWeight=0,weighted=0;
+
+    const add=(key,label,weight,factor,reason,coverage=1)=>{
+      const safeWeight=Math.max(0,finite(weight)??0);
+      if(!safeWeight)return;
+      possibleWeight+=safeWeight;
+      const known=factor!==null&&factor!==undefined&&Number.isFinite(Number(factor));
+      const evidenceWeight=known?safeWeight*Math.max(0,Math.min(1,finite(coverage)??1)):0;
+      const normalized=known?Math.max(0,Math.min(1,Number(factor))):null;
+      if(known){knownWeight+=evidenceWeight;weighted+=evidenceWeight*normalized;}
+      components.push(Object.freeze({key,label,weight:safeWeight,evidenceWeight,known,factor:normalized,points:known?evidenceWeight*normalized:null,reason:text(reason)}));
+    };
+
+    const work=workStatFactor(row,requirements);
+    if(Object.values(requirements).some(value=>finite(value)!==null&&finite(value)>0))add('requirements','Work-stat match',weights.requirements,work.factor,work.reason,work.coverage);
+
+    const elig=eligibilityFactor(row);
+    add('eligibility','Role / eligibility match',weights.eligibility,elig,
+      elig===null?'No role or eligibility evaluation is available.':'Uses the existing domain eligibility/match evaluation.');
+
+    const activity=activityFactor(row?.lastActive??row?.lastActionTs??row?.playerRecord?.lastActive??row?.player?.lastActive,now);
+    add('activity','Recent activity',weights.activity,activity,
+      activity===null?'Last activity is unknown.':'Based on observed last-action recency.');
+
+    const scout=finite(row?.fit??row?.scoutFit??row?.playerRecord?.fit??row?.player?.fit);
+    add('scoutFit','Scout Fit signal',weights.scoutFit,scout===null?null:Math.max(0,Math.min(1,scout/100)),
+      scout===null?'Scout Fit is unavailable.':'Existing Scout Fit is used only as one activity-quality signal; it remains a separate metric.');
+
+    const org=organizationFactor(row,domain);
+    add('organization',domain==='faction'?'Faction availability':'Company availability',weights.organization,org,
+      org===null?'Current organization state is unknown.':org===1?'No current organization detected.':'Currently belongs to an organization.');
+
+    const intent=intentFactor(provenance);
+    add('intent','Recruitment intent / source',weights.intent,intent,
+      intent===null?'No discovery provenance is available.':`Derived from: ${provenance.sources.join(', ')}.`);
+
+    const contact=contactFactor(row,domain,now,options.exclusionWindowDays);
+    add('contact','Contact timing',weights.contact,contact,
+      contact===null?'Contact timing is unknown.':'Uses existing contact/stage history to avoid over-prioritizing recently contacted candidates.');
+
+    const score=knownWeight>0?Math.round((weighted/knownWeight)*1000)/10:null;
+    const coverage=possibleWeight>0?knownWeight/possibleWeight:0;
+    let confidence=coverage>=.72?'High':coverage>=.42?'Medium':'Low';
+    if(provenance.freshness==='Stale'&&confidence==='High')confidence='Medium';
+    if(provenance.freshness==='Stale'&&confidence==='Medium'&&coverage<.58)confidence='Low';
+    return Object.freeze({
+      score,
+      confidence,
+      coverage:Math.round(coverage*1000)/1000,
+      provenance,
+      components:Object.freeze(components)
+    });
+  }
+
   return Object.freeze({
     PIPELINE_STAGES,
     DEFAULT_VISIBLE_COLUMNS,
@@ -358,6 +601,10 @@
     sortRows,
     applyFilters,
     processRows,
-    activeFilterCount
+    activeFilterCount,
+    RECRUITMENT_FIT_DEFAULT_WEIGHTS,
+    normalizeSourceLabel,
+    prospectProvenance,
+    recruitmentFit
   });
 });
