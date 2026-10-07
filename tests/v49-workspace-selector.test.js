@@ -183,3 +183,92 @@ test('v4.9 forum rediscovery persists a dedicated observation timestamp', async 
   assert.equal(player.lastObservedAt,observedAt);
   db.close();
 });
+
+
+test('v4.9 work-stat HOF normalization keeps total separate from unknown MAN INT END', () => {
+  const row=App._test.normalizeWorkstatHofCandidate({
+    id:8801,username:'Passive Prospect',level:44,age_in_days:3210,faction_id:91,
+    last_action:Math.floor(Date.now()/1000)-3600,value:987654,position:125,rank_name:'Professional'
+  });
+  assert.equal(row.userId,'8801');
+  assert.equal(row.name,'Passive Prospect');
+  assert.equal(row.level,44);
+  assert.equal(row.age,3210);
+  assert.equal(row.total,987654);
+  assert.equal(row.factionId,91);
+  assert.ok(row.lastActive>1e12);
+  assert.equal(Object.hasOwn(row,'man'),false);
+  assert.equal(Object.hasOwn(row,'int'),false);
+  assert.equal(Object.hasOwn(row,'end'),false);
+});
+
+test('v4.9 work-stat HOF discovery is explicit bounded and does not perform per-player enrichment', async () => {
+  const calls=[],persisted=[];
+  const result=await App._test.discoverWorkstatProspects({limit:999,offset:-50,minTotal:500},{
+    tornRequest:async(path,params)=>{
+      calls.push({path,params});
+      return {hof:[
+        {id:8802,username:'Keep',value:1000,last_action:100},
+        {id:8803,username:'Skip',value:100,last_action:100}
+      ]};
+    },
+    persistCandidate:async(raw,observedAt)=>{persisted.push({raw,observedAt});}
+  });
+  assert.deepEqual(calls,[{path:'torn/hof',params:{cat:'workstats',limit:100,offset:0}}]);
+  assert.equal(result.requested,2);
+  assert.equal(result.imported,1);
+  assert.equal(result.skipped,1);
+  assert.equal(result.limit,100);
+  assert.equal(result.offset,0);
+  assert.equal(result.nextOffset,2);
+  assert.equal(persisted.length,1);
+  assert.equal(persisted[0].raw.id,8802);
+  assert.equal(calls.filter(call=>/^user\//.test(call.path)).length,0);
+});
+
+test('v4.9 work-stat HOF persistence deduplicates into shared intelligence and preserves Company private state', async () => {
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  const observedAt=Date.now()-1000;
+  await put(db,'companyRecruitment',{
+    userId:'8804',domain:'company',pipelineStage:'Contacted',availability:'Available',
+    recruiterNote:'PRIVATE KEEP',doNotContact:true,doNotContactReason:'Do not message',
+    discoverySources:['TORN API SEARCH'],createdAt:observedAt-10000,updatedAt:observedAt-5000
+  });
+  await App._test.persistWorkstatHofCandidate({
+    id:8804,username:'Known Prospect',level:55,age_in_days:4000,faction_id:12,
+    last_action:Math.floor((observedAt-3600000)/1000),value:7654321
+  },observedAt);
+  await App._test.persistWorkstatHofCandidate({
+    id:8804,username:'Known Prospect',level:55,age_in_days:4000,faction_id:12,
+    last_action:Math.floor((observedAt-1800000)/1000),value:7654321
+  },observedAt+500);
+
+  const read=(store,key)=>new Promise((resolve,reject)=>{
+    const q=db.transaction(store,'readonly').objectStore(store).get(key);
+    q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>reject(q.error);
+  });
+  const company=await read('companyRecruitment','8804');
+  const player=await read('playerIntelligence','8804');
+  const faction=await read('factionRecruitment','8804');
+
+  assert.equal(company.pipelineStage,'Contacted');
+  assert.equal(company.recruiterNote,'PRIVATE KEEP');
+  assert.equal(company.doNotContact,true);
+  assert.deepEqual(company.discoverySources.sort(),['TORN API SEARCH','WORKSTAT LEADERBOARD'].sort());
+  assert.equal(player.total,7654321);
+  assert.equal(player.age,4000);
+  assert.equal(player.level,55);
+  assert.equal(player.lastObservedAt,observedAt+500);
+  assert.equal(Object.hasOwn(player,'man'),false);
+  assert.equal(Object.hasOwn(player,'int'),false);
+  assert.equal(Object.hasOwn(player,'end'),false);
+  assert.equal(faction,null);
+  db.close();
+});
+
+test('v4.9 Company results expose passive HOF discovery as an explicit action', () => {
+  const html=CompanyUI.renderCandidates([], {total:0,layout:'expanded'});
+  assert.match(html,/id="ra-company-hof-discover"/);
+  assert.match(html,/Discover Workstat Prospects/);
+});
