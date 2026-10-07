@@ -136,3 +136,32 @@ test('v4.9 results preferences normalize safely and expanded is the default', ()
   assert.equal(App.mergeSettings({ candidates:{ resultsLayout:'compact' } }).candidates.resultsLayout, 'compact');
   assert.equal(App.mergeSettings({ candidates:{ resultsLayout:'nonsense' } }).candidates.resultsLayout, 'expanded');
 });
+
+
+test('v4.9 activity formatting accepts both millisecond and second timestamps', () => {
+  const now=Date.now();
+  const originalNow=Date.now;
+  Date.now=()=>now;
+  try{
+    assert.equal(App._test.lastActiveText({lastActive:now-2*3600*1000}),'2h');
+    assert.equal(App._test.lastActiveText({lastActive:Math.floor(now/1000)-2*3600}),'2h');
+  }finally{Date.now=originalNow;}
+});
+
+test('v4.9 repeated Torn search persistence records fresh observation time and public age', async () => {
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  const before=Date.now();
+  await App._test.persistApiSearchCandidate('company',{
+    id:777,name:'Repeat Search',level:25,age:4567,faction_id:0,
+    last_action:{timestamp:Math.floor((before-3*3600*1000)/1000),status:'Offline'}
+  });
+  const first=await new Promise((resolve,reject)=>{
+    const q=db.transaction('playerIntelligence','readonly').objectStore('playerIntelligence').get('777');
+    q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);
+  });
+  assert.equal(first.age,4567);
+  assert.ok(Number(first.lastObservedAt)>=before);
+  assert.ok(Number(first.lastObservedAt)<=Date.now());
+  db.close();
+});
