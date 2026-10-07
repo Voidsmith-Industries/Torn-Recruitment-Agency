@@ -401,7 +401,7 @@
       ...(Array.isArray(record?.discoverySources)?record.discoverySources:[]),
       ...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),
       ...(Array.isArray(row?.discoverySources)?row.discoverySources:[]),
-      row?.sourceType,candidate?.sourceType,latestSource?.sourceType,latestSource?.source
+      row?.sourceType,candidate?.sourceType,latestSource?.sourceType,latestSource?.feedId,latestSource?.kind
     ]);
     const sources=uniqueText(rawSources.map(normalizeSourceLabel));
     const firstDiscoveredAt=earliestTimestamp([
@@ -427,7 +427,7 @@
     const terminal=['Hired','Rejected','Joined'].includes(stage);
     let state='Known Candidate';
     if(!terminal&&ageMs!==null&&ageMs>60*86400000)state='Reactivation Candidate';
-    else if(!terminal&&(explicitForum||['Shortlisted','Contacted','Replied'].includes(stage)))state='Active Lead';
+    else if(!terminal&&(explicitForum||['Shortlisted','Contacted','Replied','Evaluating','Invite Ready'].includes(stage)))state='Active Lead';
     else if(!terminal&&passiveSource)state='Passive Prospect';
     return Object.freeze({
       sources:Object.freeze(sources),
