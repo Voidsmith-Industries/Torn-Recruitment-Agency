@@ -26,3 +26,17 @@ test('forum-source provenance supplements missing candidate discoverySources', (
 test('faction-only legacy stages map conservatively into faction stages', () => {const shortlisted=D.legacyCandidateToFaction({userId:1,pipelineStage:'Shortlisted',recruiterNote:'keep'},1000,{ambiguous:false});const hired=D.legacyCandidateToFaction({userId:2,pipelineStage:'Hired'},1000,{ambiguous:false});assert.equal(shortlisted.pipelineStage,'Evaluating');assert.equal(hired.pipelineStage,'Joined');assert.equal(shortlisted.recruiterNote,'keep');});
 
 test('ambiguous cross-domain legacy workflow state is preserved but not guessed', () => {const source={userId:3,pipelineStage:'Replied',availability:'Available',recruiterNote:'legacy shared note',expectedSalary:5000000};const company=D.legacyCandidateToCompany(source,1000,{ambiguous:true});const faction=D.legacyCandidateToFaction(source,1000,{ambiguous:true});assert.equal(company.pipelineStage,'Not Contacted');assert.equal(faction.pipelineStage,'Prospect');assert.equal(company.migrationReviewRequired,true);assert.equal(faction.migrationReviewRequired,true);assert.equal(company.legacySharedState.pipelineStage,'Replied');assert.equal(faction.legacySharedState.recruiterNote,'legacy shared note');assert.equal(faction.legacySharedState.expectedSalary,5000000);});
+
+
+test('shared player intelligence preserves v4.9 age, streak and explicit observation facts without private workflow leakage', () => {
+  const row=D.mergePlayerIntelligence(null,{
+    userId:55,name:'Observed',age:1234,activeStreak:17,bestActiveStreak:42,lastObservedAt:5000,
+    recruiterNote:'PRIVATE',pipelineStage:'Contacted'
+  },'scout',5000);
+  assert.equal(row.age,1234);
+  assert.equal(row.activeStreak,17);
+  assert.equal(row.bestActiveStreak,42);
+  assert.equal(row.lastObservedAt,5000);
+  assert.equal(Object.hasOwn(row,'recruiterNote'),false);
+  assert.equal(Object.hasOwn(row,'pipelineStage'),false);
+});
