@@ -6,7 +6,8 @@
     Workflow:root&&root.RA_V46CompanyWorkflow,
     WorkflowUI:root&&root.RA_V46CompanyWorkflowUI,
     OpportunityUI:root&&root.RA_V46CompanyOpportunityUI,
-    Messaging:root&&root.RA_V45Messaging
+    Messaging:root&&root.RA_V45Messaging,
+    ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.CompanyCore=require('./v46-company-core');
@@ -16,6 +17,7 @@
     deps.WorkflowUI=require('./v46-company-workflow-ui');
     deps.OpportunityUI=require('./v46-company-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
+    deps.ResultsCore=require('./results-core');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -23,8 +25,8 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {CompanyCore,CompanyUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging}=D;
-  if(!CompanyCore||!CompanyUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging)throw new Error('CompanyCore, CompanyUI, Operations, Workflow, WorkflowUI, OpportunityUI and Messaging are required.');
+  const {CompanyCore,CompanyUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
+  if(!CompanyCore||!CompanyUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('CompanyCore, CompanyUI, Operations, Workflow, WorkflowUI, OpportunityUI, Messaging and ResultsCore are required.');
 
   const COMPANY_ROUTES=Object.freeze([
     'company-overview','company-today','company-discover','company-candidates','company-pipeline',
@@ -124,7 +126,9 @@
       const evaluationMap=new Map(result.evaluations.map(e=>[text(e.vacancyId),e]));
       const options=vacancies.filter(v=>text(v.status)==='Open').map(v=>({vacancyId:text(v.vacancyId),name:text(v.name)||text(v.role)||text(v.vacancyId),matchScore:evaluationMap.get(text(v.vacancyId))?.matchScore??null,eligible:evaluationMap.get(text(v.vacancyId))?.eligible===true}));
       const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.playerRecord||{};
-      return{...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),talentPool:row.companyRecord?.talentPool===true,talentPoolReason:text(row.companyRecord?.talentPoolReason),vacancyEvaluations:result.evaluations,pinnedVacancyId:text(result.selection.pinnedVacancyId),suggestedVacancyId:text(result.selection.suggestedVacancyId),suggestedVacancyName:text(vacancyMap.get(text(result.selection.suggestedVacancyId))?.name),vacancyOptions:options};
+      const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),talentPool:row.companyRecord?.talentPool===true,talentPoolReason:text(row.companyRecord?.talentPoolReason),vacancyEvaluations:result.evaluations,pinnedVacancyId:text(result.selection.pinnedVacancyId),suggestedVacancyId:text(result.selection.suggestedVacancyId),suggestedVacancyName:text(vacancyMap.get(text(result.selection.suggestedVacancyId))?.name),vacancyOptions:options,candidateLocal:candidate};
+      const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'company'});
+      return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness};
     });
   }
 
