@@ -445,8 +445,8 @@
 
   function organizationFactor(row,domain='company') {
     const direct=domain==='faction'
-      ? text(row?.currentFaction||row?.factionName||row?.currentOrganizationLabel)
-      : text(row?.currentCompany||row?.currentOrganizationLabel);
+      ? text(row?.currentFaction||row?.factionName||row?.player?.factionName||row?.playerRecord?.factionName||row?.currentOrganizationLabel)
+      : text(row?.currentCompany||row?.playerRecord?.currentCompany||row?.player?.currentCompany||row?.currentOrganizationLabel);
     if(!direct||/^unknown$/i.test(direct))return null;
     if(/^(none|no company|no faction|unemployed)$/i.test(direct))return 1;
     return .25;
