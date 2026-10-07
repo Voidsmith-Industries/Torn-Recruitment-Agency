@@ -150,7 +150,7 @@
   const repositories=V46Storage.createRepositories(idb);
   const companyRepositories=V46CompanyStorage.createRepositories(idb,V46CompanyCore);
   const factionRepositories=V47FactionStorage.createRepositories(idb,V47FactionCore);
-  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name)=>recruitCandidate(domain,userId,name),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
+  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name)=>recruitCandidate(domain,userId,name),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),discoverWorkstatProspects:(options={})=>discoverWorkstatProspects(options),openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
 
   function mergeSettings(raw={}) {
     const base=defaultSettings();
@@ -356,6 +356,80 @@
       updatedAt:observedAt
     };
     return repositories[normalizedDomain].ensure(candidate.userId,patch,{sharedPatch,source:'api-search',observedAt});
+  }
+
+  function normalizeWorkstatHofCandidate(raw={}){
+    const value=raw?.user||raw?.player||raw||{};
+    const userId=V46Domain.normalizeUserId(value.id??value.user_id??value.userId);
+    const level=finite(value.level);
+    const age=finite(value.age_in_days??value.age);
+    const total=finite(value.value??value.workstats??value.work_stats??value.total);
+    const factionRaw=value.faction_id??value.factionId;
+    const factionId=factionRaw===null||factionRaw===undefined||factionRaw===''?null:Number(factionRaw);
+    const lastRaw=finite(value.last_action??value.lastAction??value.last_action_timestamp);
+    const lastActive=lastRaw===null?null:(lastRaw>1e12?lastRaw:lastRaw*1000);
+    return{
+      id:Number(userId),userId,name:text(value.username??value.name)||`User ${userId}`,
+      level,age,total,
+      factionId:Number.isFinite(factionId)?factionId:null,
+      lastActive,
+      hofPosition:finite(value.position??value.rank),
+      hofRank:text(value.rank_name??value.rankName)
+    };
+  }
+
+  async function persistWorkstatHofCandidate(raw,observedAt=Date.now()){
+    const candidate=normalizeWorkstatHofCandidate(raw);
+    const existing=await idb.get('companyRecruitment',candidate.userId);
+    const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),'WORKSTAT LEADERBOARD'])];
+    const sharedPatch={name:candidate.name,lastObservedAt:observedAt};
+    if(candidate.level!==null)sharedPatch.level=candidate.level;
+    if(candidate.age!==null)sharedPatch.age=candidate.age;
+    if(candidate.total!==null)sharedPatch.total=candidate.total;
+    if(candidate.factionId!==null)sharedPatch.factionId=candidate.factionId;
+    if(candidate.lastActive!==null)sharedPatch.lastActive=candidate.lastActive;
+    const patch={
+      pipelineStage:existing?.pipelineStage||'Not Contacted',
+      availability:existing?.availability||'Unknown',
+      recruiterNote:existing?.recruiterNote||'',
+      discoverySources,
+      updatedAt:observedAt
+    };
+    return repositories.company.ensure(candidate.userId,patch,{sharedPatch,source:'workstat-leaderboard',observedAt});
+  }
+
+  async function discoverWorkstatProspects(options={},deps={}){
+    const request=deps.tornRequest||tornRequest;
+    const persist=deps.persistCandidate||persistWorkstatHofCandidate;
+    const injected=Object.keys(deps).length>0;
+    const limit=Math.max(1,Math.min(100,Math.floor(number(options.limit,100))));
+    const offset=Math.max(0,Math.floor(number(options.offset,0)));
+    const minTotal=Math.max(0,finite(options.minTotal)??0);
+    const minLevel=Math.max(0,finite(options.minLevel)??0);
+    const maxAgeDays=Math.max(0,finite(options.maxAgeDays)??0);
+    const maxLastActionDays=Math.max(0,finite(options.maxLastActionDays)??0);
+    const observedAt=Date.now();
+    const response=await request('torn/hof',{cat:'workstats',limit,offset});
+    const rows=Array.isArray(response?.hof)?response.hof:Array.isArray(response?.rankings)?response.rankings:Array.isArray(response?.entries)?response.entries:Array.isArray(response)?response:[];
+    let imported=0,skipped=0;
+    for(const raw of rows){
+      let candidate;
+      try{candidate=normalizeWorkstatHofCandidate(raw);}catch{skipped++;continue;}
+      if(minTotal>0&&(candidate.total===null||candidate.total<minTotal)){skipped++;continue;}
+      if(minLevel>0&&(candidate.level===null||candidate.level<minLevel)){skipped++;continue;}
+      if(maxAgeDays>0&&(candidate.age===null||candidate.age>maxAgeDays)){skipped++;continue;}
+      if(maxLastActionDays>0){
+        if(candidate.lastActive===null||observedAt-candidate.lastActive>maxLastActionDays*86400000){skipped++;continue;}
+      }
+      await persist(raw,observedAt);
+      imported++;
+    }
+    const result={source:'WORKSTAT LEADERBOARD',requested:rows.length,imported,skipped,limit,offset,nextOffset:offset+rows.length};
+    if(!injected){
+      await logEvent('discovery','Work-stat HOF prospect discovery completed',result);
+      toast(`HOF discovery: ${imported} prospect(s) imported from ${rows.length} result(s).`);
+    }
+    return result;
   }
 
   async function searchCandidates(domain,filters={},deps={}){
@@ -675,5 +749,5 @@
     return true;
   }
 
-  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
+  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
 });
