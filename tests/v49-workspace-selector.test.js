@@ -165,3 +165,21 @@ test('v4.9 repeated Torn search persistence records fresh observation time and p
   assert.ok(Number(first.lastObservedAt)<=Date.now());
   db.close();
 });
+
+
+test('v4.9 forum rediscovery persists a dedicated observation timestamp', async () => {
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  const observedAt=Date.now()-5000;
+  await App._test.persistDiscoveredCandidate(
+    {feedId:'company',sourceType:'COMPANY FORUM'},
+    {userId:'778',name:'Forum Repeat',pipelineStage:'Not Contacted',discoverySources:['COMPANY FORUM']},
+    {sourceId:'COMPANY FORUM:778:1',sourceType:'COMPANY FORUM',observedAt,postedAt:observedAt}
+  );
+  const player=await new Promise((resolve,reject)=>{
+    const q=db.transaction('playerIntelligence','readonly').objectStore('playerIntelligence').get('778');
+    q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);
+  });
+  assert.equal(player.lastObservedAt,observedAt);
+  db.close();
+});
