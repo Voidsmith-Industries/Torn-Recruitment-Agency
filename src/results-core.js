@@ -453,12 +453,21 @@
   }
 
   function organizationFactor(row,domain='company') {
+    const player=row?.playerRecord||row?.player||{};
     const direct=domain==='faction'
-      ? text(row?.currentFaction||row?.factionName||row?.player?.factionName||row?.playerRecord?.factionName||row?.currentOrganizationLabel)
-      : text(row?.currentCompany||row?.playerRecord?.currentCompany||row?.player?.currentCompany||row?.currentOrganizationLabel);
-    if(!direct||/^unknown$/i.test(direct))return null;
-    if(/^(none|no company|no faction|unemployed)$/i.test(direct))return 1;
-    return .25;
+      ? text(row?.currentFaction||row?.factionName||player?.factionName||row?.currentOrganizationLabel)
+      : text(row?.currentCompany||player?.currentCompany||row?.currentOrganizationLabel);
+    if(direct&&!/^unknown$/i.test(direct)){
+      if(/^(none|no company|no faction|unemployed)$/i.test(direct))return 1;
+      return .25;
+    }
+    const rawId=domain==='faction'
+      ? (row?.factionId??player?.factionId)
+      : (row?.currentCompanyId??player?.currentCompanyId);
+    if(rawId===null||rawId===undefined||rawId==='')return null;
+    const id=Number(rawId);
+    if(!Number.isFinite(id)||id<0)return null;
+    return id===0?1:.25;
   }
 
   function intentFactor(provenance) {
@@ -476,9 +485,9 @@
     if(score!==null)return Math.max(0,Math.min(1,score>1?score/100:score));
     const label=lower(row?.eligibility);
     if(!label||label==='unknown')return null;
-    if(label.includes('eligible by waiver'))return .8;
-    if(label==='eligible'||label.includes('eligible'))return 1;
     if(label.includes('not currently eligible')||label.includes('ineligible'))return 0;
+    if(label.includes('eligible by waiver'))return .8;
+    if(label==='eligible')return 1;
     return null;
   }
 
