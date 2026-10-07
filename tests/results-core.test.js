@@ -319,3 +319,17 @@ test('v4.9 organization evidence respects authoritative zero and positive IDs wh
   },{domain:'company',nowMs:NOW,useEligibility:false});
   assert.equal(noCompany.components.find(x=>x.key==='organization').factor,1);
 });
+
+
+test('v4.9 repeat observation timestamp refreshes provenance without treating workflow edits as observations', () => {
+  const row={
+    userId:'906',
+    pipelineStage:'Not Contacted',
+    playerRecord:{lastObservedAt:NOW-3600000},
+    companyRecord:{domain:'company',discoverySources:['TORN USER SEARCH'],createdAt:NOW-90*86400000,updatedAt:NOW}
+  };
+  const p=R.prospectProvenance(row,{domain:'company',nowMs:NOW});
+  assert.equal(p.freshness,'Fresh');
+  assert.equal(p.state,'Passive Prospect');
+  assert.equal(p.lastObservedAt,NOW-3600000);
+});
