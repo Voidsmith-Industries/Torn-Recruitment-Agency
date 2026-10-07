@@ -266,3 +266,19 @@ test('v4.9 recent contact reduces prioritization but Do Not Contact is not falsi
   assert.equal(contacted.components.find(x=>x.key==='contact').factor,.2);
   assert.equal(contacted.provenance.state,'Active Lead');
 });
+
+
+test('v4.9 faction stages remain domain-native in prospect classification', () => {
+  const evaluating=R.prospectProvenance({
+    pipelineStage:'Evaluating',
+    factionRecord:{domain:'faction',discoverySources:['MANUAL'],createdAt:NOW-86400000}
+  },{domain:'faction',nowMs:NOW});
+  assert.equal(R.domainStageOf({pipelineStage:'Evaluating',factionRecord:{domain:'faction'}},'faction'),'Evaluating');
+  assert.equal(evaluating.state,'Active Lead');
+
+  const joined=R.prospectProvenance({
+    pipelineStage:'Joined',
+    factionRecord:{domain:'faction',discoverySources:['FACTION FORUM'],createdAt:NOW-90*86400000}
+  },{domain:'faction',nowMs:NOW});
+  assert.equal(joined.state,'Known Candidate');
+});
