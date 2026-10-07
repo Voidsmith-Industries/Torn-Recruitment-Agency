@@ -410,7 +410,7 @@
     ]);
     const observedEvidenceAt=latestTimestamp([
       candidate?.lastSeenAt,row?.lastSeenPost,row?.lastObservedAt,
-      player?.lastSeenAt,player?.lastScoutAt,latestSource?.postedAt,latestSource?.observedAt
+      player?.lastObservedAt,player?.lastSeenAt,player?.lastScoutAt,latestSource?.postedAt,latestSource?.observedAt
     ]);
     const lastObservedAt=observedEvidenceAt??latestTimestamp([
       record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,row?.createdAt
