@@ -408,9 +408,12 @@
       record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,candidate?.firstSeenAt,row?.createdAt,row?.firstSeenAt,
       latestSource?.postedAt,latestSource?.observedAt
     ]);
-    const lastObservedAt=latestTimestamp([
-      record?.updatedAt,record?.stageChangedAt,candidate?.updatedAt,candidate?.lastSeenAt,row?.updatedAt,row?.lastSeenPost,row?.lastObservedAt,
-      player?.updatedAt,player?.lastSeenAt,player?.lastScoutAt,latestSource?.postedAt,latestSource?.observedAt
+    const observedEvidenceAt=latestTimestamp([
+      candidate?.lastSeenAt,row?.lastSeenPost,row?.lastObservedAt,
+      player?.lastSeenAt,player?.lastScoutAt,latestSource?.postedAt,latestSource?.observedAt
+    ]);
+    const lastObservedAt=observedEvidenceAt??latestTimestamp([
+      record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,row?.createdAt
     ]);
     const lastEnrichedAt=latestTimestamp([
       row?.lastEnrichedAt,player?.lastEnrichedAt,player?.lastScoutAt,row?.scout?.capturedAt
@@ -545,9 +548,11 @@
     const work=workStatFactor(row,requirements);
     if(Object.values(requirements).some(value=>finite(value)!==null&&finite(value)>0))add('requirements','Work-stat match',weights.requirements,work.factor,work.reason,work.coverage);
 
-    const elig=options.useEligibility===false?null:eligibilityFactor(row);
-    add('eligibility','Role / eligibility match',weights.eligibility,elig,
-      options.useEligibility===false?'Role/profile-specific scoring is deferred until a shared role profile is selected.':elig===null?'No role or eligibility evaluation is available.':'Uses the existing domain eligibility/match evaluation.');
+    if(options.useEligibility!==false){
+      const elig=eligibilityFactor(row);
+      add('eligibility','Role / eligibility match',weights.eligibility,elig,
+        elig===null?'No role or eligibility evaluation is available.':'Uses the existing domain eligibility/match evaluation.');
+    }
 
     const activity=activityFactor(row?.lastActive??row?.lastActionTs??row?.playerRecord?.lastActive??row?.player?.lastActive,now);
     add('activity','Recent activity',weights.activity,activity,
