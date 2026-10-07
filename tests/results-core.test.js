@@ -282,3 +282,40 @@ test('v4.9 faction stages remain domain-native in prospect classification', () =
   },{domain:'faction',nowMs:NOW});
   assert.equal(joined.state,'Known Candidate');
 });
+
+
+test('v4.9 eligibility labels never award credit to explicitly ineligible candidates', () => {
+  const negative=R.recruitmentFit({
+    userId:'901',eligibility:'NOT CURRENTLY ELIGIBLE',lastActive:NOW-3600000,currentCompany:'None',
+    companyRecord:{domain:'company',discoverySources:['COMPANY FORUM'],createdAt:NOW}
+  },{domain:'company',nowMs:NOW,useEligibility:true});
+  const factor=negative.components.find(x=>x.key==='eligibility');
+  assert.equal(factor.known,true);
+  assert.equal(factor.factor,0);
+
+  const ineligible=R.recruitmentFit({
+    userId:'902',eligibility:'Ineligible',lastActive:NOW-3600000,currentCompany:'None',
+    companyRecord:{domain:'company',discoverySources:['COMPANY FORUM'],createdAt:NOW}
+  },{domain:'company',nowMs:NOW,useEligibility:true});
+  assert.equal(ineligible.components.find(x=>x.key==='eligibility').factor,0);
+});
+
+test('v4.9 organization evidence respects authoritative zero and positive IDs when names are absent', () => {
+  const noFaction=R.recruitmentFit({
+    userId:'903',lastActive:NOW-3600000,player:{factionId:0},
+    factionRecord:{domain:'faction',discoverySources:['TORN USER SEARCH'],createdAt:NOW}
+  },{domain:'faction',nowMs:NOW,useEligibility:false});
+  assert.equal(noFaction.components.find(x=>x.key==='organization').factor,1);
+
+  const hasFaction=R.recruitmentFit({
+    userId:'904',lastActive:NOW-3600000,player:{factionId:12345},
+    factionRecord:{domain:'faction',discoverySources:['TORN USER SEARCH'],createdAt:NOW}
+  },{domain:'faction',nowMs:NOW,useEligibility:false});
+  assert.equal(hasFaction.components.find(x=>x.key==='organization').factor,.25);
+
+  const noCompany=R.recruitmentFit({
+    userId:'905',lastActive:NOW-3600000,playerRecord:{currentCompanyId:0},
+    companyRecord:{domain:'company',discoverySources:['TORN USER SEARCH'],createdAt:NOW}
+  },{domain:'company',nowMs:NOW,useEligibility:false});
+  assert.equal(noCompany.components.find(x=>x.key==='organization').factor,1);
+});
