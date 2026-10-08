@@ -80,3 +80,20 @@ test('Company HTML renderers expose operational links and escaped player content
   assert.doesNotMatch(candidates,/<Alpha>/);
   assert.match(pipeline,/data-company-stage="Replied"/);
 });
+
+
+test('v4.9 Company results surface local recruitment profiles without adding a second profile system',()=>{
+  const html=CompanyUI.renderCandidates([],{
+    profiles:[
+      {profileId:'sales',name:'Sales Role'},
+      {profileId:'trainer',name:'Trainer Role'}
+    ],
+    activeProfileId:'trainer'
+  });
+  assert.match(html,/id="ra-company-profile-select"/);
+  assert.match(html,/Sales Role/);
+  assert.match(html,/value="trainer" selected/);
+  assert.match(html,/id="ra-company-profile-apply"/);
+  assert.match(html,/id="ra-company-profile-save-search"/);
+  assert.match(html,/id="ra-company-profile-manage"/);
+});
