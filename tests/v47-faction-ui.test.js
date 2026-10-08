@@ -95,3 +95,16 @@ test('Faction HTML renderers escape player content and link only to Faction rout
   assert.doesNotMatch(candidates,/<Alpha>/);
   assert.doesNotMatch(candidates,/company-/i);
 });
+
+
+test('Faction Results renders specialist profile controls without mixing Company profiles',()=>{
+  const html=ui().renderCandidates([],{
+    total:0,layout:'expanded',activeProfileId:'rw',
+    profiles:[{profileId:'rw',name:'RW Fighter',status:'Active',criteria:[]}]
+  });
+  assert.match(html,/id="ra-faction-results-profile"/);
+  assert.match(html,/RW Fighter/);
+  assert.match(html,/id="ra-faction-profile-apply"/);
+  assert.match(html,/id="ra-faction-profile-save-search"/);
+  assert.doesNotMatch(html,/ra-company-profile/);
+});
