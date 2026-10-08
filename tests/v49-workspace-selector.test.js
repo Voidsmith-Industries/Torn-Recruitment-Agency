@@ -120,6 +120,7 @@ test('v4.9 Player Card is domain-sensitive and reads local intelligence without 
   assert.doesNotMatch(document.getElementById('ra-drawer').textContent, /Night Watch/);
   assert.equal(document.getElementById('ra-card-recruit').disabled, true);
   assert.equal(document.getElementById('ra-card-recruit').textContent, 'Do Not Contact');
+  assert.equal(document.getElementById('ra-card-refresh').textContent, 'Refresh Intelligence');
 
   await App._test.openPlayerCard('faction', '321', { force:true });
   assert.match(document.getElementById('ra-drawer').textContent, /Faction Status/);
