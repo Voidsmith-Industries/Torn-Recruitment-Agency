@@ -38,6 +38,8 @@ test('Claude remediation: cleared Company profile remains explicitly cleared',as
 test('Claude remediation: CSV cells neutralize spreadsheet formulas before quoting',()=>{
   assert.equal(App._test.csvCell('=HYPERLINK("https://evil.example","Open")'),'"\'=HYPERLINK(""https://evil.example"",""Open"")"');
   assert.equal(App._test.csvCell(' +SUM(1,2)'),'"\' +SUM(1,2)"');
+  assert.equal(App._test.csvCell('\u00a0=SUM(1,2)'),'"\'\u00a0=SUM(1,2)"');
+  assert.equal(App._test.csvCell('\u000b@cmd'),'"\'\u000b@cmd"');
   assert.equal(App._test.csvCell('@cmd'),'"\'@cmd"');
   assert.equal(App._test.csvCell('-1'),'"\'-1"');
   assert.equal(App._test.csvCell('Normal "Name"'),'"Normal ""Name"""');

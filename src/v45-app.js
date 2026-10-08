@@ -62,7 +62,7 @@
     throw new Error('Recruitment Agency v4.5 core modules are required.');
   }
 
-  const SCRIPT_VERSION = '4.8.3';
+  const SCRIPT_VERSION = '4.8.4';
   const DB_NAME = 'tornWorkerDB';
   const DB_VERSION = V47FactionStorage.DB_VERSION;
   const API_BASE = 'https://api.torn.com/v2';
@@ -693,7 +693,7 @@
   function closeModal(){const modal=document.getElementById('ra-modal');if(modal){modal.hidden=true;modal.innerHTML='';}state.messageCandidateId='';}
 
   function candidateCsvRow(v){return[v.userId,v.name,v.pipelineStage,v.matchScore??'',v.fitScore??'',v.lookingFor,v.sourceType,v.currentCompany,v.availability,v.man??'',v.int??'',v.end??'',v.ee??''];}
-  function csvCell(value){let safe=String(value??'');if(/^[\t\r\n ]*[=+\-@]/.test(safe))safe=`'${safe}`;return `"${safe.replaceAll('"','""')}"`;}
+  function csvCell(value){let safe=String(value??'');if(/^\s*[=+\-@]/u.test(safe))safe=`'${safe}`;return `"${safe.replaceAll('"','""')}"`;}
   async function exportCsv(){const rows=await candidateViews();const header=['Player ID','Name','Stage','Match','Fit','Looking For','Source','Current Company','Availability','MAN','INT','END','EE'];const csv=[header,...rows.map(candidateCsvRow)].map(row=>row.map(csvCell).join(',')).join('\n');try{await navigator.clipboard.writeText(csv);toast(`Copied ${rows.length} candidate(s) as CSV.`);}catch{const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='recruitment-candidates.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}
 
   async function hardReset(){if(!confirm('NUKE IT ALL will permanently delete Recruitment Agency browser-local candidates, forum imports, Scout cache/history, Global cache/queue, Match Profiles, logs, messages/settings and layout. Torn account data and unrelated userscripts are not touched. Continue?'))return;const typed=text(prompt('Type NUKE to confirm the hard local reset:','')).toUpperCase();if(typed!=='NUKE'){toast('Hard reset cancelled.',true);return;}for(const store of STORE_NAMES)await idb.clear(store);state.settings=mergeSettings({});state.page='company-candidates';applyTheme();rebuildNav();closeModal();document.getElementById('ra-drawer').hidden=true;await route('company-candidates',false);toast('Recruitment Agency local data was reset.');}
