@@ -53,3 +53,9 @@ test('v4.9 explicit saved-search thresholds override role-profile fallbacks',()=
   const profile={criteria:{man:{enabled:true,target:50000}},searchFilters:{company:{minMan:'75k'}}};
   assert.equal(Platform._test.profileSearchFilters(profile).minMan,'75k');
 });
+
+
+test('Company Results uses a bounded 100-row local render window',()=>{
+  const P=platform();
+  assert.equal(P._test.RESULTS_PAGE_SIZE,100);
+});
