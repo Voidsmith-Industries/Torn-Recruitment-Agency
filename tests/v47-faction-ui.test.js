@@ -105,6 +105,8 @@ test('Faction Results renders specialist profile controls without mixing Company
   assert.match(html,/id="ra-faction-results-profile"/);
   assert.match(html,/RW Fighter/);
   assert.match(html,/id="ra-faction-profile-apply"/);
+  assert.match(html,/value="">No profile<\/option>/);
+  assert.match(html,/id="ra-faction-profile-clear"/);
   assert.match(html,/id="ra-faction-profile-save-search"/);
   assert.doesNotMatch(html,/ra-company-profile/);
 });
