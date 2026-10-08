@@ -76,3 +76,9 @@ test('Faction Results profile applies saved filters with specialist work-stat fa
   assert.equal(P._test.activeResultsProfile({activeResultsProfileId:'rw'},[profile]).profileId,'rw');
   assert.equal(P._test.activeResultsProfile({activeResultsProfileId:'missing'},[profile]),null);
 });
+
+
+test('Faction Results uses a bounded 100-row local render window',()=>{
+  const P=platform();
+  assert.equal(P._test.RESULTS_PAGE_SIZE,100);
+});
