@@ -272,3 +272,43 @@ test('v4.9 Company results expose passive HOF discovery as an explicit action', 
   assert.match(html,/id="ra-company-hof-discover"/);
   assert.match(html,/Discover Workstat Prospects/);
 });
+
+
+test('v4.9 Company role-profile requirements are explicit and Faction remains unaffected', () => {
+  assert.deepEqual(App._test.matchProfileRequirements({
+    criteria:{
+      man:{enabled:true,target:50000},
+      int:{enabled:false,target:70000},
+      end:{enabled:true,target:120000}
+    }
+  }),{minMan:50000,minEnd:120000});
+});
+
+test('v4.9 Player Card shows the active Company recruitment profile while keeping Faction on its own default', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><aside id="ra-drawer" class="ra-drawer" hidden></aside></body></html>', { url:'https://www.torn.com/' });
+  global.window=dom.window;
+  global.document=dom.window.document;
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  App._test.state.settings=App.mergeSettings({match:{activeProfileId:'sales-role'}});
+  App._test.state.playerCard={domain:'company',userId:'',pinned:false,popout:false};
+
+  await put(db,'matchProfiles',{
+    profileId:'sales-role',name:'Sales Role',
+    criteria:{man:{enabled:true,target:100,weight:10}},
+    searchFilters:{company:{}}
+  });
+  await put(db,'playerIntelligence',{userId:'9901',name:'Profile Test',man:100,int:200,end:300});
+  await put(db,'companyRecruitment',{userId:'9901',domain:'company',pipelineStage:'Not Contacted'});
+  await put(db,'factionRecruitment',{userId:'9901',domain:'faction',pipelineStage:'Prospect'});
+
+  await App._test.openPlayerCard('company','9901',{force:true});
+  assert.match(document.getElementById('ra-drawer').textContent,/Sales Role/);
+
+  await App._test.openPlayerCard('faction','9901',{force:true});
+  assert.match(document.getElementById('ra-drawer').textContent,/Faction default/);
+  assert.doesNotMatch(document.getElementById('ra-drawer').textContent,/Sales Role/);
+
+  db.close();
+  dom.window.close();
+});
