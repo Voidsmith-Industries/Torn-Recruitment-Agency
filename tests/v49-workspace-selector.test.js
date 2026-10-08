@@ -312,3 +312,29 @@ test('v4.9 Player Card shows the active Company recruitment profile while keepin
   db.close();
   dom.window.close();
 });
+
+
+test('v4.9 Player Card watch reuses Company Talent Pool and never creates Faction workflow state', async () => {
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  await put(db,'companyRecruitment',{
+    userId:'9902',domain:'company',pipelineStage:'Not Contacted',recruiterNote:'KEEP',
+    talentPool:false,cycles:[],events:[]
+  });
+
+  const watched=await App._test.setCompanyWatchlist('9902',true);
+  assert.equal(watched.talentPool,true);
+  assert.equal(watched.talentPoolReason,'Watched from Player Card');
+  assert.equal(watched.recruiterNote,'KEEP');
+
+  const unwatched=await App._test.setCompanyWatchlist('9902',false);
+  assert.equal(unwatched.talentPool,false);
+  assert.equal(unwatched.talentPoolReason,'');
+
+  const faction=await new Promise((resolve,reject)=>{
+    const q=db.transaction('factionRecruitment','readonly').objectStore('factionRecruitment').get('9902');
+    q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>reject(q.error);
+  });
+  assert.equal(faction,null);
+  db.close();
+});
