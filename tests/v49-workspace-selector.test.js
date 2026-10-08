@@ -339,3 +339,28 @@ test('v4.9 Player Card watch reuses Company Talent Pool and never creates Factio
   assert.equal(faction,null);
   db.close();
 });
+
+
+test('v4.9 Faction Player Card uses the active specialist recruitment profile', async () => {
+  const dom=new JSDOM('<!doctype html><html><body><aside id="ra-drawer" class="ra-drawer" hidden></aside></body></html>',{url:'https://www.torn.com/'});
+  global.window=dom.window;global.document=dom.window.document;
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  App._test.state.playerCard={domain:'faction',userId:'',pinned:false,popout:false};
+
+  await put(db,'playerIntelligence',{userId:'991',name:'Faction Fit',rwHits30:80,attacks30:500,lastActive:Date.now()-3600000});
+  await put(db,'factionRecruitment',{userId:'991',domain:'faction',pipelineStage:'Prospect',availability:'Unknown',waivers:[]});
+  await put(db,'factionSpecialistProfiles',{
+    profileId:'rw-role',name:'RW Recruit',status:'Active',
+    criteria:[{id:'rw',field:'rwHits30',operator:'gte',value:50,kind:'Preferred',weight:1}],
+    searchFilters:{},version:1,createdAt:Date.now(),updatedAt:Date.now()
+  });
+  await put(db,'factionRecruitmentConfig',{key:'faction',baseline:{criteria:[]},stageThresholds:{},opportunityWeights:{},activeResultsProfileId:'rw-role',updatedAt:Date.now()});
+
+  await App._test.openPlayerCard('faction','991',{force:true});
+  assert.match(document.getElementById('ra-drawer').textContent,/RW Recruit/);
+  assert.match(document.getElementById('ra-drawer').textContent,/Recruitment Fit/);
+  assert.doesNotMatch(document.getElementById('ra-drawer').textContent,/Default Recruit/);
+
+  db.close();dom.window.close();
+});
