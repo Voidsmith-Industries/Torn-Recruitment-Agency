@@ -14,6 +14,7 @@
     V46Navigation: root && root.RA_V46Navigation,
     V46CompanyCore: root && root.RA_V46CompanyCore,
     V46CompanyStorage: root && root.RA_V46CompanyStorage,
+    V46CompanyWorkflow: root && root.RA_V46CompanyWorkflow,
     V46CompanyPlatform: root && root.RA_V46CompanyPlatform,
     V47FactionCore: root && root.RA_V47FactionCore,
     V47FactionStorage: root && root.RA_V47FactionStorage,
@@ -39,6 +40,7 @@
     deps.V46Navigation = require('./v46-navigation');
     deps.V46CompanyCore = require('./v46-company-core');
     deps.V46CompanyStorage = require('./v46-company-storage');
+    deps.V46CompanyWorkflow = require('./v46-company-workflow');
     deps.V46CompanyPlatform = require('./v46-company-platform');
     deps.V47FactionCore = require('./v47-faction-core');
     deps.V47FactionStorage = require('./v47-faction-storage');
@@ -55,8 +57,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (D) {
   'use strict';
 
-  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform} = D;
-  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform].every(Boolean)) {
+  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform} = D;
+  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform].every(Boolean)) {
     throw new Error('Recruitment Agency v4.5 core modules are required.');
   }
 
