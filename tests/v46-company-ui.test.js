@@ -97,3 +97,12 @@ test('v4.9 Company results surface local recruitment profiles without adding a s
   assert.match(html,/id="ra-company-profile-save-search"/);
   assert.match(html,/id="ra-company-profile-manage"/);
 });
+
+
+test('Company Results pagination shows filtered range without rendering the full result set',()=>{
+  const rows=Array.from({length:2},(_,i)=>({userId:String(i+1),name:'C'+i,pipelineStage:'Not Contacted',prospectProvenance:{sources:[]}}));
+  const html=ui().renderCandidates(rows,{total:350,filteredTotal:250,layout:'compact',pagination:{page:1,pageCount:3,start:100,end:102}});
+  assert.match(html,/101-102 of 250/);
+  assert.match(html,/data-results-page="prev"/);
+  assert.match(html,/data-results-page="next"/);
+});
