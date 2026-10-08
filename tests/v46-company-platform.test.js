@@ -34,3 +34,22 @@ test('Company platform installs only on a mounted v4.6-capable app and keeps Fac
   Platform.uninstall();
   dom.window.close();
 });
+
+
+test('v4.9 role profiles derive Company search thresholds without inventing missing criteria',()=>{
+  const profile={criteria:{
+    man:{enabled:true,target:50000},
+    int:{enabled:false,target:90000},
+    end:{enabled:true,target:100000}
+  },searchFilters:{company:{search:'Alice',organizationPresence:'none'}}};
+  assert.deepEqual(Platform._test.profileRequirements(profile),{minMan:50000,minEnd:100000});
+  assert.deepEqual(Platform._test.profileSearchFilters(profile),{
+    search:'Alice',minEnd:'100000',minMan:'50000',minInt:'',
+    onlineStatus:'',organization:'',organizationPresence:'none'
+  });
+});
+
+test('v4.9 explicit saved-search thresholds override role-profile fallbacks',()=>{
+  const profile={criteria:{man:{enabled:true,target:50000}},searchFilters:{company:{minMan:'75k'}}};
+  assert.equal(Platform._test.profileSearchFilters(profile).minMan,'75k');
+});
