@@ -195,3 +195,19 @@ test('Faction Today queue recognizes Replied, overdue follow-up, stale stage and
     'High opportunity'
   ]);
 });
+
+
+test('Faction specialist profiles preserve normalized saved Results filters', () => {
+  const Core=requireFaction();
+  const profile=Core.normalizeSpecialistProfile({
+    profileId:'rw',name:'RW',status:'Active',
+    searchFilters:{search:'  foo  ',minEnd:'100k',onlineStatus:'online',organizationPresence:'HAS'}
+  });
+  assert.equal(profile.searchFilters.search,'foo');
+  assert.equal(profile.searchFilters.minEnd,'100k');
+  assert.equal(profile.searchFilters.onlineStatus,'');
+  assert.equal(profile.searchFilters.organizationPresence,'has');
+  assert.deepEqual(Core.normalizeFactionSearchFilters({onlineStatus:'Online',organizationPresence:'none'}),{
+    search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'Online',organization:'',organizationPresence:'none'
+  });
+});
