@@ -94,7 +94,7 @@ test('v4.9 Company results surface local recruitment profiles without adding a s
   assert.match(html,/Sales Role/);
   assert.match(html,/value="trainer" selected/);
   assert.match(html,/id="ra-company-profile-apply"/);
-  assert.match(html,/value="">No profile<\/option>/);
+  assert.match(html,/<option value=""[^>]*>No profile<\/option>/);
   assert.match(html,/id="ra-company-profile-clear"/);
   assert.match(html,/id="ra-company-profile-save-search"/);
   assert.match(html,/id="ra-company-profile-manage"/);
