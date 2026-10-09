@@ -109,3 +109,21 @@ test('DB12 backfill separates provenance, preserves ambiguity and is idempotent'
   assert.deepEqual(afterPlayer.nameHistory,beforePlayer.nameHistory);
   db.close();
 });
+
+
+test('legacy backfill does not invent lastObservedAt when no historical timestamp exists',async()=>{
+  const name=`ra-storage-no-observation-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('users','readwrite');
+  tx.objectStore('users').put({recordId:'company:999',userId:999,name:'No Timestamp',sourceMode:'company'});
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','999');
+  assert.ok(player);
+  assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
+  db.close();
+});
