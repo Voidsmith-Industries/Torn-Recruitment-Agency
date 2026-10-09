@@ -153,3 +153,32 @@ test('legacy candidate workflow updatedAt does not become Last Observed',async()
   assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
   db.close();
 });
+
+
+test('legacy migration can write domain state without overwriting shared Player Intelligence',async()=>{
+  const name=`ra-storage-skip-shared-${Date.now()}-${Math.random()}`;
+  const db=await openDb(name,13,db=>{createLegacyStores(db);S.applyUpgrade(db);});
+  const idb=adapter(db);
+  const repos=S.createRepositories(idb);
+
+  await repos.players.ensure('777',{name:'Fresh Scout',ee:99,lastObservedAt:5000},'scout',5000);
+  await repos.company.ensure('777',{
+    name:'Legacy Name',
+    ee:1,
+    pipelineStage:'Replied',
+    recruiterNote:'legacy'
+  },{
+    source:'legacy-user-company',
+    observedAt:1000,
+    skipShared:true
+  });
+
+  const player=await idb.get('playerIntelligence','777');
+  const company=await idb.get('companyRecruitment','777');
+  assert.equal(player.name,'Fresh Scout');
+  assert.equal(player.ee,99);
+  assert.equal(player.lastObservedAt,5000);
+  assert.equal(company.pipelineStage,'Replied');
+  assert.equal(company.recruiterNote,'legacy');
+  db.close();
+});
