@@ -129,3 +129,29 @@ test('v4.9 results preferences normalize safely and expanded is the default', ()
   assert.equal(App.mergeSettings({ candidates:{ resultsLayout:'compact' } }).candidates.resultsLayout, 'compact');
   assert.equal(App.mergeSettings({ candidates:{ resultsLayout:'nonsense' } }).candidates.resultsLayout, 'expanded');
 });
+
+
+test('v4.9 Player Card uses shared intelligence observation time, not workflow edit time', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><aside id="ra-drawer" class="ra-drawer" hidden></aside></body></html>', { url:'https://www.torn.com/' });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  const db = await App.openDB(indexedDB);
+  App._test.state.db = db;
+  App._test.state.settings = App.mergeSettings({});
+  App._test.state.playerCard = { domain:'company', userId:'', pinned:false, popout:false };
+  await put(db, 'playerIntelligence', {userId:'654',name:'Observed',updatedAt:1000});
+  await put(db, 'companyRecruitment', {userId:'654',domain:'company',pipelineStage:'Not Contacted',updatedAt:9000});
+  await App._test.openPlayerCard('company','654',{force:true});
+  const body=document.getElementById('ra-drawer').textContent;
+  assert.ok(body.includes(new Date(1000).toLocaleString()));
+  assert.ok(!body.includes(new Date(9000).toLocaleString()));
+  db.close();
+  dom.window.close();
+});
+
+test('v4.9 navigation closes Player Card when rememberPanel is disabled',()=>{
+  const source=require('node:fs').readFileSync(require.resolve('../src/v45-app'),'utf8');
+  assert.match(source,/playerCard\?\.rememberPanel===false/);
+  assert.match(source,/drawer\.hidden=true/);
+  assert.match(source,/state\.playerCard=\{\.\.\.state\.playerCard,userId:'',pinned:false\}/);
+});

@@ -55,7 +55,7 @@
   function buildPipelineModel(rows=[]){const buckets=Object.fromEntries(COMPANY_STAGES.map(stage=>[stage,[]]));for(const row of Array.isArray(rows)?rows:[]){if(!row||text(row.companyRecord?.domain).toLowerCase()==='faction')continue;buckets[normalizeStage(row.pipelineStage)].push(row);}return buckets;}
 
   function kpi(label,value){return `<div class="ra-kpi"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;}
-  function score(value){return Number.isFinite(Number(value))?Number(value).toFixed(1):'—';}
+  function score(value){if(value===null||value===undefined||text(value)==='')return '—';return Number.isFinite(Number(value))?Number(value).toFixed(1):'—';}
   function money(value){return Number.isFinite(Number(value))?`$${Math.round(Number(value)).toLocaleString()}`:'—';}
   function stageOptions(selected){return COMPANY_STAGES.map(stage=>`<option value="${esc(stage)}" ${stage===selected?'selected':''}>${esc(stage)}</option>`).join('');}
   function vacancyStateOptions(selected){return VACANCY_STATES.map(state=>`<option value="${state}" ${state===selected?'selected':''}>${state}</option>`).join('');}
@@ -68,7 +68,7 @@
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
   function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
   function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-company-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
-  function contactedLabel(row={}){const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','hired'].includes(stage)?'Contacted':'Not yet';}
+  function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','hired'].includes(stage)?'Contacted':'Not yet';}
   function renderCandidates(rows=[],options={}){
     const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
     const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="company">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;

@@ -95,3 +95,15 @@ test('Faction HTML renderers escape player content and link only to Faction rout
   assert.doesNotMatch(candidates,/<Alpha>/);
   assert.doesNotMatch(candidates,/company-/i);
 });
+
+
+test('v4.9 Faction Results keep unknown battle intelligence unknown and honor contact outcomes',()=>{
+  const U=ui();
+  const row=U.buildCandidateRows([{userId:'404',domain:'faction',pipelineStage:'Rejected',outcomes:[{kind:'declined',at:123}],availability:'Unknown'}],[{userId:'404',name:'Delta',recruitmentFit:null,attacks30:null,rwHits30:null}],{baseline,profiles})[0];
+  const html=U.renderCandidates([row],{layout:'expanded'});
+  assert.doesNotMatch(html,/0 \/ 0/);
+  assert.doesNotMatch(html,/>0<\/td>/);
+  assert.match(html,/>Contacted<\/td>/);
+  const partial=U.renderCandidates([{...row,attacks30:12,rwHits30:null}],{layout:'expanded'});
+  assert.match(partial,/12 \/ —/);
+});

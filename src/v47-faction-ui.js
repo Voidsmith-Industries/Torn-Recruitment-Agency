@@ -17,7 +17,7 @@
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const score=value=>Number.isFinite(Number(value))?Number(value).toFixed(0):'—';
+  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toFixed(0):'—');
   const dateText=value=>{const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n).toLocaleString():'—';};
 
   function normalizeStage(value){const raw=text(value).toLowerCase();return FACTION_STAGES.find(stage=>stage.toLowerCase()===raw)||'Prospect';}
@@ -144,12 +144,12 @@
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
   function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
   function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-faction-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
-  function contactedLabel(row={}){const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','evaluating','invite ready','joined'].includes(stage)?'Contacted':'Not yet';}
+  function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','evaluating','invite ready','joined'].includes(stage)?'Contacted':'Not yet';}
   function renderCandidates(rows=[],options={}){
     const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
     const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="faction">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
     const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">Message</button>`;
-    const battle=row=>{const attacks=Number(row.attacks30),rw=Number(row.rwHits30);if(!Number.isFinite(attacks)&&!Number.isFinite(rw))return '—';return `${Number.isFinite(attacks)?attacks.toLocaleString():'—'} / ${Number.isFinite(rw)?rw.toLocaleString():'—'}`;};
+    const battle=row=>{const known=value=>value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));const attacks=known(row.attacks30)?Number(row.attacks30):null,rw=known(row.rwHits30)?Number(row.rwHits30):null;if(attacks===null&&rw===null)return '—';return `${attacks===null?'—':attacks.toLocaleString()} / ${rw===null?'—':rw.toLocaleString()}`;};
     const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.networth)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${battle(row)}</td><td>${stat(row.activeStreak)}</td><td>${stat(row.xanax30)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${score(row.recruitmentFit)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
     const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${score(row.recruitmentFit)}</td><td>${messageCell(row)}</td></tr>`).join('');
     const resultsTable=layout==='compact'
