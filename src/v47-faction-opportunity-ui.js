@@ -13,7 +13,7 @@
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const hours=(now,at)=>Math.max(0,(number(now)-number(at,0))/3600000);
   const metric=value=>Number.isFinite(Number(value))?Number(value).toLocaleString():'—';
-  const score=value=>Number.isFinite(Number(value))?Math.round(Number(value)):'—';
+  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Math.round(Number(value)):'—');
 
   function freshness(lastScoutAt,now){
     if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Unknown';
