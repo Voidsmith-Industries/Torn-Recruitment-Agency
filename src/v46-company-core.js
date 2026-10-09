@@ -95,15 +95,17 @@
     const known=results.filter(r=>r.known);
     const totalWeight=known.reduce((sum,r)=>sum+(r.weight||1),0);
     const earned=known.filter(r=>r.passed).reduce((sum,r)=>sum+(r.weight||1),0);
-    const score=totalWeight?Math.round(earned/totalWeight*100):0;
+    const score=totalWeight?Math.round(earned/totalWeight*100):null;
     const hardFailed=unwaivedHardFailures.length>0;
     const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':'Eligible';
     return {results,failures,hardFailures,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
   function ratioScore(req,facts){
-    const actual=Number(facts?.[req.field]);
-    const target=Number(req.value);
+    const rawActual=facts?.[req.field],rawTarget=req.value;
+    if(rawActual===null||rawActual===undefined||text(rawActual)===''||rawTarget===null||rawTarget===undefined||text(rawTarget)==='')return null;
+    const actual=Number(rawActual);
+    const target=Number(rawTarget);
     if(!Number.isFinite(actual)||!Number.isFinite(target))return null;
     if(['gte','gt'].includes(req.operator))return target<=0?100:clamp(actual/target*100);
     if(['lte','lt'].includes(req.operator))return actual<=target?100:(actual<=0?0:clamp(target/actual*100));
@@ -115,8 +117,8 @@
     const criteria=evaluateCriteria(vacancy.criteria,facts,waivers);
     const measured=vacancy.criteria.map(req=>({req,score:ratioScore(req,facts)})).filter(v=>v.score!==null);
     const totalWeight=measured.reduce((sum,v)=>sum+(v.req.weight||1),0);
-    const raw=totalWeight?measured.reduce((sum,v)=>sum+v.score*(v.req.weight||1),0)/totalWeight:0;
-    const matchScore=Math.round(clamp(raw));
+    const raw=totalWeight?measured.reduce((sum,v)=>sum+v.score*(v.req.weight||1),0)/totalWeight:null;
+    const matchScore=raw===null?null:Math.round(clamp(raw));
     return {
       vacancyId:vacancy.vacancyId,
       matchScore,
