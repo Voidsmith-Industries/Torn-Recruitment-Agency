@@ -312,3 +312,17 @@ test('v4.9 private-chat handoff rechecks current DNC and discards stale draft',a
   db.close();
   dom.window.close();
 });
+
+
+test('v4.9 private-chat input selection requires explicit target identity',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><div class="chat-window" data-user-id="111"><textarea id="wrong"></textarea></div><div class="chat-window"><a href="https://www.torn.com/profiles.php?XID=222">Target</a><textarea id="right"></textarea></div></body></html>',{url:'https://www.torn.com/profiles.php?XID=222'});
+  global.window=dom.window;
+  global.document=dom.window.document;
+  global.location=dom.window.location;
+  global.getComputedStyle=dom.window.getComputedStyle;
+  for(const id of ['wrong','right'])document.getElementById(id).getBoundingClientRect=()=>({width:100,height:20});
+
+  assert.equal(App._test.findPrivateChatInput('222')?.id,'right');
+  assert.equal(App._test.findPrivateChatInput('333'),null);
+  dom.window.close();
+});
