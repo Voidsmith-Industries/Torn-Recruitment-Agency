@@ -213,6 +213,11 @@
   async function restorePendingPrivateChatDraft(timeoutMs=6500){
     const userId=currentProfileUserId();if(!userId)return false;
     const plan=Messaging.consumePrivateChatDraft(userId);if(!plan)return false;
+    if(['company','faction'].includes(text(plan.domain).toLowerCase())){
+      const domain=text(plan.domain).toLowerCase();
+      const current=await idb.get(domain==='faction'?'factionRecruitment':'companyRecruitment',userId);
+      if(current?.doNotContact===true&&plan.dncOverrideConfirmed!==true)throw new Error('Do Not Contact is currently set for this recruitment domain. The queued private-chat draft was discarded.');
+    }
     const started=Date.now();let clicked=false;
     try{
       while(Date.now()-started<timeoutMs){
@@ -240,7 +245,7 @@
       if(!eligibility.eligible){try{targetWindow?.close?.();}catch{}const label=kind==='company'?'company':'faction';if(eligibility.known===false)throw new Error(`Could not verify ${playerName}'s ${label} affiliation. Recruitment stopped.`);throw new Error(`${playerName} already belongs to ${eligibility.currentName||('a '+label)}. Recruitment stopped.`);}
       const template=kind==='company'?recruitment.companyRecruitmentMessage:recruitment.factionRecruitmentMessage;
       const values=kind==='company'?{userId:targetId,name:playerName,company_name:state.settings.ownCompanyName,company_type:recruitment.companyType}:{userId:targetId,name:playerName,faction_name:recruitment.factionName};
-      const plan=Messaging.recruitmentChatPlan(kind,template,values);
+      const plan={...Messaging.recruitmentChatPlan(kind,template,values),dncOverrideConfirmed:options?.overrideDnc===true&&options?.dncConfirmed===true};
       Messaging.queuePrivateChatDraft(plan);
       if(targetWindow)targetWindow.location.href=plan.profileUrl;else globalThis.open?.(plan.profileUrl,'_blank','noopener');
       toast(`${playerName} is available. Torn private chat is being prepared; you still press Send.`);
