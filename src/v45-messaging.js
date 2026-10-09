@@ -63,11 +63,14 @@
 
   function companyRecruitmentEligibility(response = {}) {
     const user=response?.user&&typeof response.user==='object'?response.user:{};
-    const hasJob=Object.prototype.hasOwnProperty.call(response,'job')||Object.prototype.hasOwnProperty.call(user,'job');
-    if(!hasJob)return {eligible:false,known:false,currentName:'',currentId:''};
-    const job=Object.prototype.hasOwnProperty.call(response,'job')?response.job:user.job;
-    const type=text(job?.type).toLowerCase();
-    if (job && type === 'company') {
+    const hasTop=Object.prototype.hasOwnProperty.call(response,'job'),hasNested=Object.prototype.hasOwnProperty.call(user,'job');
+    if(!hasTop&&!hasNested)return {eligible:false,known:false,currentName:'',currentId:''};
+    const job=hasTop?response.job:user.job;
+    if(job===null)return {eligible:true,known:true,currentName:'',currentId:''};
+    if(!job||typeof job!=='object')return {eligible:false,known:false,currentName:'',currentId:''};
+    const type=text(job.type).toLowerCase();
+    if(!type)return {eligible:false,known:false,currentName:'',currentId:''};
+    if (type === 'company') {
       const currentId = text(job.id ?? job.company_id ?? job.companyId);
       return {
         eligible:false,
@@ -81,19 +84,20 @@
 
   function factionRecruitmentEligibility(response = {}) {
     const user=response?.user&&typeof response.user==='object'?response.user:{};
-    const hasFaction=Object.prototype.hasOwnProperty.call(response,'faction')||Object.prototype.hasOwnProperty.call(user,'faction');
-    if(!hasFaction)return {eligible:false,known:false,currentName:'',currentId:''};
-    const faction=Object.prototype.hasOwnProperty.call(response,'faction')?response.faction:user.faction;
-    if (faction && (faction.id != null || text(faction.name))) {
-      const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
-      return {
-        eligible:false,
-        known:true,
-        currentName:text(faction.name ?? faction.faction_name ?? faction.factionName) || (currentId ? `Faction #${currentId}` : 'a faction'),
-        currentId
-      };
-    }
-    return {eligible:true,known:true,currentName:'',currentId:''};
+    const hasTop=Object.prototype.hasOwnProperty.call(response,'faction'),hasNested=Object.prototype.hasOwnProperty.call(user,'faction');
+    if(!hasTop&&!hasNested)return {eligible:false,known:false,currentName:'',currentId:''};
+    const faction=hasTop?response.faction:user.faction;
+    if(faction===null)return {eligible:true,known:true,currentName:'',currentId:''};
+    if(!faction||typeof faction!=='object')return {eligible:false,known:false,currentName:'',currentId:''};
+    const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
+    const currentName=text(faction.name ?? faction.faction_name ?? faction.factionName);
+    if(!currentId&&!currentName)return {eligible:false,known:false,currentName:'',currentId:''};
+    return {
+      eligible:false,
+      known:true,
+      currentName:currentName || (currentId ? `Faction #${currentId}` : 'a faction'),
+      currentId
+    };
   }
 
   function profileUrl(userId) {
