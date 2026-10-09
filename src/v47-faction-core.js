@@ -94,7 +94,7 @@
     const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
     const results=normalized.map(req=>{
       const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
+      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
       return {
         ...req,
         known:verdict.known,
@@ -104,16 +104,17 @@
         effectivePass:verdict.passed||Boolean(waiver)
       };
     });
-    const hardFailures=results.filter(result=>result.kind==='Hard'&&!result.passed);
+    const hardFailures=results.filter(result=>result.kind==='Hard'&&result.known&&!result.passed);
+    const unknownHard=results.filter(result=>result.kind==='Hard'&&!result.known);
     const unwaivedHardFailures=hardFailures.filter(result=>!result.waived);
-    const failures=results.filter(result=>!result.passed);
+    const failures=results.filter(result=>result.known&&!result.passed);
     const known=results.filter(result=>result.known);
     const totalWeight=known.reduce((sum,result)=>sum+(result.weight||1),0);
     const earned=known.filter(result=>result.passed).reduce((sum,result)=>sum+(result.weight||1),0);
     const score=totalWeight?Math.round(earned/totalWeight*100):null;
     const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':'Eligible';
-    return {results,failures,hardFailures,unwaivedHardFailures,hardFailed,eligibility,score};
+    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
+    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
   function ratioScore(req,facts){
@@ -137,9 +138,9 @@
     return {
       profileId:profile.profileId,
       matchScore,
-      eligible:!criteria.hardFailed,
+      eligible:criteria.eligibility==='Eligible'||criteria.eligibility==='Eligible by Waiver',
       hardFailed:criteria.hardFailed,
-      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
+      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.eligibility==='Unknown'?'Unknown':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
       criteria
     };
   }
@@ -185,11 +186,13 @@
       {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
     ];
     const scoredRows=rows.slice(0,6);
+    const primaryRows=rows.slice(0,5);
+    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
     const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
     for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
-    const rawScore=Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
+    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=Math.round(clamp(rawScore-penalty));
+    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
     const explanation=rows.slice(0,6)
       .map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`)
       .join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
