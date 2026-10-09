@@ -272,7 +272,20 @@ test('v4.9 acquisition paths preserve missing Scout, work-stat and company facts
 test('v4.9 Scout shared patch only persists measured optional facts',()=>{
   const fs=require('node:fs');
   const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
-  assert.match(source,/const scoutShared=\{name:profile\.name,fit:/);
+  assert.match(source,/const scoutShared=\{name:profile\.name,lastScoutAt:/);
+  assert.match(source,/const measuredFit=finite\(snapshot\.currentFit\?\?snapshot\.originalFit\)/);
+  assert.match(source,/if\(measuredFit!==null\)\{scoutShared\.fit=measuredFit;scoutShared\.fitType=/);
   assert.match(source,/if\(value!==null&&value!==undefined&&value!==''\)scoutShared\[key\]=value/);
   assert.match(source,/repositories\.players\.ensure\(String\(id\),scoutShared,'scout',capturedAt\)/);
+});
+
+test('v4.9 Company workflow saves never replay candidate facts into shared intelligence',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
+  const start=source.indexOf('async function saveCandidate(candidate)');
+  const end=source.indexOf('async function changeCandidateStage',start);
+  assert.ok(start>=0&&end>start);
+  const saveCandidate=source.slice(start,end);
+  assert.match(saveCandidate,/skipShared:true/);
+  assert.doesNotMatch(saveCandidate,/sharedPatch/);
 });
