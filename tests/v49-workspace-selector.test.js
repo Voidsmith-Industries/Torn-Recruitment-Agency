@@ -240,3 +240,19 @@ test('CodeQL workflow is pinned and least-privilege',()=>{
   assert.match(yaml,/github\/codeql-action\/init@[0-9a-f]{40}/);
   assert.match(yaml,/github\/codeql-action\/analyze@[0-9a-f]{40}/);
 });
+
+
+test('legacy startup migration is one-time and cannot use workflow timestamps as observation authority',()=>{
+  const fs=require('node:fs');
+  const app=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
+  const start=app.indexOf('async function migrateLegacyUsers()');
+  const end=app.indexOf('function recruitmentDomainForFeed',start);
+  assert.ok(start>=0&&end>start);
+  const migration=app.slice(start,end);
+  assert.match(migration,/v45-legacy-users-migration-v2/);
+  assert.match(migration,/marker\?\.complete===true/);
+  assert.match(migration,/skipShared:true/);
+  assert.match(migration,/existingFaction/);
+  assert.match(migration,/existingCompany/);
+  assert.doesNotMatch(migration,/row\.updatedAt|row\.createdAt|candidate\?\.updatedAt|candidate\?\.createdAt/);
+});
