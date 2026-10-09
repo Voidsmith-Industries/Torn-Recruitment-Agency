@@ -1963,30 +1963,38 @@
   }
 
   function companyRecruitmentEligibility(response = {}) {
-    const job = response?.job ?? response?.user?.job ?? null;
-    const type = text(job?.type).toLowerCase();
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasJob=Object.prototype.hasOwnProperty.call(response,'job')||Object.prototype.hasOwnProperty.call(user,'job');
+    if(!hasJob)return {eligible:false,known:false,currentName:'',currentId:''};
+    const job=Object.prototype.hasOwnProperty.call(response,'job')?response.job:user.job;
+    const type=text(job?.type).toLowerCase();
     if (job && type === 'company') {
       const currentId = text(job.id ?? job.company_id ?? job.companyId);
       return {
         eligible:false,
+        known:true,
         currentName:text(job.name ?? job.company_name ?? job.companyName) || (currentId ? `Company #${currentId}` : 'a company'),
         currentId
       };
     }
-    return {eligible:true,currentName:'',currentId:''};
+    return {eligible:true,known:true,currentName:'',currentId:''};
   }
 
   function factionRecruitmentEligibility(response = {}) {
-    const faction = response?.faction ?? response?.user?.faction ?? null;
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasFaction=Object.prototype.hasOwnProperty.call(response,'faction')||Object.prototype.hasOwnProperty.call(user,'faction');
+    if(!hasFaction)return {eligible:false,known:false,currentName:'',currentId:''};
+    const faction=Object.prototype.hasOwnProperty.call(response,'faction')?response.faction:user.faction;
     if (faction && (faction.id != null || text(faction.name))) {
       const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
       return {
         eligible:false,
+        known:true,
         currentName:text(faction.name ?? faction.faction_name ?? faction.factionName) || (currentId ? `Faction #${currentId}` : 'a faction'),
         currentId
       };
     }
-    return {eligible:true,currentName:'',currentId:''};
+    return {eligible:true,known:true,currentName:'',currentId:''};
   }
 
   function profileUrl(userId) {
@@ -2378,9 +2386,10 @@
         for (const item of list) {
           const currentObserved=Number(current?.lastObservedAt),incomingObserved=Number(item.patch?.lastObservedAt);
           const currentIsAuthoritative=Number.isFinite(currentObserved)&&currentObserved>0;
-          const incomingIsNewer=Number.isFinite(incomingObserved)&&incomingObserved>currentObserved;
+          const incomingHasObservation=Number.isFinite(incomingObserved)&&incomingObserved>0;
+          const incomingIsNewer=incomingHasObservation&&(!currentIsAuthoritative||incomingObserved>currentObserved);
           let patch=item.patch;
-          if(currentIsAuthoritative&&!incomingIsNewer){
+          if(current&&(!incomingHasObservation||(currentIsAuthoritative&&!incomingIsNewer))){
             const safe={};
             for(const [key,value] of Object.entries(item.patch||{})){
               if(key==='lastObservedAt')continue;
@@ -2652,19 +2661,20 @@
     const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
     const results=normalized.map(req=>{
       const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&!verdict.passed?waiverFor(req.id,waivers):null;
+      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers):null;
       return {...req,known:verdict.known,passed:verdict.passed,waived:Boolean(waiver),waiver,effectivePass:verdict.passed||Boolean(waiver)};
     });
-    const hardFailures=results.filter(r=>r.kind==='Hard'&&!r.passed);
+    const hardFailures=results.filter(r=>r.kind==='Hard'&&r.known&&!r.passed);
+    const unknownHard=results.filter(r=>r.kind==='Hard'&&!r.known);
     const unwaivedHardFailures=hardFailures.filter(r=>!r.waived);
-    const failures=results.filter(r=>!r.passed);
+    const failures=results.filter(r=>r.known&&!r.passed);
     const known=results.filter(r=>r.known);
     const totalWeight=known.reduce((sum,r)=>sum+(r.weight||1),0);
     const earned=known.filter(r=>r.passed).reduce((sum,r)=>sum+(r.weight||1),0);
     const score=totalWeight?Math.round(earned/totalWeight*100):null;
     const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':'Eligible';
-    return {results,failures,hardFailures,unwaivedHardFailures,hardFailed,eligibility,score};
+    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
+    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
   function ratioScore(req,facts){
@@ -2688,9 +2698,9 @@
     return {
       vacancyId:vacancy.vacancyId,
       matchScore,
-      eligible:!criteria.hardFailed,
+      eligible:criteria.eligibility==='Eligible'||criteria.eligibility==='Eligible by Waiver',
       hardFailed:criteria.hardFailed,
-      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
+      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.eligibility==='Unknown'?'Unknown':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
       criteria
     };
   }
@@ -2727,11 +2737,13 @@
       {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
     ];
     const scoredRows=rows.slice(0,6);
+    const primaryRows=rows.slice(0,5);
+    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
     const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
     for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
-    const rawScore=Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
+    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=Math.round(clamp(rawScore-penalty));
+    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
     const explanation=scoredRows.map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`).join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
     return {score,rawScore,penalty,availableWeight,breakdown:rows,explanation};
   }
@@ -3663,7 +3675,7 @@
     const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
     const results=normalized.map(req=>{
       const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
+      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
       return {
         ...req,
         known:verdict.known,
@@ -3673,16 +3685,17 @@
         effectivePass:verdict.passed||Boolean(waiver)
       };
     });
-    const hardFailures=results.filter(result=>result.kind==='Hard'&&!result.passed);
+    const hardFailures=results.filter(result=>result.kind==='Hard'&&result.known&&!result.passed);
+    const unknownHard=results.filter(result=>result.kind==='Hard'&&!result.known);
     const unwaivedHardFailures=hardFailures.filter(result=>!result.waived);
-    const failures=results.filter(result=>!result.passed);
+    const failures=results.filter(result=>result.known&&!result.passed);
     const known=results.filter(result=>result.known);
     const totalWeight=known.reduce((sum,result)=>sum+(result.weight||1),0);
     const earned=known.filter(result=>result.passed).reduce((sum,result)=>sum+(result.weight||1),0);
     const score=totalWeight?Math.round(earned/totalWeight*100):null;
     const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':'Eligible';
-    return {results,failures,hardFailures,unwaivedHardFailures,hardFailed,eligibility,score};
+    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
+    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
   function ratioScore(req,facts){
@@ -3706,9 +3719,9 @@
     return {
       profileId:profile.profileId,
       matchScore,
-      eligible:!criteria.hardFailed,
+      eligible:criteria.eligibility==='Eligible'||criteria.eligibility==='Eligible by Waiver',
       hardFailed:criteria.hardFailed,
-      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
+      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.eligibility==='Unknown'?'Unknown':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
       criteria
     };
   }
@@ -3754,11 +3767,13 @@
       {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
     ];
     const scoredRows=rows.slice(0,6);
+    const primaryRows=rows.slice(0,5);
+    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
     const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
     for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
-    const rawScore=Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
+    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=Math.round(clamp(rawScore-penalty));
+    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
     const explanation=rows.slice(0,6)
       .map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`)
       .join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
@@ -5425,7 +5440,7 @@
     try{
       const response=await tornRequest(kind==='company'?`user/${targetId}/job`:`user/${targetId}/faction`);
       const eligibility=kind==='company'?Messaging.companyRecruitmentEligibility(response):Messaging.factionRecruitmentEligibility(response);
-      if(!eligibility.eligible){try{targetWindow?.close?.();}catch{}const label=kind==='company'?'company':'faction';throw new Error(`${playerName} already belongs to ${eligibility.currentName||('a '+label)}. Recruitment stopped.`);}
+      if(!eligibility.eligible){try{targetWindow?.close?.();}catch{}const label=kind==='company'?'company':'faction';if(eligibility.known===false)throw new Error(`Could not verify ${playerName}'s ${label} affiliation. Recruitment stopped.`);throw new Error(`${playerName} already belongs to ${eligibility.currentName||('a '+label)}. Recruitment stopped.`);}
       const template=kind==='company'?recruitment.companyRecruitmentMessage:recruitment.factionRecruitmentMessage;
       const values=kind==='company'?{userId:targetId,name:playerName,company_name:state.settings.ownCompanyName,company_type:recruitment.companyType}:{userId:targetId,name:playerName,faction_name:recruitment.factionName};
       const plan=Messaging.recruitmentChatPlan(kind,template,values);
