@@ -91,7 +91,7 @@
       try { id = Domain.normalizeUserId(userId); } catch { return; }
       const explicitAt=legacyTimestamp(observedAt,0);
       const hasExplicitAt=Number.isFinite(explicitAt)&&explicitAt>0;
-      const processingAt=hasExplicitAt?explicitAt:legacyTimestamp(fallbackAt,Date.now());
+      const processingAt=hasExplicitAt?explicitAt:0;
       const clean = definedPatch({...patch,...(hasExplicitAt?{lastObservedAt:explicitAt}:{})});
       const list = map.get(id) || [];
       list.push({patch:clean,source,observedAt:processingAt});
