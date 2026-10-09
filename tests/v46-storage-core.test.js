@@ -127,3 +127,29 @@ test('legacy backfill does not invent lastObservedAt when no historical timestam
   assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
   db.close();
 });
+
+
+test('legacy candidate workflow updatedAt does not become Last Observed',async()=>{
+  const name=`ra-storage-workflow-not-observation-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'998',
+    name:'Workflow Only',
+    pipelineStage:'Replied',
+    discoverySources:['MANUAL'],
+    createdAt:'2026-01-01T00:00:00.000Z',
+    updatedAt:'2026-10-09T12:00:00.000Z'
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','998');
+  assert.ok(player);
+  assert.equal(player.name,'Workflow Only');
+  assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
+  db.close();
+});
