@@ -51,3 +51,51 @@ test('Compare presents selected Torn players side by side using shared facts and
 test('Task 8 Torn game routes are owned by the v4.6 Company platform',()=>{
   for(const route of ['company-opportunity','company-compare'])assert.equal(Platform._test.IMPLEMENTED_ROUTES.has(route),true,route);
 });
+
+
+test('Opportunity queue excludes unknown evidence instead of inventing neutral scores',()=>{
+  const unknown={userId:'909',name:'Unknown',pipelineStage:'Not Contacted',eligibility:'Unknown',availability:'Unknown',fit:null,ee:null,lastActive:null,playerRecord:{userId:'909'},companyRecord:{userId:'909',domain:'company',pipelineStage:'Not Contacted',followUps:[],doNotContact:false},pinnedVacancyId:'',suggestedVacancyId:'',vacancyEvaluations:[],vacancyOptions:[]};
+  const result=OpportunityUI.buildOpportunityRows([unknown],{weights,now:NOW})[0];
+  const byLabel=Object.fromEntries(result.opportunity.breakdown.map(item=>[item.label,item]));
+  for(const label of ['Match','Fit','Availability','Activity','Freshness'])assert.equal(byLabel[label].known,false,label);
+  assert.equal(result.intelligenceFreshness,'Unknown');
+  assert.match(result.opportunity.explanation,/Match: Unknown \(excluded\)/);
+});
+
+
+test('Company Opportunity renders excluded evidence as unknown, never zero',()=>{
+  const unknown={userId:'910',name:'Unknown Render',pipelineStage:'Not Contacted',eligibility:'Unknown',availability:'Unknown',fit:null,lastActive:null,playerRecord:{userId:'910'},companyRecord:{userId:'910',domain:'company',followUps:[],doNotContact:false},vacancyEvaluations:[{vacancyId:'v0',matchScore:null,eligible:true}],vacancyOptions:[{vacancyId:'v0',name:'Unknown Vacancy'}],suggestedVacancyId:'v0'};
+  const model=OpportunityUI.buildOpportunityRows([unknown],{weights,now:NOW});
+  const html=OpportunityUI.renderOpportunityPage(model);
+  assert.match(html,/Match: —/);
+  assert.match(html,/Fit: —/);
+  assert.match(html,/Match: — \(excluded\)/);
+  assert.match(html,/Fit: — \(excluded\)/);
+  assert.doesNotMatch(html,/Match: —[^<]*= 0/);
+  assert.doesNotMatch(html,/Fit: —[^<]*= 0/);
+  assert.doesNotMatch(html,/Match: 0/);
+  assert.doesNotMatch(html,/Fit: 0/);
+});
+
+
+test('Company Compare renders unknown EE and salary as em dash, never zero',()=>{
+  const rows=[{
+    userId:'999',
+    name:'Unknown Compare',
+    pipelineStage:'Not Contacted',
+    eligibility:'Unknown',
+    availability:'Unknown',
+    fit:null,
+    ee:null,
+    expectedSalary:null,
+    desiredRole:'',
+    playerRecord:{currentCompany:''},
+    vacancyEvaluations:[],
+    vacancyOptions:[]
+  }];
+  const html=OpportunityUI.renderComparePage(rows,['999']);
+  assert.match(html,/EE<b>—<\/b>/);
+  assert.match(html,/Expected Salary<b>—<\/b>/);
+  assert.doesNotMatch(html,/EE<b>0<\/b>/);
+  assert.doesNotMatch(html,/Expected Salary<b>\$0<\/b>/);
+});

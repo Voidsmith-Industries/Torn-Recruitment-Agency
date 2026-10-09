@@ -12,11 +12,11 @@
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const hours=(now,at)=>Math.max(0,(number(now)-number(at,0))/3600000);
-  const metric=value=>Number.isFinite(Number(value))?Number(value).toLocaleString():'—';
-  const score=value=>Number.isFinite(Number(value))?Math.round(Number(value)):'—';
+  const metric=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toLocaleString():'—');
+  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Math.round(Number(value)):'—');
 
   function freshness(lastScoutAt,now){
-    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Very stale';
+    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Unknown';
     const age=hours(now,lastScoutAt);
     if(age<=24)return 'Fresh';
     if(age<=72)return 'Aging';
@@ -46,7 +46,7 @@
         selectedMatchSource:'Pinned specialist',
         selectedProfileId:pinnedId,
         selectedProfileName:profileName(row,pinnedId),
-        selectedMatchScore:number(pinned.matchScore,0),
+        selectedMatchScore:pinned.matchScore??null,
         evaluation:pinned
       };
     }
@@ -58,7 +58,7 @@
         selectedMatchSource:'Suggested specialist',
         selectedProfileId:suggestedId,
         selectedProfileName:profileName(row,suggestedId),
-        selectedMatchScore:number(suggested.matchScore,0),
+        selectedMatchScore:suggested.matchScore??null,
         evaluation:suggested
       };
     }
@@ -72,7 +72,7 @@
         selectedMatchSource:'Suggested specialist',
         selectedProfileId:profileId,
         selectedProfileName:profileName(row,profileId),
-        selectedMatchScore:number(best.matchScore,0),
+        selectedMatchScore:best.matchScore??null,
         evaluation:best
       };
     }
@@ -81,7 +81,7 @@
       selectedMatchSource:'Faction Baseline',
       selectedProfileId:'',
       selectedProfileName:'',
-      selectedMatchScore:number(row.baselineScore,0),
+      selectedMatchScore:row.baselineScore??null,
       evaluation:null
     };
   }
@@ -95,9 +95,9 @@
       const player=row.player||{};
       const input={
         match:chosen.selectedMatchScore,
-        fit:number(row.fit,0),
+        fit:row.fit??null,
         availability:text(row.availability),
-        lastActiveAgeHours:Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):999,
+        lastActiveAgeHours:row.lastActive!==null&&row.lastActive!==undefined&&Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):null,
         intelligenceFreshness:freshness(player.lastScoutAt,now),
         contactPenalty:row.doNotContact===true||factionRecord.doNotContact===true?100:0,
         followUpDue:followUpDue(factionRecord,now)
@@ -130,7 +130,7 @@
   }
 
   function renderBreakdown(opportunity={}){
-    return (opportunity.breakdown||[]).map(item=>`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
+    return (opportunity.breakdown||[]).map(item=>item.known===false?`<span>${esc(item.label)}: — (excluded)</span>`:`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
   }
 
   function renderOpportunityPage(rows=[]){

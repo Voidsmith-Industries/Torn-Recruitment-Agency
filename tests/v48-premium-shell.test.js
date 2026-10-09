@@ -7,10 +7,11 @@ const ROOT = path.join(__dirname, '..');
 const appSource = fs.readFileSync(path.join(ROOT, 'src', 'v45-app.js'), 'utf8');
 const wrapperSource = fs.readFileSync(path.join(ROOT, 'R4G3RUNN3R-Recruitment-Agency.user.js'), 'utf8');
 
-test('v4.8 shell provides an explicit Company/Faction mode switch', () => {
-  assert.match(appSource, /class=\\?"ra-domain-switch/);
-  assert.match(appSource, /data-domain=\\?"company/);
-  assert.match(appSource, /data-domain=\\?"faction/);
+test('v4.9 shell provides one top-level Company/Faction workspace selector', () => {
+  assert.match(appSource, /id=\\?"ra-workspace-toggle/);
+  assert.match(appSource, /data-workspace-domain=\\?"company/);
+  assert.match(appSource, /data-workspace-domain=\\?"faction/);
+  assert.doesNotMatch(appSource, /class=\\?"ra-domain-switch/);
 });
 
 test('v4.8 settings exposes optional feature toggles instead of forcing every workspace into navigation', () => {
@@ -19,9 +20,10 @@ test('v4.8 settings exposes optional feature toggles instead of forcing every wo
   assert.match(appSource, /optionalModules/);
 });
 
-test('v4.8 premium shell uses Voidsmith graphite and restrained red accent tokens', () => {
-  assert.match(appSource, /--ra-bg:#0b0b0d/);
-  assert.match(appSource, /--ra-accent:#b94a4a/);
+test('v4.9 premium shell uses Voidsmith void surfaces and purple brand accents', () => {
+  assert.match(appSource, /--ra-bg:#08070b/);
+  assert.match(appSource, /--ra-accent:#9b4dff/);
+  assert.match(appSource, /--ra-accent2:#d06cff/);
   assert.match(appSource, /VOIDSMITH INDUSTRIES/);
 });
 

@@ -113,3 +113,53 @@ test('Faction Compare exposes shared facts and Faction results only and caps fou
   assert.doesNotMatch(html,/Expected Salary/);
   assert.doesNotMatch(html,/Vacancy/);
 });
+
+
+test('Faction Opportunity excludes unknown evidence instead of manufacturing baseline scores',()=>{
+  const unknown=row({availability:'Unknown',fit:null,lastActive:null,baselineScore:null,pinnedSpecialistProfileId:'',suggestedProfileId:'',profileEvaluations:[],profileOptions:[],player:{userId:'101'},factionRecord:{userId:'101',pipelineStage:'Prospect',followUps:[],doNotContact:false}});
+  const result=ui().buildOpportunityRows([unknown],{weights,now:NOW})[0];
+  const byLabel=Object.fromEntries(result.opportunity.breakdown.map(item=>[item.label,item]));
+  for(const label of ['Match','Fit','Availability','Activity','Freshness'])assert.equal(byLabel[label].known,false,label);
+  assert.equal(result.selectedMatchScore,null);
+  assert.equal(result.intelligenceFreshness,'Unknown');
+  assert.match(result.opportunity.explanation,/Match: Unknown \(excluded\)/);
+});
+
+
+test('Faction Opportunity renders excluded evidence as unknown, never zero',()=>{
+  const unknown=row({availability:'Unknown',fit:null,lastActive:null,baselineScore:null,pinnedSpecialistProfileId:'',suggestedProfileId:'',profileEvaluations:[],profileOptions:[],player:{userId:'101'},factionRecord:{userId:'101',pipelineStage:'Prospect',followUps:[],doNotContact:false}});
+  const model=ui().buildOpportunityRows([unknown],{weights,now:NOW});
+  const html=ui().renderOpportunityPage(model);
+  assert.match(html,/Match: —/);
+  assert.match(html,/Fit: —/);
+  assert.match(html,/Match: — \(excluded\)/);
+  assert.match(html,/Fit: — \(excluded\)/);
+  assert.doesNotMatch(html,/Match: —[^<]*= 0/);
+  assert.doesNotMatch(html,/Fit: —[^<]*= 0/);
+  assert.doesNotMatch(html,/Match: 0/);
+  assert.doesNotMatch(html,/Fit: 0/);
+});
+
+
+test('Faction Compare renders unknown shared facts as em dash, never zero',()=>{
+  const unknown=row({
+    userId:'909',
+    name:'Unknown Compare',
+    ee:null,
+    level:null,
+    activity30:null,
+    rwHits30:null,
+    attacks30:null,
+    fit:null,
+    baselineScore:null,
+    player:{},
+    factionRecord:{userId:'909',pipelineStage:'Prospect',doNotContact:false}
+  });
+  const html=ui().renderComparePage([unknown],['909']);
+  for(const label of ['EE','Level','Activity 30d','RW Hits 30d','Attacks 30d']){
+    assert.match(html,new RegExp(label+'<b>—<\\/b>'));
+  }
+  assert.doesNotMatch(html,/EE<b>0<\/b>/);
+  assert.doesNotMatch(html,/Level<b>0<\/b>/);
+  assert.doesNotMatch(html,/Activity 30d<b>0<\/b>/);
+});

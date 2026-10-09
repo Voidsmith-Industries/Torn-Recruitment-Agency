@@ -195,3 +195,39 @@ test('Faction Today queue recognizes Replied, overdue follow-up, stale stage and
     'High opportunity'
   ]);
 });
+
+
+test('unknown Faction criteria and specialist evidence remain unscored',()=>{
+  const Core=requireFaction();
+  const criteria=[{id:'fit',field:'fit',operator:'gte',value:80,kind:'Preferred',weight:1}];
+  const baseline=Core.evaluateCriteria(criteria,{fit:null},[]);
+  assert.equal(baseline.score,null);
+  assert.equal(baseline.results[0].known,false);
+  const result=Core.evaluateSpecialistProfile({profileId:'unknown',name:'Unknown',status:'Active',criteria},{fit:null},[]);
+  assert.equal(result.matchScore,null);
+});
+
+
+test('unknown hard Faction requirement is Unknown, not a failure',()=>{
+  const Core=requireFaction();
+  const criteria=[{id:'rw',field:'rwHits30',operator:'gte',value:50,kind:'Hard',weight:1}];
+  const baseline=Core.evaluateCriteria(criteria,{rwHits30:null},[]);
+  assert.equal(baseline.eligibility,'Unknown');
+  assert.equal(baseline.hardFailed,false);
+  assert.equal(baseline.hardFailures.length,0);
+  assert.equal(baseline.unknownHard.length,1);
+  assert.equal(baseline.failures.length,0);
+  const profile=Core.evaluateSpecialistProfile({profileId:'u',name:'Unknown',status:'Active',criteria},{rwHits30:null},[]);
+  assert.equal(profile.eligibility,'Unknown');
+  assert.equal(profile.eligible,false);
+  assert.equal(profile.matchScore,null);
+});
+
+test('Faction Opportunity is unknown when no substantive evidence is known',()=>{
+  const Core=requireFaction();
+  const result=Core.computeOpportunity({
+    match:null,fit:null,availability:'Unknown',lastActiveAgeHours:null,intelligenceFreshness:'Unknown',followUpDue:false,contactPenalty:0
+  },{match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
+  assert.equal(result.score,null);
+  assert.equal(result.rawScore,null);
+});

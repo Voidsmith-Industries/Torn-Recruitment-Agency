@@ -8,7 +8,7 @@
   const SHARED_PLAYER_FIELDS = Object.freeze([
     'name','level','ee','man','int','end','total','factionId','factionName',
     'currentCompany','currentCompanyId','currentCompanyRating','currentCompanyPosition','companyCheckedAt',
-    'networth','fit','fitType','lastActive','onlineStatus','lastScoutAt','lastGlobalAt',
+    'networth','fit','fitType','lastActive','onlineStatus','lastScoutAt','lastGlobalAt','lastObservedAt',
     'activity30','xanax30','refills30','attacks30','rwHits30','scoutStatus'
   ]);
 
@@ -32,7 +32,8 @@
 
   function mergePlayerIntelligence(existing, patch = {}, source = 'unknown', observedAt = Date.now()) {
     const at = timestamp(observedAt);const userId = normalizeUserId(patch.userId ?? existing?.userId);const next = {...(existing || {}), userId};
-    for (const key of SHARED_PLAYER_FIELDS) if (Object.prototype.hasOwnProperty.call(patch, key)) next[key] = patch[key];
+    for (const key of SHARED_PLAYER_FIELDS) if (key!=='lastObservedAt'&&Object.prototype.hasOwnProperty.call(patch, key)) next[key] = patch[key];
+    const previousObserved=Number(existing?.lastObservedAt),incomingObserved=Number(patch?.lastObservedAt);const hasPreviousObserved=Number.isFinite(previousObserved)&&previousObserved>0,hasIncomingObserved=Number.isFinite(incomingObserved)&&incomingObserved>0;if(hasPreviousObserved||hasIncomingObserved)next.lastObservedAt=Math.max(hasPreviousObserved?previousObserved:0,hasIncomingObserved?incomingObserved:0);
     const sourceLabel = text(source) || 'unknown';next.sources = uniqueStrings([...(Array.isArray(existing?.sources) ? existing.sources : []), sourceLabel]);next.createdAt = existing?.createdAt == null ? at : timestamp(existing.createdAt, at);next.updatedAt = Math.max(timestamp(existing?.updatedAt, 0), at);
     const history = Array.isArray(existing?.nameHistory) ? existing.nameHistory.map(item => ({name:text(item?.name), observedAt:timestamp(item?.observedAt, at)})).filter(item => item.name) : [];
     const currentName = text(next.name);if (currentName && history.at(-1)?.name !== currentName) history.push({name:currentName, observedAt:at});next.nameHistory = history;return next;

@@ -80,3 +80,22 @@ test('Company HTML renderers expose operational links and escaped player content
   assert.doesNotMatch(candidates,/<Alpha>/);
   assert.match(pipeline,/data-company-stage="Replied"/);
 });
+
+
+test('v4.9 Results preserve unknown Recruitment Fit and recorded contact history',()=>{
+  const row=CompanyUI.buildCandidateRows([{userId:'404',domain:'company',pipelineStage:'Rejected',outcomes:[{kind:'declined',at:123}],availability:'Unknown'}],[{userId:'404',name:'Delta',recruitmentFit:null}],{eligibilityFor})[0];
+  const html=CompanyUI.renderCandidates([row],{layout:'expanded'});
+  assert.doesNotMatch(html,/>0\.0<\/td>/);
+  assert.match(html,/>Contacted<\/td>/);
+});
+
+
+test('Company candidate rows preserve unmeasured eligibility as null',()=>{
+  const rows=CompanyUI.buildCandidateRows(
+    [{userId:'505',domain:'company',pipelineStage:'Not Contacted',availability:'Unknown'}],
+    [{userId:'505',name:'Unknown',fit:null}],
+    {eligibilityFor:()=>({eligibility:'Unknown',score:null,hardFailed:false})}
+  );
+  assert.equal(rows[0].eligibility,'Unknown');
+  assert.equal(rows[0].eligibilityScore,null);
+});

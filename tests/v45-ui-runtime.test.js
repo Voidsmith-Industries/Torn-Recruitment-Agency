@@ -79,9 +79,10 @@ test('v4.5 application mounts and primary navigation responds to real clicks', a
 
   await openPage('company-candidates', 'Company Candidates', '#ra-content .ra-table');
 
-  const factionSwitch = document.querySelector('[data-domain="faction"]');
-  assert.ok(factionSwitch, 'Faction mode switch should exist');
+  const factionSwitch = document.getElementById('ra-workspace-toggle');
+  assert.ok(factionSwitch, 'workspace dropdown should exist');
   factionSwitch.click();
+  document.querySelector('[data-workspace-domain="faction"]').click();
   await waitFor(() => document.getElementById('ra-page-title')?.textContent === 'Faction Candidates');
   assert.equal(document.getElementById('ra-page-title').textContent, 'Faction Candidates');
   assert.ok(document.querySelector('[data-page="faction-candidates"]'), 'Faction core route should exist after switching domains');

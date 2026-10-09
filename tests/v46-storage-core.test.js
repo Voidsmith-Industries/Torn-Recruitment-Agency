@@ -109,3 +109,182 @@ test('DB12 backfill separates provenance, preserves ambiguity and is idempotent'
   assert.deepEqual(afterPlayer.nameHistory,beforePlayer.nameHistory);
   db.close();
 });
+
+
+test('legacy backfill does not invent lastObservedAt when no historical timestamp exists',async()=>{
+  const name=`ra-storage-no-observation-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('users','readwrite');
+  tx.objectStore('users').put({recordId:'company:999',userId:999,name:'No Timestamp',sourceMode:'company'});
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','999');
+  assert.ok(player);
+  assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
+  db.close();
+});
+
+
+test('legacy candidate workflow updatedAt does not become Last Observed',async()=>{
+  const name=`ra-storage-workflow-not-observation-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'998',
+    name:'Workflow Only',
+    pipelineStage:'Replied',
+    discoverySources:['MANUAL'],
+    createdAt:'2026-01-01T00:00:00.000Z',
+    updatedAt:'2026-10-09T12:00:00.000Z'
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','998');
+  assert.ok(player);
+  assert.equal(player.name,'Workflow Only');
+  assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
+  db.close();
+});
+
+
+test('legacy migration can write domain state without overwriting shared Player Intelligence',async()=>{
+  const name=`ra-storage-skip-shared-${Date.now()}-${Math.random()}`;
+  const db=await openDb(name,13,db=>{createLegacyStores(db);S.applyUpgrade(db);});
+  const idb=adapter(db);
+  const repos=S.createRepositories(idb);
+
+  await repos.players.ensure('777',{name:'Fresh Scout',ee:99,lastObservedAt:5000},'scout',5000);
+  await repos.company.ensure('777',{
+    name:'Legacy Name',
+    ee:1,
+    pipelineStage:'Replied',
+    recruiterNote:'legacy'
+  },{
+    source:'legacy-user-company',
+    observedAt:1000,
+    skipShared:true
+  });
+
+  const player=await idb.get('playerIntelligence','777');
+  const company=await idb.get('companyRecruitment','777');
+  assert.equal(player.name,'Fresh Scout');
+  assert.equal(player.ee,99);
+  assert.equal(player.lastObservedAt,5000);
+  assert.equal(company.pipelineStage,'Replied');
+  assert.equal(company.recruiterNote,'legacy');
+  db.close();
+});
+
+
+test('legacy backfill cannot overwrite newer authoritative Player Intelligence',async()=>{
+  const name=`ra-storage-protect-modern-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'997',
+    name:'Old Legacy',
+    ee:1,
+    pipelineStage:'Replied',
+    discoverySources:['MANUAL'],
+    updatedAt:'2026-10-09T12:00:00.000Z'
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  await idb.put('playerIntelligence',{
+    userId:'997',
+    name:'New Scout',
+    nameLower:'new scout',
+    ee:99,
+    level:75,
+    lastObservedAt:5000,
+    updatedAt:5000,
+    createdAt:5000,
+    sources:['scout']
+  });
+
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','997');
+  assert.equal(player.name,'New Scout');
+  assert.equal(player.ee,99);
+  assert.equal(player.level,75);
+  assert.equal(player.lastObservedAt,5000);
+  assert.ok(player.sources.includes('legacy-candidate'));
+  db.close();
+});
+
+
+test('undated legacy backfill only fills missing fields on an existing undated Player Intelligence row',async()=>{
+  const name=`ra-storage-protect-undated-modern-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'996',
+    name:'Old Legacy',
+    ee:1,
+    pipelineStage:'Replied',
+    discoverySources:['MANUAL']
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  await idb.put('playerIntelligence',{
+    userId:'996',
+    name:'Current Unknown-Time',
+    nameLower:'current unknown-time',
+    ee:99,
+    level:75,
+    updatedAt:9000,
+    createdAt:8000,
+    sources:['manual']
+  });
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','996');
+  assert.equal(player.name,'Current Unknown-Time');
+  assert.equal(player.ee,99);
+  assert.equal(player.level,75);
+  assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
+  db.close();
+});
+
+
+test('legacy backfill leaves existing modern Company and Faction records unchanged',async()=>{
+  const name=`ra-storage-domain-authority-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'995',
+    name:'Ambiguous Legacy',
+    pipelineStage:'Replied',
+    discoverySources:['COMPANY FORUM','FACTION FORUM']
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  const company={userId:'995',domain:'company',pipelineStage:'Shortlisted',discoverySources:['MANUAL'],migrationReviewRequired:false,recruiterNote:'modern company'};
+  const faction={userId:'995',domain:'faction',pipelineStage:'Invite Ready',discoverySources:['MANUAL'],migrationReviewRequired:false,recruiterNote:'modern faction'};
+  await idb.put('companyRecruitment',company);
+  await idb.put('factionRecruitment',faction);
+
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  assert.deepEqual(await idb.get('companyRecruitment','995'),company);
+  assert.deepEqual(await idb.get('factionRecruitment','995'),faction);
+  db.close();
+});

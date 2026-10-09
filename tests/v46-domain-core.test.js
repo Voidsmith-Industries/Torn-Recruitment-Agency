@@ -26,3 +26,14 @@ test('forum-source provenance supplements missing candidate discoverySources', (
 test('faction-only legacy stages map conservatively into faction stages', () => {const shortlisted=D.legacyCandidateToFaction({userId:1,pipelineStage:'Shortlisted',recruiterNote:'keep'},1000,{ambiguous:false});const hired=D.legacyCandidateToFaction({userId:2,pipelineStage:'Hired'},1000,{ambiguous:false});assert.equal(shortlisted.pipelineStage,'Evaluating');assert.equal(hired.pipelineStage,'Joined');assert.equal(shortlisted.recruiterNote,'keep');});
 
 test('ambiguous cross-domain legacy workflow state is preserved but not guessed', () => {const source={userId:3,pipelineStage:'Replied',availability:'Available',recruiterNote:'legacy shared note',expectedSalary:5000000};const company=D.legacyCandidateToCompany(source,1000,{ambiguous:true});const faction=D.legacyCandidateToFaction(source,1000,{ambiguous:true});assert.equal(company.pipelineStage,'Not Contacted');assert.equal(faction.pipelineStage,'Prospect');assert.equal(company.migrationReviewRequired,true);assert.equal(faction.migrationReviewRequired,true);assert.equal(company.legacySharedState.pipelineStage,'Replied');assert.equal(faction.legacySharedState.recruiterNote,'legacy shared note');assert.equal(faction.legacySharedState.expectedSalary,5000000);});
+
+
+test('lastObservedAt is monotonic and changes only from explicit observation patches',()=>{
+  const first=D.mergePlayerIntelligence(null,{userId:1,name:'Alpha',lastObservedAt:2000},'api',2000);
+  const older=D.mergePlayerIntelligence(first,{userId:1,name:'Alpha',lastObservedAt:1000},'legacy',3000);
+  assert.equal(older.lastObservedAt,2000);
+  const workflow=D.mergePlayerIntelligence(older,{userId:1,name:'Alpha'},'company-workflow',4000);
+  assert.equal(workflow.lastObservedAt,2000);
+  const newer=D.mergePlayerIntelligence(workflow,{userId:1,lastObservedAt:5000},'scout',5000);
+  assert.equal(newer.lastObservedAt,5000);
+});
