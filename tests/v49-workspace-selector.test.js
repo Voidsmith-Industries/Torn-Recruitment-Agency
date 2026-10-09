@@ -226,3 +226,17 @@ test('v4.9 platform overrides must carry explicit DNC confirmation to recruitmen
   assert.match(company,/overrideDnc:override,dncConfirmed:override/);
   assert.match(faction,/overrideDnc:override,dncConfirmed:override/);
 });
+
+
+test('CodeQL workflow is pinned and least-privilege',()=>{
+  const fs=require('node:fs');
+  const path=require('node:path');
+  const yaml=fs.readFileSync(path.join(__dirname,'..','.github','workflows','codeql.yml'),'utf8');
+  assert.match(yaml,/contents:\s*read/);
+  assert.match(yaml,/actions:\s*read/);
+  assert.match(yaml,/security-events:\s*write/);
+  assert.doesNotMatch(yaml,/packages:\s*read/);
+  assert.match(yaml,/actions\/checkout@[0-9a-f]{40}/);
+  assert.match(yaml,/github\/codeql-action\/init@[0-9a-f]{40}/);
+  assert.match(yaml,/github\/codeql-action\/analyze@[0-9a-f]{40}/);
+});
