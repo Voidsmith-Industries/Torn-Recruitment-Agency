@@ -46,7 +46,7 @@
         selectedMatchSource:'Pinned specialist',
         selectedProfileId:pinnedId,
         selectedProfileName:profileName(row,pinnedId),
-        selectedMatchScore:number(pinned.matchScore,0),
+        selectedMatchScore:pinned.matchScore??null,
         evaluation:pinned
       };
     }
@@ -58,7 +58,7 @@
         selectedMatchSource:'Suggested specialist',
         selectedProfileId:suggestedId,
         selectedProfileName:profileName(row,suggestedId),
-        selectedMatchScore:number(suggested.matchScore,0),
+        selectedMatchScore:suggested.matchScore??null,
         evaluation:suggested
       };
     }
@@ -72,7 +72,7 @@
         selectedMatchSource:'Suggested specialist',
         selectedProfileId:profileId,
         selectedProfileName:profileName(row,profileId),
-        selectedMatchScore:number(best.matchScore,0),
+        selectedMatchScore:best.matchScore??null,
         evaluation:best
       };
     }
@@ -81,7 +81,7 @@
       selectedMatchSource:'Faction Baseline',
       selectedProfileId:'',
       selectedProfileName:'',
-      selectedMatchScore:number(row.baselineScore,0),
+      selectedMatchScore:row.baselineScore??null,
       evaluation:null
     };
   }

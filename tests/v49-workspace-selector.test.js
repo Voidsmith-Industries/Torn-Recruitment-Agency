@@ -139,7 +139,7 @@ test('v4.9 Player Card uses shared intelligence observation time, not workflow e
   App._test.state.db = db;
   App._test.state.settings = App.mergeSettings({});
   App._test.state.playerCard = { domain:'company', userId:'', pinned:false, popout:false };
-  await put(db, 'playerIntelligence', {userId:'654',name:'Observed',updatedAt:1000});
+  await put(db, 'playerIntelligence', {userId:'654',name:'Observed',updatedAt:5000,lastObservedAt:1000});
   await put(db, 'companyRecruitment', {userId:'654',domain:'company',pipelineStage:'Not Contacted',updatedAt:9000});
   await App._test.openPlayerCard('company','654',{force:true});
   const body=document.getElementById('ra-drawer').textContent;
