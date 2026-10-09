@@ -260,3 +260,31 @@ test('undated legacy backfill only fills missing fields on an existing undated P
   assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
   db.close();
 });
+
+
+test('legacy backfill leaves existing modern Company and Faction records unchanged',async()=>{
+  const name=`ra-storage-domain-authority-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'995',
+    name:'Ambiguous Legacy',
+    pipelineStage:'Replied',
+    discoverySources:['COMPANY FORUM','FACTION FORUM']
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  const company={userId:'995',domain:'company',pipelineStage:'Shortlisted',discoverySources:['MANUAL'],migrationReviewRequired:false,recruiterNote:'modern company'};
+  const faction={userId:'995',domain:'faction',pipelineStage:'Invite Ready',discoverySources:['MANUAL'],migrationReviewRequired:false,recruiterNote:'modern faction'};
+  await idb.put('companyRecruitment',company);
+  await idb.put('factionRecruitment',faction);
+
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  assert.deepEqual(await idb.get('companyRecruitment','995'),company);
+  assert.deepEqual(await idb.get('factionRecruitment','995'),faction);
+  db.close();
+});
