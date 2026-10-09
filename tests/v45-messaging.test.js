@@ -26,3 +26,13 @@ test('invalid message target is rejected', () => {
   assert.throws(()=>M.messagePlan('Hi',{userId:'nope'}),/valid Torn player ID/);
   assert.equal(M.composeUrl('nope'),'');
 });
+
+
+test('recruitment affiliation checks fail closed when API omits the authoritative field',()=>{
+  assert.deepEqual(M.companyRecruitmentEligibility({}),{eligible:false,known:false,currentName:'',currentId:''});
+  assert.deepEqual(M.factionRecruitmentEligibility({user:{}}),{eligible:false,known:false,currentName:'',currentId:''});
+  assert.deepEqual(M.companyRecruitmentEligibility({job:null}),{eligible:true,known:true,currentName:'',currentId:''});
+  assert.deepEqual(M.factionRecruitmentEligibility({faction:null}),{eligible:true,known:true,currentName:'',currentId:''});
+  assert.equal(M.companyRecruitmentEligibility({job:{type:'company',id:7,name:'Seven'}}).eligible,false);
+  assert.equal(M.factionRecruitmentEligibility({faction:{id:8,name:'Eight'}}).eligible,false);
+});
