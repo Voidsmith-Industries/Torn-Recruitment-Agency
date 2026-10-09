@@ -113,3 +113,14 @@ test('Faction Compare exposes shared facts and Faction results only and caps fou
   assert.doesNotMatch(html,/Expected Salary/);
   assert.doesNotMatch(html,/Vacancy/);
 });
+
+
+test('Faction Opportunity excludes unknown evidence instead of manufacturing baseline scores',()=>{
+  const unknown=row({availability:'Unknown',fit:null,lastActive:null,baselineScore:null,pinnedSpecialistProfileId:'',suggestedProfileId:'',profileEvaluations:[],profileOptions:[],player:{userId:'101'},factionRecord:{userId:'101',pipelineStage:'Prospect',followUps:[],doNotContact:false}});
+  const result=ui().buildOpportunityRows([unknown],{weights,now:NOW})[0];
+  const byLabel=Object.fromEntries(result.opportunity.breakdown.map(item=>[item.label,item]));
+  for(const label of ['Match','Fit','Availability','Activity','Freshness'])assert.equal(byLabel[label].known,false,label);
+  assert.equal(result.selectedMatchScore,null);
+  assert.equal(result.intelligenceFreshness,'Unknown');
+  assert.match(result.opportunity.explanation,/Match: Unknown \(excluded\)/);
+});

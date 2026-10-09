@@ -17,7 +17,7 @@
   const score=value=>Number.isFinite(Number(value))?Math.round(Number(value)):'—';
 
   function freshness(lastScoutAt,now){
-    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Very stale';
+    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Unknown';
     const age=hours(now,lastScoutAt);
     if(age<=24)return 'Fresh';
     if(age<=72)return 'Aging';
@@ -48,10 +48,10 @@
     return (Array.isArray(rows)?rows:[]).map(row=>{
       const vacancy=selectedVacancy(row);
       const input={
-        match:number(vacancy.evaluation?.matchScore,0),
-        fit:number(row.fit,0),
+        match:vacancy.evaluation?.matchScore??null,
+        fit:row.fit??null,
         availability:text(row.availability),
-        lastActiveAgeHours:Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):999,
+        lastActiveAgeHours:row.lastActive!==null&&row.lastActive!==undefined&&Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):null,
         intelligenceFreshness:freshness(row.playerRecord?.lastScoutAt,now),
         contactPenalty:row.doNotContact===true||row.companyRecord?.doNotContact===true?100:0,
         followUpDue:followUpDue(row.companyRecord||row,now)

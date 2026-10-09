@@ -51,3 +51,13 @@ test('Compare presents selected Torn players side by side using shared facts and
 test('Task 8 Torn game routes are owned by the v4.6 Company platform',()=>{
   for(const route of ['company-opportunity','company-compare'])assert.equal(Platform._test.IMPLEMENTED_ROUTES.has(route),true,route);
 });
+
+
+test('Opportunity queue excludes unknown evidence instead of inventing neutral scores',()=>{
+  const unknown={userId:'909',name:'Unknown',pipelineStage:'Not Contacted',eligibility:'Unknown',availability:'Unknown',fit:null,ee:null,lastActive:null,playerRecord:{userId:'909'},companyRecord:{userId:'909',domain:'company',pipelineStage:'Not Contacted',followUps:[],doNotContact:false},pinnedVacancyId:'',suggestedVacancyId:'',vacancyEvaluations:[],vacancyOptions:[]};
+  const result=OpportunityUI.buildOpportunityRows([unknown],{weights,now:NOW})[0];
+  const byLabel=Object.fromEntries(result.opportunity.breakdown.map(item=>[item.label,item]));
+  for(const label of ['Match','Fit','Availability','Activity','Freshness'])assert.equal(byLabel[label].known,false,label);
+  assert.equal(result.intelligenceFreshness,'Unknown');
+  assert.match(result.opportunity.explanation,/Match: Unknown \(excluded\)/);
+});

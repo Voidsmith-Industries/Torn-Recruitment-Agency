@@ -197,3 +197,32 @@ test('v4.9 Player Card Contacted state honors recorded outcomes even after stage
   db.close();
   dom.window.close();
 });
+
+
+test('v4.9 workflow edits do not advance Last Observed intelligence time',async()=>{
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  await put(db,'playerIntelligence',{userId:'991',name:'Observed',updatedAt:1000,lastObservedAt:1000});
+  await App._test.repositories.company.ensure('991',{pipelineStage:'Contacted'},{sharedPatch:{name:'Observed'},source:'company-workflow',observedAt:9000});
+  const player=await new Promise((resolve,reject)=>{const q=db.transaction('playerIntelligence','readonly').objectStore('playerIntelligence').get('991');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+  assert.equal(player.updatedAt,9000);
+  assert.equal(player.lastObservedAt,1000);
+  db.close();
+});
+
+test('v4.9 recruitment entry point rechecks current domain DNC state',async()=>{
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  App._test.state.settings=App.mergeSettings({});
+  await put(db,'companyRecruitment',{userId:'992',domain:'company',pipelineStage:'Not Contacted',doNotContact:true});
+  await assert.rejects(()=>App._test.recruitCandidate('company','992','Blocked'),/Do Not Contact is currently set/);
+  db.close();
+});
+
+test('v4.9 platform overrides must carry explicit DNC confirmation to recruitment entry point',()=>{
+  const fs=require('node:fs');
+  const company=fs.readFileSync(require.resolve('../src/v46-company-platform'),'utf8');
+  const faction=fs.readFileSync(require.resolve('../src/v47-faction-platform'),'utf8');
+  assert.match(company,/overrideDnc:override,dncConfirmed:override/);
+  assert.match(faction,/overrideDnc:override,dncConfirmed:override/);
+});

@@ -166,11 +166,13 @@
   }
 
   function computeOpportunity(input={},weights={}){
-    const availability=text(input.availability).toLowerCase()==='available'?100:text(input.availability).toLowerCase()==='unavailable'?0:50;
-    const age=Math.max(0,number(input.lastActiveAgeHours,999));
-    const activity=age<=6?100:age<=24?80:age<=72?55:age<=168?30:10;
+    const availabilityText=text(input.availability).toLowerCase();
+    const availability=availabilityText==='available'?100:availabilityText==='unavailable'?0:null;
+    const ageKnown=input.lastActiveAgeHours!==null&&input.lastActiveAgeHours!==undefined&&text(input.lastActiveAgeHours)!==''&&Number.isFinite(Number(input.lastActiveAgeHours));
+    const age=ageKnown?Math.max(0,Number(input.lastActiveAgeHours)):null;
+    const activity=age===null?null:(age<=6?100:age<=24?80:age<=72?55:age<=168?30:10);
     const freshMap={fresh:100,aging:70,stale:40,'very stale':15};
-    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??50;
+    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??null;
     const rows=[
       opportunityComponent('Match',input.match,weights.match),
       opportunityComponent('Fit',input.fit,weights.fit),
@@ -187,7 +189,7 @@
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
     const score=Math.round(clamp(rawScore-penalty));
     const explanation=rows.slice(0,6)
-      .map(row=>`${row.label}: ${row.value} × ${row.weight}% = ${row.contribution}`)
+      .map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`)
       .join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
     return {score,rawScore,penalty,breakdown:rows,explanation};
   }

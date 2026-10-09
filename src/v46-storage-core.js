@@ -89,7 +89,7 @@
     function addObservation(map,userId,patch,source,observedAt) {
       let id;
       try { id = Domain.normalizeUserId(userId); } catch { return; }
-      const clean = definedPatch(patch);
+      const clean = definedPatch({...patch,lastObservedAt:legacyTimestamp(observedAt,Date.now())});
       const list = map.get(id) || [];
       list.push({patch:clean,source,observedAt:legacyTimestamp(observedAt,Date.now())});
       map.set(id,list);
@@ -123,7 +123,8 @@
         fit:snapshot.currentFit ?? snapshot.originalFit,
         fitType:snapshot.official ? 'official' : (snapshot.provisionalSource ? 'provisional' : 'unmeasured'),
         lastActive:profile.lastActionTs ? Number(profile.lastActionTs) * 1000 : null,
-        lastScoutAt:snapshot.capturedAt
+        lastScoutAt:snapshot.capturedAt,
+        lastObservedAt:snapshot.capturedAt
       });
     }
 
@@ -142,7 +143,8 @@
         fitType:global.fitType,
         lastActive:global.lastActive,
         scoutStatus:global.scoutStatus,
-        lastGlobalAt:global.observedAt
+        lastGlobalAt:global.observedAt,
+        lastObservedAt:global.observedAt
       });
     }
 
