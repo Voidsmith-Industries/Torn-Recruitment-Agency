@@ -194,9 +194,10 @@
         for (const item of list) {
           const currentObserved=Number(current?.lastObservedAt),incomingObserved=Number(item.patch?.lastObservedAt);
           const currentIsAuthoritative=Number.isFinite(currentObserved)&&currentObserved>0;
-          const incomingIsNewer=Number.isFinite(incomingObserved)&&incomingObserved>currentObserved;
+          const incomingHasObservation=Number.isFinite(incomingObserved)&&incomingObserved>0;
+          const incomingIsNewer=incomingHasObservation&&(!currentIsAuthoritative||incomingObserved>currentObserved);
           let patch=item.patch;
-          if(currentIsAuthoritative&&!incomingIsNewer){
+          if(current&&(!incomingHasObservation||(currentIsAuthoritative&&!incomingIsNewer))){
             const safe={};
             for(const [key,value] of Object.entries(item.patch||{})){
               if(key==='lastObservedAt')continue;
