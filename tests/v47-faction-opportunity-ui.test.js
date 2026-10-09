@@ -139,3 +139,27 @@ test('Faction Opportunity renders excluded evidence as unknown, never zero',()=>
   assert.doesNotMatch(html,/Match: 0/);
   assert.doesNotMatch(html,/Fit: 0/);
 });
+
+
+test('Faction Compare renders unknown shared facts as em dash, never zero',()=>{
+  const unknown=row({
+    userId:'909',
+    name:'Unknown Compare',
+    ee:null,
+    level:null,
+    activity30:null,
+    rwHits30:null,
+    attacks30:null,
+    fit:null,
+    baselineScore:null,
+    player:{},
+    factionRecord:{userId:'909',pipelineStage:'Prospect',doNotContact:false}
+  });
+  const html=ui().renderComparePage([unknown],['909']);
+  for(const label of ['EE','Level','Activity 30d','RW Hits 30d','Attacks 30d']){
+    assert.match(html,new RegExp(label+'<b>—<\\/b>'));
+  }
+  assert.doesNotMatch(html,/EE<b>0<\/b>/);
+  assert.doesNotMatch(html,/Level<b>0<\/b>/);
+  assert.doesNotMatch(html,/Activity 30d<b>0<\/b>/);
+});
