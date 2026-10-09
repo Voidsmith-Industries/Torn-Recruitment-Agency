@@ -2357,7 +2357,7 @@
 
       const observations = new Map();
       for (const row of candidates) {
-        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.updatedAt || row.createdAt,observedAt);
+        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.companyCheckedAt || row.lastSeenPost || row.observedAt || row.postedAt || row.postDate,observedAt);
       }
       for (const row of forumSources) {
         addObservation(observations,row.userId,{name:row.authorName},'legacy-forum',row.lastSeenPost || row.postedAt || row.observedAt,observedAt);
