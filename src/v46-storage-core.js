@@ -86,12 +86,15 @@
       return next;
     }
 
-    function addObservation(map,userId,patch,source,observedAt) {
+    function addObservation(map,userId,patch,source,observedAt,fallbackAt=Date.now()) {
       let id;
       try { id = Domain.normalizeUserId(userId); } catch { return; }
-      const clean = definedPatch({...patch,lastObservedAt:legacyTimestamp(observedAt,Date.now())});
+      const explicitAt=legacyTimestamp(observedAt,0);
+      const hasExplicitAt=Number.isFinite(explicitAt)&&explicitAt>0;
+      const processingAt=hasExplicitAt?explicitAt:legacyTimestamp(fallbackAt,Date.now());
+      const clean = definedPatch({...patch,...(hasExplicitAt?{lastObservedAt:explicitAt}:{})});
       const list = map.get(id) || [];
-      list.push({patch:clean,source,observedAt:legacyTimestamp(observedAt,Date.now())});
+      list.push({patch:clean,source,observedAt:processingAt});
       map.set(id,list);
     }
 
@@ -170,19 +173,19 @@
 
       const observations = new Map();
       for (const row of candidates) {
-        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.updatedAt || row.createdAt || observedAt);
+        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.updatedAt || row.createdAt,observedAt);
       }
       for (const row of forumSources) {
-        addObservation(observations,row.userId,{name:row.authorName},'legacy-forum',row.lastSeenPost || row.postedAt || row.observedAt || observedAt);
+        addObservation(observations,row.userId,{name:row.authorName},'legacy-forum',row.lastSeenPost || row.postedAt || row.observedAt,observedAt);
       }
       for (const row of users) {
-        addObservation(observations,row.userId,{...candidateSharedPatch(row),name:row.name,ee:row.ee},'legacy-user',row.lastSeenPost || row.postedAt || row.postDate || observedAt);
+        addObservation(observations,row.userId,{...candidateSharedPatch(row),name:row.name,ee:row.ee},'legacy-user',row.lastSeenPost || row.postedAt || row.postDate,observedAt);
       }
       for (const row of scouts) {
-        addObservation(observations,row.userId,scoutSharedPatch(row),'scout',row.capturedAt || observedAt);
+        addObservation(observations,row.userId,scoutSharedPatch(row),'scout',row.capturedAt,observedAt);
       }
       for (const row of globals) {
-        addObservation(observations,row.userId ?? row.playerId,globalSharedPatch(row),'global',row.observedAt || observedAt);
+        addObservation(observations,row.userId ?? row.playerId,globalSharedPatch(row),'global',row.observedAt,observedAt);
       }
 
       for (const [userId,list] of observations.entries()) {
