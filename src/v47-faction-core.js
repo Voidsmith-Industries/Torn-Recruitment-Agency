@@ -38,6 +38,17 @@
     };
   }
 
+  const FACTION_SEARCH_FILTER_KEYS=Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
+  function normalizeFactionSearchFilters(input={}){
+    const source=input&&typeof input==='object'?input:{},out={};
+    for(const key of FACTION_SEARCH_FILTER_KEYS)out[key]=text(source[key]);
+    const presence=text(out.organizationPresence).toLowerCase();
+    out.organizationPresence=['any','none','has'].includes(presence)?presence:'any';
+    const status=text(out.onlineStatus);
+    out.onlineStatus=['Online','Idle','Offline'].includes(status)?status:'';
+    return out;
+  }
+
   function normalizeSpecialistProfile(raw={}){
     const statusRaw=text(raw.status).toLowerCase();
     const status=PROFILE_STATES.find(value=>value.toLowerCase()===statusRaw)||'Draft';
@@ -46,6 +57,7 @@
       name:text(raw.name),
       status,
       criteria:(Array.isArray(raw.criteria)?raw.criteria:[]).map(normalizeRequirement),
+      searchFilters:normalizeFactionSearchFilters(raw.searchFilters),
       notes:text(raw.notes),
       version:Math.max(1,Math.floor(number(raw.version,1))),
       createdAt:number(raw.createdAt,0),
@@ -263,6 +275,7 @@
     PROFILE_STATES,
     REQUIREMENT_KINDS,
     normalizeBaseline,
+    normalizeFactionSearchFilters,
     normalizeSpecialistProfile,
     evaluateCriteria,
     evaluateSpecialistProfile,

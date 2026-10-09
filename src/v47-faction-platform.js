@@ -6,7 +6,8 @@
     Workflow:root&&root.RA_V47FactionWorkflow,
     WorkflowUI:root&&root.RA_V47FactionWorkflowUI,
     OpportunityUI:root&&root.RA_V47FactionOpportunityUI,
-    Messaging:root&&root.RA_V45Messaging
+    Messaging:root&&root.RA_V45Messaging,
+    ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.FactionCore=require('./v47-faction-core');
@@ -16,6 +17,7 @@
     deps.WorkflowUI=require('./v47-faction-workflow-ui');
     deps.OpportunityUI=require('./v47-faction-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
+    deps.ResultsCore=require('./results-core');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -23,8 +25,8 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging}=D;
-  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging)throw new Error('Faction platform dependencies are required.');
+  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
+  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('Faction platform dependencies are required.');
 
   const FACTION_ROUTES=Object.freeze([
     'faction-overview','faction-today','faction-discover','faction-candidates','faction-pipeline',
@@ -52,8 +54,9 @@
   const DEFAULT_OPPORTUNITY_WEIGHTS=Object.freeze({match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
   const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
   const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
+  const RESULTS_PAGE_SIZE=100;
   const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT}};
+  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},resultPage:0};
 
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
@@ -78,6 +81,20 @@
   function isFactionRoute(value){return FACTION_ROUTES.includes(text(value));}
   function routeMeta(route){const [title,description]=META[text(route)]||META['faction-overview'];return{title,description};}
   function opportunityWeights(config={}){return{...DEFAULT_OPPORTUNITY_WEIGHTS,...(config.opportunityWeights||{})};}
+  function profileSearchFilters(profile={}){
+    const saved=FactionCore.normalizeFactionSearchFilters(profile?.searchFilters||{});
+    const out={...DEFAULT_SEARCH_FILTERS,...saved};
+    for(const [field,key] of [['end','minEnd'],['man','minMan'],['int','minInt']]){
+      if(text(out[key]))continue;
+      const req=(Array.isArray(profile?.criteria)?profile.criteria:[]).find(item=>text(item.field).toLowerCase()===field&&['gte','gt'].includes(text(item.operator).toLowerCase())&&Number.isFinite(Number(item.value))&&Number(item.value)>0);
+      if(req)out[key]=String(req.value);
+    }
+    return out;
+  }
+  function activeResultsProfile(config={},profiles=[]){
+    const id=text(config.activeResultsProfileId);
+    return id?(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile).find(profile=>profile.profileId===id)||null:null;
+  }
 
   function dbGetAll(db,store){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>resolve([]);}catch{resolve([]);}});}
   function dbGet(db,store,key){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>resolve(null);}catch{resolve(null);}});}
@@ -123,7 +140,8 @@
     const db=app._test.state.db;
     const[factionRecords,players,candidateLocals,config,profiles]=await Promise.all([dbGetAll(db,'factionRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getProfiles(app)]);
     const candidateMap=new Map(candidateLocals.map(candidate=>[text(candidate?.userId??candidate?.id),candidate]));
-    return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};return{...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus)};});
+    const activeProfile=activeResultsProfile(config,profiles);
+    return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};const selectedEvaluation=activeProfile?(row.profileEvaluations||[]).find(item=>text(item.profileId)===activeProfile.profileId):null;const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),candidateLocal:candidate,eligibilityScore:selectedEvaluation?.matchScore??null};const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'faction',useEligibility:Boolean(activeProfile)});return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness,activeRecruitmentProfileId:activeProfile?.profileId||'',activeRecruitmentProfileName:activeProfile?.name||''};});
   }
 
   async function buildOpportunityRows(app,rows,now=Date.now()){
@@ -265,9 +283,12 @@
 
   function bindContentControls(currentPage){
     const page=text(currentPage||runtime.app?._test?.state?.page);
-    document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.searchFilters={search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
-    document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('faction-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('faction',link.dataset.playerCard);};});
+    document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters={search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
+    document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
+    document.getElementById('ra-faction-profile-apply')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);const profiles=await getProfiles(runtime.app);const profile=profileId?profiles.find(item=>text(item.profileId)===profileId):null;if(profileId&&!profile)throw new Error('Faction specialist profile was not found.');await saveConfig(runtime.app,{activeResultsProfileId:profileId});runtime.resultPage=0;runtime.searchFilters=profile?profileSearchFilters(profile):{...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-faction-profile-clear')?.addEventListener('click',async()=>{try{await saveConfig(runtime.app,{activeResultsProfileId:''});runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-faction-profile-save-search')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);if(!profileId)throw new Error('Choose a Faction specialist profile first.');const profiles=await getProfiles(runtime.app);const profile=profiles.find(item=>text(item.profileId)===profileId);if(!profile)throw new Error('Faction specialist profile was not found.');await saveProfile(runtime.app,{...profile,searchFilters:runtime.searchFilters});await saveConfig(runtime.app,{activeResultsProfileId:profileId});await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('faction-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('faction',link.dataset.playerCard);};});
     document.querySelectorAll('[data-go-page]').forEach(button=>{const route=text(button.dataset.goPage);if(isFactionRoute(route))button.onclick=event=>{event?.preventDefault?.();navigate(route,true).catch(reportError);};});
     document.querySelectorAll('[data-faction-stage-select]').forEach(select=>select.onchange=async()=>{try{await changeFactionStage(select.dataset.factionStageSelect,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);await renderPage(page,{persist:false});}});
     document.querySelectorAll('[data-faction-profile-pin]').forEach(select=>select.onchange=async()=>{try{await setProfilePin(select.dataset.factionProfilePin,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);}});
@@ -329,7 +350,7 @@
       html=FactionUI.renderToday(FactionUI.buildTodayModel(rows,{now:Date.now(),stageThresholds:config.stageThresholds||{},opportunities:Object.fromEntries(opportunities.map(item=>[item.userId,item.opportunity.score]))}));
     }
     else if(page==='faction-discover')html=renderDiscover(rows);
-    else if(page==='faction-candidates'){const filtered=filterRows(rows,runtime.searchFilters);const sorted=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,layout:app._test.state.settings?.candidates?.resultsLayout});}
+    else if(page==='faction-candidates'){const [config,profiles]=await Promise.all([getConfig(app),getProfiles(app)]);const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:text(config.activeResultsProfileId),pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}});}
     else if(page==='faction-pipeline')html=FactionUI.renderPipeline(FactionUI.buildPipelineModel(rows));
     else if(page==='faction-requirements')html=FactionUI.renderRequirementsPage({config,profiles,rows});
     else if(page==='faction-campaigns')html=WorkflowUI.renderCampaignsPage({campaigns,rows,profiles});
@@ -372,6 +393,6 @@
     uninstall,
     renderPage,
     syncNavigation,
-    _test:{IMPLEMENTED_ROUTES,buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,getCampaigns,getSessions,readCriteria,ensureFactionCandidate,changeFactionStage,setProfilePin,opportunityWeights,filterRows,sortRows,toggleSort,organizationInfo}
+    _test:{IMPLEMENTED_ROUTES,buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,getCampaigns,getSessions,readCriteria,ensureFactionCandidate,changeFactionStage,setProfilePin,opportunityWeights,profileSearchFilters,activeResultsProfile,filterRows,sortRows,toggleSort,organizationInfo,RESULTS_PAGE_SIZE}
   });
 });

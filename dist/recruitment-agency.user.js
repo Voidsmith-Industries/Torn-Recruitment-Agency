@@ -585,6 +585,269 @@
     return sortRows(applyFilters(rows, filters, nowMs), sortState, nowMs);
   }
 
+
+  const RECRUITMENT_FIT_DEFAULT_WEIGHTS = Object.freeze({
+    requirements:28,
+    eligibility:20,
+    activity:15,
+    scoutFit:12,
+    organization:10,
+    intent:15,
+    contact:10
+  });
+
+  function uniqueText(values=[]) {
+    const seen=new Set(),out=[];
+    for(const value of values){const cleaned=text(value);if(!cleaned)continue;const key=cleaned.toLowerCase();if(seen.has(key))continue;seen.add(key);out.push(cleaned);}
+    return out;
+  }
+
+  function normalizeSourceLabel(value) {
+    const raw=text(value),key=lower(raw);
+    if(!raw)return '';
+    if(/job seeker|company forum|faction forum|recruitment forum|forum/.test(key))return 'Recruitment Forum';
+    if(/leaderboard|work[- ]?stat/.test(key))return 'Work-Stat Leaderboard';
+    if(/user search|api search|torn search|search/.test(key))return 'Torn User Search';
+    if(/scout/.test(key))return 'Scout';
+    if(/global|existing intelligence|player intelligence/.test(key))return 'Existing Intelligence';
+    if(/manual/.test(key))return 'Manual';
+    return raw;
+  }
+
+  function candidateRecordOf(row,domain='company') {
+    if(domain==='faction')return row?.factionRecord||row?.candidateLocal||row?.candidate||{};
+    return row?.companyRecord||row?.candidateLocal||row?.candidate||{};
+  }
+
+  function timestamp(value) {
+    const n=finite(value);
+    if(n!==null&&n>0)return n < 1e12 ? n*1000 : n;
+    const parsed=Date.parse(value);
+    return Number.isFinite(parsed)?parsed:null;
+  }
+
+  function latestTimestamp(values=[]) {
+    const known=values.map(timestamp).filter(v=>v!==null);
+    return known.length?Math.max(...known):null;
+  }
+
+  function earliestTimestamp(values=[]) {
+    const known=values.map(timestamp).filter(v=>v!==null);
+    return known.length?Math.min(...known):null;
+  }
+
+  function domainStageOf(row={},domain='company') {
+    const record=candidateRecordOf(row,domain);
+    const stage=text(row?.pipelineStage||record?.pipelineStage);
+    return stage||(domain==='faction'?'Prospect':'Not Contacted');
+  }
+
+  function prospectProvenance(row={},options={}) {
+    const domain=options.domain==='faction'?'faction':'company';
+    const record=candidateRecordOf(row,domain);
+    const candidate=candidateOf(row);
+    const player=row?.playerRecord||row?.player||row;
+    const latestSource=row?.latestSource||candidate?.latestSource||{};
+    const rawSources=uniqueText([
+      ...(Array.isArray(record?.discoverySources)?record.discoverySources:[]),
+      ...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),
+      ...(Array.isArray(row?.discoverySources)?row.discoverySources:[]),
+      row?.sourceType,candidate?.sourceType,latestSource?.sourceType,latestSource?.feedId,latestSource?.kind
+    ]);
+    const sources=uniqueText(rawSources.map(normalizeSourceLabel));
+    const firstDiscoveredAt=earliestTimestamp([
+      record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,candidate?.firstSeenAt,row?.createdAt,row?.firstSeenAt,
+      latestSource?.postedAt,latestSource?.observedAt
+    ]);
+    const observedEvidenceAt=latestTimestamp([
+      candidate?.lastSeenAt,row?.lastSeenPost,row?.lastObservedAt,
+      player?.lastObservedAt,player?.lastSeenAt,player?.lastScoutAt,latestSource?.postedAt,latestSource?.observedAt
+    ]);
+    const lastObservedAt=observedEvidenceAt??latestTimestamp([
+      record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,row?.createdAt
+    ]);
+    const lastEnrichedAt=latestTimestamp([
+      row?.lastEnrichedAt,player?.lastEnrichedAt,player?.lastScoutAt,row?.scout?.capturedAt
+    ]);
+    const now=timestamp(options.nowMs)||Date.now();
+    const ageMs=lastObservedAt===null?null:Math.max(0,now-lastObservedAt);
+    const freshness=ageMs===null?'Unknown':ageMs<=86400000?'Fresh':ageMs<=7*86400000?'Recent':ageMs<=30*86400000?'Aging':'Stale';
+    const stage=domainStageOf(row,domain);
+    const explicitForum=sources.includes('Recruitment Forum');
+    const passiveSource=sources.includes('Work-Stat Leaderboard')||sources.includes('Torn User Search');
+    const terminal=['Hired','Rejected','Joined'].includes(stage);
+    let state='Known Candidate';
+    if(!terminal&&ageMs!==null&&ageMs>60*86400000)state='Reactivation Candidate';
+    else if(!terminal&&(explicitForum||['Shortlisted','Contacted','Replied','Evaluating','Invite Ready'].includes(stage)))state='Active Lead';
+    else if(!terminal&&passiveSource)state='Passive Prospect';
+    return Object.freeze({
+      sources:Object.freeze(sources),
+      rawSources:Object.freeze(rawSources),
+      firstDiscoveredAt,
+      lastObservedAt,
+      lastEnrichedAt,
+      freshness,
+      state
+    });
+  }
+
+  function activityFactor(lastActive,nowMs=Date.now()) {
+    const ts=timestamp(lastActive);
+    if(ts===null)return null;
+    const age=Math.max(0,nowMs-ts);
+    if(age<=3600000)return 1;
+    if(age<=86400000)return .9;
+    if(age<=3*86400000)return .75;
+    if(age<=7*86400000)return .55;
+    if(age<=30*86400000)return .25;
+    return 0;
+  }
+
+  function organizationFactor(row,domain='company') {
+    const player=row?.playerRecord||row?.player||{};
+    const direct=domain==='faction'
+      ? text(row?.currentFaction||row?.factionName||player?.factionName||row?.currentOrganizationLabel)
+      : text(row?.currentCompany||player?.currentCompany||row?.currentOrganizationLabel);
+    if(direct&&!/^unknown$/i.test(direct)){
+      if(/^(none|no company|no faction|unemployed)$/i.test(direct))return 1;
+      return .25;
+    }
+    const rawId=domain==='faction'
+      ? (row?.factionId??player?.factionId)
+      : (row?.currentCompanyId??player?.currentCompanyId);
+    if(rawId===null||rawId===undefined||rawId==='')return null;
+    const id=Number(rawId);
+    if(!Number.isFinite(id)||id<0)return null;
+    return id===0?1:.25;
+  }
+
+  function intentFactor(provenance) {
+    const sources=provenance?.sources||[];
+    if(sources.includes('Recruitment Forum'))return 1;
+    if(sources.includes('Torn User Search'))return .65;
+    if(sources.includes('Work-Stat Leaderboard'))return .55;
+    if(sources.includes('Existing Intelligence')||sources.includes('Scout'))return .45;
+    if(sources.includes('Manual'))return .4;
+    return sources.length?.4:null;
+  }
+
+  function eligibilityFactor(row) {
+    const score=finite(row?.eligibilityScore??row?.matchScore??row?.specialistMatchScore);
+    if(score!==null)return Math.max(0,Math.min(1,score>1?score/100:score));
+    const label=lower(row?.eligibility);
+    if(!label||label==='unknown')return null;
+    if(label.includes('not currently eligible')||label.includes('ineligible'))return 0;
+    if(label.includes('eligible by waiver'))return .8;
+    if(label==='eligible')return 1;
+    return null;
+  }
+
+  function contactFactor(row,domain='company',nowMs=Date.now(),exclusionWindowDays=7) {
+    const record=candidateRecordOf(row,domain);
+    const outcomes=Array.isArray(record?.outcomes)?record.outcomes:[];
+    const lastContactAt=latestTimestamp([
+      row?.lastContactAt,record?.lastContactAt,
+      ...outcomes.map(item=>item?.at??item?.createdAt??item?.timestamp)
+    ]);
+    if(lastContactAt!==null){
+      const age=Math.max(0,nowMs-lastContactAt);
+      if(age<Math.max(1,finite(exclusionWindowDays)??7)*86400000)return .2;
+      return .85;
+    }
+    const stage=domainStageOf(row,domain);
+    if(stage==='Not Contacted'||stage==='Prospect')return 1;
+    if(stage==='Shortlisted'||stage==='Evaluating')return .9;
+    if(stage==='Contacted'||stage==='Invite Ready')return .35;
+    if(stage==='Replied')return .55;
+    if(stage==='Hired'||stage==='Rejected'||stage==='Joined')return 0;
+    return null;
+  }
+
+  function workStatFactor(row,requirements={}) {
+    const specs=[
+      ['man',finite(requirements.minMan??requirements.man)],
+      ['int',finite(requirements.minInt??requirements.int)],
+      ['end',finite(requirements.minEnd??requirements.end)]
+    ].filter(([,threshold])=>threshold!==null&&threshold>0);
+    if(!specs.length)return {factor:null,coverage:0,reason:'No work-stat requirement configured.'};
+    let known=0,total=0;
+    for(const[key,threshold]of specs){
+      const value=finite(row?.[key]??row?.stats?.[key]);
+      if(value===null)continue;
+      known++;
+      total+=Math.max(0,Math.min(1,value/threshold));
+    }
+    if(!known)return {factor:null,coverage:0,reason:'Required work stats are not known.'};
+    return{
+      factor:total/known,
+      coverage:known/specs.length,
+      reason:`${known}/${specs.length} configured work-stat requirement${specs.length===1?'':'s'} measured.`
+    };
+  }
+
+  function recruitmentFit(row={},options={}) {
+    const domain=options.domain==='faction'?'faction':'company';
+    const now=timestamp(options.nowMs)||Date.now();
+    const weights={...RECRUITMENT_FIT_DEFAULT_WEIGHTS,...(options.weights||{})};
+    const requirements=options.requirements||{};
+    const provenance=prospectProvenance(row,{domain,nowMs:now});
+    const components=[];
+    let possibleWeight=0,knownWeight=0,weighted=0;
+
+    const add=(key,label,weight,factor,reason,coverage=1)=>{
+      const safeWeight=Math.max(0,finite(weight)??0);
+      if(!safeWeight)return;
+      possibleWeight+=safeWeight;
+      const known=factor!==null&&factor!==undefined&&Number.isFinite(Number(factor));
+      const evidenceWeight=known?safeWeight*Math.max(0,Math.min(1,finite(coverage)??1)):0;
+      const normalized=known?Math.max(0,Math.min(1,Number(factor))):null;
+      if(known){knownWeight+=evidenceWeight;weighted+=evidenceWeight*normalized;}
+      components.push(Object.freeze({key,label,weight:safeWeight,evidenceWeight,known,factor:normalized,points:known?evidenceWeight*normalized:null,reason:text(reason)}));
+    };
+
+    const work=workStatFactor(row,requirements);
+    if(Object.values(requirements).some(value=>finite(value)!==null&&finite(value)>0))add('requirements','Work-stat match',weights.requirements,work.factor,work.reason,work.coverage);
+
+    if(options.useEligibility!==false){
+      const elig=eligibilityFactor(row);
+      add('eligibility','Role / eligibility match',weights.eligibility,elig,
+        elig===null?'No role or eligibility evaluation is available.':'Uses the existing domain eligibility/match evaluation.');
+    }
+
+    const activity=activityFactor(row?.lastActive??row?.lastActionTs??row?.playerRecord?.lastActive??row?.player?.lastActive,now);
+    add('activity','Recent activity',weights.activity,activity,
+      activity===null?'Last activity is unknown.':'Based on observed last-action recency.');
+
+    const scout=finite(row?.fit??row?.scoutFit??row?.playerRecord?.fit??row?.player?.fit);
+    add('scoutFit','Scout Fit signal',weights.scoutFit,scout===null?null:Math.max(0,Math.min(1,scout/100)),
+      scout===null?'Scout Fit is unavailable.':'Existing Scout Fit is used only as one activity-quality signal; it remains a separate metric.');
+
+    const org=organizationFactor(row,domain);
+    add('organization',domain==='faction'?'Faction availability':'Company availability',weights.organization,org,
+      org===null?'Current organization state is unknown.':org===1?'No current organization detected.':'Currently belongs to an organization.');
+
+    const intent=intentFactor(provenance);
+    add('intent','Recruitment intent / source',weights.intent,intent,
+      intent===null?'No discovery provenance is available.':`Derived from: ${provenance.sources.join(', ')}.`);
+
+    const contact=contactFactor(row,domain,now,options.exclusionWindowDays);
+    add('contact','Contact timing',weights.contact,contact,
+      contact===null?'Contact timing is unknown.':'Uses existing contact/stage history to avoid over-prioritizing recently contacted candidates.');
+
+    const score=knownWeight>0?Math.round((weighted/knownWeight)*1000)/10:null;
+    const coverage=possibleWeight>0?knownWeight/possibleWeight:0;
+    let confidence=coverage>=.72?'High':coverage>=.42?'Medium':'Low';
+    if(provenance.freshness==='Stale'&&confidence==='High')confidence='Medium';
+    if(provenance.freshness==='Stale'&&confidence==='Medium'&&coverage<.58)confidence='Low';
+    return Object.freeze({
+      score,
+      confidence,
+      coverage:Math.round(coverage*1000)/1000,
+      provenance,
+      components:Object.freeze(components)
+    });
+  }
+
   return Object.freeze({
     PIPELINE_STAGES,
     DEFAULT_VISIBLE_COLUMNS,
@@ -609,7 +872,12 @@
     sortRows,
     applyFilters,
     processRows,
-    activeFilterCount
+    activeFilterCount,
+    RECRUITMENT_FIT_DEFAULT_WEIGHTS,
+    normalizeSourceLabel,
+    domainStageOf,
+    prospectProvenance,
+    recruitmentFit
   });
 });
 
@@ -986,6 +1254,19 @@
     return base;
   }
 
+  const COMPANY_SEARCH_FILTER_KEYS = Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
+
+  function normalizeCompanySearchFilters(input) {
+    const source=input&&typeof input==='object'?input:{};
+    const out={};
+    for(const key of COMPANY_SEARCH_FILTER_KEYS)out[key]=cleanText(source[key]);
+    const presence=cleanText(out.organizationPresence).toLowerCase();
+    out.organizationPresence=['any','none','has'].includes(presence)?presence:'any';
+    const status=cleanText(out.onlineStatus);
+    out.onlineStatus=['Online','Idle','Offline'].includes(status)?status:'';
+    return out;
+  }
+
   function normalizeProfile(input) {
     const source = input && typeof input === 'object' ? input : {};
     const hasCriteria = !!(source.criteria && typeof source.criteria === 'object');
@@ -994,10 +1275,12 @@
     CRITERIA_KEYS.forEach((key) => {
       criteria[key] = normalizeCriterion(key, criteriaSource[key], hasCriteria);
     });
+    const searchSource=source.searchFilters&&typeof source.searchFilters==='object'?source.searchFilters:{};
     return {
       profileId: cleanText(source.profileId) || `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: cleanText(source.name) || 'Smart Match',
       criteria,
+      searchFilters:{company:normalizeCompanySearchFilters(searchSource.company)},
       createdAt: cleanText(source.createdAt),
       updatedAt: cleanText(source.updatedAt)
     };
@@ -1078,6 +1361,7 @@
     AVAILABILITY_VALUES,
     createDefaultProfile,
     normalizeProfile,
+    normalizeCompanySearchFilters,
     normalizeCandidate,
     normalizeRole,
     normalizeCompany,
@@ -2120,10 +2404,10 @@
   'use strict';
 
   const SHARED_PLAYER_FIELDS = Object.freeze([
-    'name','level','ee','man','int','end','total','factionId','factionName',
+    'name','level','age','ee','man','int','end','total','factionId','factionName',
     'currentCompany','currentCompanyId','currentCompanyRating','currentCompanyPosition','companyCheckedAt',
     'networth','fit','fitType','lastActive','onlineStatus','lastScoutAt','lastGlobalAt','lastObservedAt',
-    'activity30','xanax30','refills30','attacks30','rwHits30','scoutStatus'
+    'activity30','activeStreak','bestActiveStreak','xanax30','refills30','attacks30','rwHits30','scoutStatus'
   ]);
 
   const COMPANY_STAGES = Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
@@ -2317,9 +2601,12 @@
       return definedPatch({
         name:profile.name,
         level:profile.level,
+        age:profile.age,
         factionId:profile.factionId,
         factionName:profile.factionName,
         networth:snapshot.extra?.networth,
+        activeStreak:snapshot.extra?.activeStreak,
+        bestActiveStreak:snapshot.extra?.bestActiveStreak,
         fit:snapshot.currentFit ?? snapshot.originalFit,
         fitType:snapshot.official ? 'official' : (snapshot.provisionalSource ? 'provisional' : 'unmeasured'),
         lastActive:profile.lastActionTs ? Number(profile.lastActionTs) * 1000 : null,
@@ -2342,6 +2629,8 @@
         fit:global.fit,
         fitType:global.fitType,
         lastActive:global.lastActive,
+        activeStreak:global.activeStreak,
+        bestActiveStreak:global.bestActiveStreak,
         scoutStatus:global.scoutStatus,
         lastGlobalAt:global.observedAt,
         lastObservedAt:global.observedAt
@@ -2995,17 +3284,25 @@
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
   function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
   function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-company-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
+  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
+  function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
   function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','hired'].includes(stage)?'Contacted':'Not yet';}
   function renderCandidates(rows=[],options={}){
     const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
+    const profiles=Array.isArray(options.profiles)?options.profiles:[],activeProfileId=text(options.activeProfileId);
+    const pagination=options.pagination||{page:0,pageCount:1,start:0,end:(Array.isArray(rows)?rows:[]).length};const filteredTotal=Number.isFinite(Number(options.filteredTotal))?Number(options.filteredTotal):(Array.isArray(rows)?rows:[]).length;
+    const rangeText=filteredTotal?`${Number(pagination.start||0)+1}-${Number(pagination.end||0)}`:'0';
+    const pager=`<div class="ra-actions"><button type="button" class="ra-btn" data-results-page="prev" ${Number(pagination.page||0)<=0?'disabled':''}>Previous</button><span class="ra-muted">${rangeText} of ${filteredTotal}</span><button type="button" class="ra-btn" data-results-page="next" ${Number(pagination.page||0)>=Number(pagination.pageCount||1)-1?'disabled':''}>Next</button></div>`;
+    const profileOptions=`<option value="" ${activeProfileId?'':'selected'}>No profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${text(profile.profileId)===activeProfileId?'selected':''}>${esc(profile.name)}</option>`).join('');
+    const profileBar=`<div class="ra-actions ra-profile-bar"><label class="ra-muted" for="ra-company-profile-select">Recruitment profile</label><select id="ra-company-profile-select" class="ra-btn">${profileOptions}</select><button type="button" class="ra-btn" id="ra-company-profile-apply" ${profiles.length?'':'disabled'}>Apply Profile</button><button type="button" class="ra-btn" id="ra-company-profile-clear" ${activeProfileId?'':'disabled'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-company-profile-save-search" ${profiles.length?'':'disabled'}>Save Search to Profile</button><button type="button" class="ra-btn" id="ra-company-profile-manage">Manage Profiles</button></div>`;
     const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="company">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
     const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-company-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-company-recruit="${esc(row.userId)}">Message</button>`;
-    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.end)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${stat(row.activeStreak)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${score(row.recruitmentFit)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${score(row.recruitmentFit)}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.end)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${stat(row.activeStreak)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
     const resultsTable=layout==='compact'
       ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Company candidates.</td></tr>'}</tbody></table>`
-      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>Employment</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="14">No matching Company candidates.</td></tr>'}</tbody></table>`;
-    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-company-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-company-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Company</label><input id="ra-company-filter-organization" value="${esc(filters.organization||'')}" placeholder="Company name"></div><div class="ra-field"><label>Company Presence</label><select id="ra-company-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Company</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-company-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-company-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-company-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-company-search-apply">Search</button><button type="button" class="ra-btn" id="ra-company-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${(Array.isArray(rows)?rows:[]).length} matching of ${total} Company candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div></section>`;
+      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>Employment</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="15">No matching Company candidates.</td></tr>'}</tbody></table>`;
+    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div></div>${profileBar}<div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-company-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-company-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Company</label><input id="ra-company-filter-organization" value="${esc(filters.organization||'')}" placeholder="Company name"></div><div class="ra-field"><label>Company Presence</label><select id="ra-company-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Company</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-company-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-company-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-company-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-company-search-apply">Search</button><button type="button" class="ra-btn" id="ra-company-search-clear">Clear</button><button type="button" class="ra-btn" id="ra-company-hof-discover" title="Import one bounded page of public work-stat HOF prospects without per-player enrichment">Discover Workstat Prospects</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Company candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
   }
   function renderPipeline(model={}){return `<div class="ra-pipeline">${COMPANY_STAGES.map(stage=>`<section class="ra-stage" data-company-stage="${esc(stage)}"><div class="ra-stage-head"><b>${esc(stage)}</b><span>${(model[stage]||[]).length}</span></div><div class="ra-stage-drop">${(model[stage]||[]).map(row=>`<article class="ra-stage-card" data-context-id="${esc(row.userId)}"><b>${esc(row.name)}</b><div>${esc(row.eligibility)} · Fit ${score(row.fit)}</div><div>${esc(row.desiredRole||'No role specified')}</div><select class="ra-btn" data-company-stage-select="${esc(row.userId)}">${stageOptions(row.pipelineStage)}</select></article>`).join('')}</div></section>`).join('')}</div>`;}
 
@@ -3342,7 +3639,8 @@
     Workflow:root&&root.RA_V46CompanyWorkflow,
     WorkflowUI:root&&root.RA_V46CompanyWorkflowUI,
     OpportunityUI:root&&root.RA_V46CompanyOpportunityUI,
-    Messaging:root&&root.RA_V45Messaging
+    Messaging:root&&root.RA_V45Messaging,
+    ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.CompanyCore=require('./v46-company-core');
@@ -3352,6 +3650,7 @@
     deps.WorkflowUI=require('./v46-company-workflow-ui');
     deps.OpportunityUI=require('./v46-company-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
+    deps.ResultsCore=require('./results-core');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -3359,8 +3658,8 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {CompanyCore,CompanyUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging}=D;
-  if(!CompanyCore||!CompanyUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging)throw new Error('CompanyCore, CompanyUI, Operations, Workflow, WorkflowUI, OpportunityUI and Messaging are required.');
+  const {CompanyCore,CompanyUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
+  if(!CompanyCore||!CompanyUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('CompanyCore, CompanyUI, Operations, Workflow, WorkflowUI, OpportunityUI, Messaging and ResultsCore are required.');
 
   const COMPANY_ROUTES=Object.freeze([
     'company-overview','company-today','company-discover','company-candidates','company-pipeline',
@@ -3395,8 +3694,9 @@
 
   const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
   const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
+  const RESULTS_PAGE_SIZE=100;
   const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT}};
+  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},hofOffset:0,resultPage:0};
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   function parseThreshold(value){const raw=text(value).toLowerCase().replace(/,/g,'');if(!raw)return null;const match=raw.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([kmb])?$/);if(!match)return null;const mult={k:1e3,m:1e6,b:1e9}[match[2]]||1;const out=Number(match[1])*mult;return Number.isFinite(out)?out:null;}
@@ -3406,6 +3706,24 @@
   function sortTieBreak(a,b){const byName=text(a.name).localeCompare(text(b.name),undefined,{sensitivity:'base'});if(byName)return byName;return text(a.userId).localeCompare(text(b.userId),undefined,{numeric:true});}
   function sortRows(rows,sortState=DEFAULT_SORT,now=Date.now()){const key=SORT_KEYS.has(text(sortState?.key))?text(sortState.key):DEFAULT_SORT.key;const direction=sortState?.direction==='desc'?'desc':'asc';const sign=direction==='asc'?1:-1;return [...(Array.isArray(rows)?rows:[])].sort((a,b)=>{const av=sortValue(a,key,now),bv=sortValue(b,key,now),am=av===null||av===undefined,bm=bv===null||bv===undefined;if(am!==bm)return am?1:-1;if(am&&bm)return sortTieBreak(a,b);const cmp=key==='player'?String(av).localeCompare(String(bv)):Number(av)-Number(bv);return cmp?cmp*sign:sortTieBreak(a,b);});}
   function toggleSort(current,key){const nextKey=SORT_KEYS.has(text(key))?text(key):DEFAULT_SORT.key;if(text(current?.key)===nextKey)return{key:nextKey,direction:current?.direction==='asc'?'desc':'asc'};return{key:nextKey,direction:nextKey==='player'?'asc':'desc'};}
+  function profileRequirements(profile={}){
+    const criteria=profile?.criteria||{},out={};
+    for(const [key,target] of [['man','minMan'],['int','minInt'],['end','minEnd']]){
+      const criterion=criteria[key];
+      const value=criterion?.enabled===true?Number(criterion.target):NaN;
+      if(Number.isFinite(value)&&value>0)out[target]=value;
+    }
+    return out;
+  }
+  function profileSearchFilters(profile={}){
+    const saved=profile?.searchFilters?.company||{};
+    const filters={...DEFAULT_SEARCH_FILTERS,...saved};
+    const requirements=profileRequirements(profile);
+    if(!text(filters.minMan)&&requirements.minMan)filters.minMan=String(requirements.minMan);
+    if(!text(filters.minInt)&&requirements.minInt)filters.minInt=String(requirements.minInt);
+    if(!text(filters.minEnd)&&requirements.minEnd)filters.minEnd=String(requirements.minEnd);
+    return filters;
+  }
   let idSequence=0;
   function makeId(prefix){
     const uuid=globalThis.crypto?.randomUUID?.();
@@ -3450,7 +3768,7 @@
 
   async function buildRows(app){
     const db=app._test.state.db;
-    const[companyRecords,players,candidateLocals,config,vacancies]=await Promise.all([dbGetAll(db,'companyRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getVacancies(app)]);
+    const[companyRecords,players,candidateLocals,config,vacancies,activeProfile]=await Promise.all([dbGetAll(db,'companyRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getVacancies(app),typeof app.getActiveMatchProfile==='function'?app.getActiveMatchProfile():Promise.resolve(null)]);
     const baseline=CompanyCore.normalizeBaseline(config.baseline||{});
     const rows=CompanyUI.buildCandidateRows(companyRecords,players,{eligibilityFor:(record,player)=>CompanyCore.evaluateCriteria(baseline.criteria,player,record.waivers||[])});
     const vacancyMap=new Map(vacancies.map(v=>[text(v.vacancyId),v]));
@@ -3460,7 +3778,9 @@
       const evaluationMap=new Map(result.evaluations.map(e=>[text(e.vacancyId),e]));
       const options=vacancies.filter(v=>text(v.status)==='Open').map(v=>({vacancyId:text(v.vacancyId),name:text(v.name)||text(v.role)||text(v.vacancyId),matchScore:evaluationMap.get(text(v.vacancyId))?.matchScore??null,eligible:evaluationMap.get(text(v.vacancyId))?.eligible===true}));
       const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.playerRecord||{};
-      return{...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),talentPool:row.companyRecord?.talentPool===true,talentPoolReason:text(row.companyRecord?.talentPoolReason),vacancyEvaluations:result.evaluations,pinnedVacancyId:text(result.selection.pinnedVacancyId),suggestedVacancyId:text(result.selection.suggestedVacancyId),suggestedVacancyName:text(vacancyMap.get(text(result.selection.suggestedVacancyId))?.name),vacancyOptions:options};
+      const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),talentPool:row.companyRecord?.talentPool===true,talentPoolReason:text(row.companyRecord?.talentPoolReason),vacancyEvaluations:result.evaluations,pinnedVacancyId:text(result.selection.pinnedVacancyId),suggestedVacancyId:text(result.selection.suggestedVacancyId),suggestedVacancyName:text(vacancyMap.get(text(result.selection.suggestedVacancyId))?.name),vacancyOptions:options,candidateLocal:candidate};
+      const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'company',useEligibility:false,requirements:profileRequirements(activeProfile||{})});
+      return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness};
     });
   }
 
@@ -3497,9 +3817,14 @@
 
   function bindContentControls(currentPage){
     const page=text(currentPage||runtime.app?._test?.state?.page);
-    document.getElementById('ra-company-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.searchFilters={search:text(document.getElementById('ra-company-filter-search')?.value),minEnd:text(document.getElementById('ra-company-filter-end')?.value),minMan:text(document.getElementById('ra-company-filter-man')?.value),minInt:text(document.getElementById('ra-company-filter-int')?.value),onlineStatus:text(document.getElementById('ra-company-filter-status')?.value),organization:text(document.getElementById('ra-company-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-company-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('company',runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
-    document.getElementById('ra-company-search-clear')?.addEventListener('click',()=>{runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('company-candidates',{persist:false}).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-company-sort]').forEach(button=>{button.onclick=()=>{runtime.sort=toggleSort(runtime.sort,button.dataset.companySort);renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('company',link.dataset.playerCard);};});
+    document.getElementById('ra-company-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters={search:text(document.getElementById('ra-company-filter-search')?.value),minEnd:text(document.getElementById('ra-company-filter-end')?.value),minMan:text(document.getElementById('ra-company-filter-man')?.value),minInt:text(document.getElementById('ra-company-filter-int')?.value),onlineStatus:text(document.getElementById('ra-company-filter-status')?.value),organization:text(document.getElementById('ra-company-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-company-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('company',runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
+    document.getElementById('ra-company-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('company-candidates',{persist:false}).catch(reportError);});
+    document.getElementById('ra-company-profile-apply')?.addEventListener('click',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');const profile=await runtime.app.setActiveMatchProfile(id);runtime.resultPage=0;runtime.searchFilters=profileSearchFilters(profile);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-company-profile-clear')?.addEventListener('click',async()=>{try{if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');await runtime.app.setActiveMatchProfile('');runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-company-profile-save-search')?.addEventListener('click',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.saveCompanySearchProfile!=='function')throw new Error('Saving Match Profile searches is unavailable.');await runtime.app.saveCompanySearchProfile(id,runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-company-profile-manage')?.addEventListener('click',()=>runtime.app?.navigate?.('smart-match',true));
+    document.getElementById('ra-company-hof-discover')?.addEventListener('click',async event=>{const button=event?.currentTarget;try{if(button){button.disabled=true;button.textContent=runtime.hofOffset>0?'Loading next 100…':'Discovering…';}if(typeof runtime.app?.discoverWorkstatProspects!=='function')throw new Error('Work-stat HOF discovery is unavailable.');const result=await runtime.app.discoverWorkstatProspects({limit:100,offset:runtime.hofOffset});runtime.hofOffset=Math.max(runtime.hofOffset,Number(result?.nextOffset||runtime.hofOffset));await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent=runtime.hofOffset>0?'Discover Next 100':'Discover Workstat Prospects';}}});
+    document.querySelectorAll('#ra-content [data-company-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.companySort);renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('company',link.dataset.playerCard);};});
     document.querySelectorAll('#ra-content [data-go-page]').forEach(button=>{if(!isCompanyRoute(button.dataset.goPage))return;button.onclick=event=>{event?.preventDefault?.();navigate(button.dataset.goPage,true).catch(reportError);};});
     document.querySelectorAll('#ra-content [data-company-stage-select]').forEach(select=>{select.onchange=()=>changeCompanyStage(select.dataset.companyStageSelect,select.value).then(()=>renderPage(page,{persist:false})).catch(error=>{reportError(error);renderPage(page,{persist:false}).catch(reportError);});});
     document.querySelectorAll('#ra-content [data-company-vacancy-pin]').forEach(select=>{select.onchange=()=>setVacancyPin(select.dataset.companyVacancyPin,select.value).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);});
@@ -3550,7 +3875,7 @@
       const opportunities=Object.fromEntries(opportunityRows.map(row=>[row.userId,row.opportunity.score]));
       html=CompanyUI.renderToday(CompanyUI.buildTodayModel(rows,{now,stageThresholds:config.stageThresholds||{},opportunities}));
     }
-    else if(page==='company-candidates'){const filtered=filterRows(rows,runtime.searchFilters);const sorted=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));html=CompanyUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,layout:app._test.state.settings?.candidates?.resultsLayout});}
+    else if(page==='company-candidates'){const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];const activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);html=CompanyUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:activeProfile?.profileId||'',pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}});}
     else if(page==='company-pipeline')html=CompanyUI.renderPipeline(CompanyUI.buildPipelineModel(rows));
     else if(page==='company-vacancies')html=CompanyUI.renderVacanciesPage({config:await getConfig(app),vacancies:await getVacancies(app),rows});
     else if(page==='company-followups')html=CompanyUI.renderFollowUpsPage(rows,{now:Date.now()});
@@ -3573,7 +3898,7 @@
   function install(app,options={}){if(!app?._test?.state?.db)throw new Error('A mounted Recruitment Agency app with DB state is required.');uninstall();runtime.app=app;runtime.installed=true;bindNav();const nav=document.getElementById('ra-nav');if(nav&&typeof MutationObserver==='function'){runtime.observer=new MutationObserver(()=>bindNav());runtime.observer.observe(nav,{childList:true,subtree:true});}const page=text(app._test.state.page||app._test.state.settings?.activePage);if(options.renderInitial!==false&&IMPLEMENTED_ROUTES.has(page))renderPage(page,{persist:false}).catch(reportError);return true;}
   function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.compareSelection.clear();runtime.app=null;runtime.installed=false;}
 
-  return Object.freeze({COMPANY_ROUTES,isCompanyRoute,routeMeta,install,uninstall,renderPage,syncNavigation,_test:{buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,evaluateCandidateVacancies,canMoveToStage,readCriteria,getCampaigns,getSessions,opportunityWeights,filterRows,sortRows,toggleSort,organizationInfo,IMPLEMENTED_ROUTES}});
+  return Object.freeze({COMPANY_ROUTES,isCompanyRoute,routeMeta,install,uninstall,renderPage,syncNavigation,_test:{buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,evaluateCandidateVacancies,canMoveToStage,readCriteria,getCampaigns,getSessions,opportunityWeights,filterRows,sortRows,toggleSort,profileRequirements,profileSearchFilters,organizationInfo,RESULTS_PAGE_SIZE,IMPLEMENTED_ROUTES}});
 });
 
 /* bundled runtime: v47-faction-core.js */
@@ -3617,6 +3942,17 @@
     };
   }
 
+  const FACTION_SEARCH_FILTER_KEYS=Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
+  function normalizeFactionSearchFilters(input={}){
+    const source=input&&typeof input==='object'?input:{},out={};
+    for(const key of FACTION_SEARCH_FILTER_KEYS)out[key]=text(source[key]);
+    const presence=text(out.organizationPresence).toLowerCase();
+    out.organizationPresence=['any','none','has'].includes(presence)?presence:'any';
+    const status=text(out.onlineStatus);
+    out.onlineStatus=['Online','Idle','Offline'].includes(status)?status:'';
+    return out;
+  }
+
   function normalizeSpecialistProfile(raw={}){
     const statusRaw=text(raw.status).toLowerCase();
     const status=PROFILE_STATES.find(value=>value.toLowerCase()===statusRaw)||'Draft';
@@ -3625,6 +3961,7 @@
       name:text(raw.name),
       status,
       criteria:(Array.isArray(raw.criteria)?raw.criteria:[]).map(normalizeRequirement),
+      searchFilters:normalizeFactionSearchFilters(raw.searchFilters),
       notes:text(raw.notes),
       version:Math.max(1,Math.floor(number(raw.version,1))),
       createdAt:number(raw.createdAt,0),
@@ -3842,6 +4179,7 @@
     PROFILE_STATES,
     REQUIREMENT_KINDS,
     normalizeBaseline,
+    normalizeFactionSearchFilters,
     normalizeSpecialistProfile,
     evaluateCriteria,
     evaluateSpecialistProfile,
@@ -3914,6 +4252,7 @@
       baseline:FactionCore.normalizeBaseline(raw.baseline||{}),
       stageThresholds:thresholds,
       opportunityWeights:weights,
+      activeResultsProfileId:text(raw.activeResultsProfileId),
       updatedAt:number(raw.updatedAt,Date.now())
     };
   }
@@ -4163,18 +4502,26 @@
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
   function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
   function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-faction-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
+  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
+  function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
   function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','evaluating','invite ready','joined'].includes(stage)?'Contacted':'Not yet';}
   function renderCandidates(rows=[],options={}){
     const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
+    const profiles=(Array.isArray(options.profiles)?options.profiles:[]).map(FactionCore.normalizeSpecialistProfile);
+    const activeProfileId=text(options.activeProfileId);
+    const pagination=options.pagination||{page:0,pageCount:1,start:0,end:(Array.isArray(rows)?rows:[]).length};const filteredTotal=Number.isFinite(Number(options.filteredTotal))?Number(options.filteredTotal):(Array.isArray(rows)?rows:[]).length;
+    const rangeText=filteredTotal?`${Number(pagination.start||0)+1}-${Number(pagination.end||0)}`:'0';
+    const pager=`<div class="ra-actions"><button type="button" class="ra-btn" data-results-page="prev" ${Number(pagination.page||0)<=0?'disabled':''}>Previous</button><span class="ra-muted">${rangeText} of ${filteredTotal}</span><button type="button" class="ra-btn" data-results-page="next" ${Number(pagination.page||0)>=Number(pagination.pageCount||1)-1?'disabled':''}>Next</button></div>`;
+    const profileOptions=`<option value="" ${activeProfileId?'':'selected'}>No profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${profile.profileId===activeProfileId?'selected':''}>${esc(profile.name||profile.profileId)}${profile.status==='Active'?'':' · '+esc(profile.status)}</option>`).join('');
     const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="faction">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
     const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">Message</button>`;
-    const battle=row=>{const known=value=>value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));const attacks=known(row.attacks30)?Number(row.attacks30):null,rw=known(row.rwHits30)?Number(row.rwHits30):null;if(attacks===null&&rw===null)return '—';return `${attacks===null?'—':attacks.toLocaleString()} / ${rw===null?'—':rw.toLocaleString()}`;};
-    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.networth)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${battle(row)}</td><td>${stat(row.activeStreak)}</td><td>${stat(row.xanax30)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${score(row.recruitmentFit)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${score(row.recruitmentFit)}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const battle=row=>{const attackKnown=row.attacks30!==null&&row.attacks30!==undefined&&text(row.attacks30)!==''&&Number.isFinite(Number(row.attacks30));const rwKnown=row.rwHits30!==null&&row.rwHits30!==undefined&&text(row.rwHits30)!==''&&Number.isFinite(Number(row.rwHits30));if(!attackKnown&&!rwKnown)return '—';return `${attackKnown?Number(row.attacks30).toLocaleString():'—'} / ${rwKnown?Number(row.rwHits30).toLocaleString():'—'}`;};
+    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.networth)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${battle(row)}</td><td>${stat(row.activeStreak)}</td><td>${stat(row.xanax30)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
     const resultsTable=layout==='compact'
       ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Faction candidates.</td></tr>'}</tbody></table>`
-      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('networth','Net Worth',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>Battle / RW</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>${sortHeader('xanax30','Xanax 30d',sort)}</th><th>Faction</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="17">No matching Faction candidates.</td></tr>'}</tbody></table>`;
-    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-faction-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-faction-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Faction</label><input id="ra-faction-filter-organization" value="${esc(filters.organization||'')}" placeholder="Faction name or ID"></div><div class="ra-field"><label>Faction Presence</label><select id="ra-faction-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Faction</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-faction-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-faction-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-faction-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-search-apply">Search</button><button type="button" class="ra-btn" id="ra-faction-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${(Array.isArray(rows)?rows:[]).length} matching of ${total} Faction candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div></section>`;
+      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('networth','Net Worth',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>Battle / RW</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>${sortHeader('xanax30','Xanax 30d',sort)}</th><th>Faction</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="18">No matching Faction candidates.</td></tr>'}</tbody></table>`;
+    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div><div class="ra-actions"><select id="ra-faction-results-profile" class="ra-btn" aria-label="Faction recruitment profile">${profileOptions}</select><button type="button" class="ra-btn" id="ra-faction-profile-apply">Apply Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-clear" ${activeProfileId?'':'disabled'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-save-search" ${activeProfileId?'':'disabled title="Choose a specialist profile first"'}>Save Search</button></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-faction-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-faction-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Faction</label><input id="ra-faction-filter-organization" value="${esc(filters.organization||'')}" placeholder="Faction name or ID"></div><div class="ra-field"><label>Faction Presence</label><select id="ra-faction-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Faction</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-faction-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-faction-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-faction-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-search-apply">Search</button><button type="button" class="ra-btn" id="ra-faction-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Faction candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
   }
   function renderPipeline(model={}){
     return `<div class="ra-pipeline">${FACTION_STAGES.map(stage=>`<section class="ra-stage" data-faction-stage="${esc(stage)}"><div class="ra-stage-head"><b>${esc(stage)}</b><span>${(model[stage]||[]).length}</span></div><div class="ra-stage-drop">${(model[stage]||[]).map(row=>`<article class="ra-stage-card" data-context-id="${esc(row.userId)}"><b>${esc(row.name)}</b><div>${esc(row.baselineEligibility)} · Fit ${score(row.fit)}</div><div>${esc(row.pinnedSpecialistProfileId||row.suggestedProfileId||'No specialist profile')}</div><select class="ra-btn" data-faction-stage-select="${esc(row.userId)}">${stageOptions(row.pipelineStage)}</select></article>`).join('')}</div></section>`).join('')}</div>`;
@@ -4828,7 +5175,8 @@
     Workflow:root&&root.RA_V47FactionWorkflow,
     WorkflowUI:root&&root.RA_V47FactionWorkflowUI,
     OpportunityUI:root&&root.RA_V47FactionOpportunityUI,
-    Messaging:root&&root.RA_V45Messaging
+    Messaging:root&&root.RA_V45Messaging,
+    ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.FactionCore=require('./v47-faction-core');
@@ -4838,6 +5186,7 @@
     deps.WorkflowUI=require('./v47-faction-workflow-ui');
     deps.OpportunityUI=require('./v47-faction-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
+    deps.ResultsCore=require('./results-core');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -4845,8 +5194,8 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging}=D;
-  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging)throw new Error('Faction platform dependencies are required.');
+  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
+  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('Faction platform dependencies are required.');
 
   const FACTION_ROUTES=Object.freeze([
     'faction-overview','faction-today','faction-discover','faction-candidates','faction-pipeline',
@@ -4874,8 +5223,9 @@
   const DEFAULT_OPPORTUNITY_WEIGHTS=Object.freeze({match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
   const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
   const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
+  const RESULTS_PAGE_SIZE=100;
   const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT}};
+  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},resultPage:0};
 
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
@@ -4900,6 +5250,20 @@
   function isFactionRoute(value){return FACTION_ROUTES.includes(text(value));}
   function routeMeta(route){const [title,description]=META[text(route)]||META['faction-overview'];return{title,description};}
   function opportunityWeights(config={}){return{...DEFAULT_OPPORTUNITY_WEIGHTS,...(config.opportunityWeights||{})};}
+  function profileSearchFilters(profile={}){
+    const saved=FactionCore.normalizeFactionSearchFilters(profile?.searchFilters||{});
+    const out={...DEFAULT_SEARCH_FILTERS,...saved};
+    for(const [field,key] of [['end','minEnd'],['man','minMan'],['int','minInt']]){
+      if(text(out[key]))continue;
+      const req=(Array.isArray(profile?.criteria)?profile.criteria:[]).find(item=>text(item.field).toLowerCase()===field&&['gte','gt'].includes(text(item.operator).toLowerCase())&&Number.isFinite(Number(item.value))&&Number(item.value)>0);
+      if(req)out[key]=String(req.value);
+    }
+    return out;
+  }
+  function activeResultsProfile(config={},profiles=[]){
+    const id=text(config.activeResultsProfileId);
+    return id?(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile).find(profile=>profile.profileId===id)||null:null;
+  }
 
   function dbGetAll(db,store){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>resolve([]);}catch{resolve([]);}});}
   function dbGet(db,store,key){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>resolve(null);}catch{resolve(null);}});}
@@ -4945,7 +5309,8 @@
     const db=app._test.state.db;
     const[factionRecords,players,candidateLocals,config,profiles]=await Promise.all([dbGetAll(db,'factionRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getProfiles(app)]);
     const candidateMap=new Map(candidateLocals.map(candidate=>[text(candidate?.userId??candidate?.id),candidate]));
-    return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};return{...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus)};});
+    const activeProfile=activeResultsProfile(config,profiles);
+    return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};const selectedEvaluation=activeProfile?(row.profileEvaluations||[]).find(item=>text(item.profileId)===activeProfile.profileId):null;const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),candidateLocal:candidate,eligibilityScore:selectedEvaluation?.matchScore??null};const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'faction',useEligibility:Boolean(activeProfile)});return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness,activeRecruitmentProfileId:activeProfile?.profileId||'',activeRecruitmentProfileName:activeProfile?.name||''};});
   }
 
   async function buildOpportunityRows(app,rows,now=Date.now()){
@@ -5087,9 +5452,12 @@
 
   function bindContentControls(currentPage){
     const page=text(currentPage||runtime.app?._test?.state?.page);
-    document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.searchFilters={search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
-    document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('faction-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('faction',link.dataset.playerCard);};});
+    document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters={search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
+    document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
+    document.getElementById('ra-faction-profile-apply')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);const profiles=await getProfiles(runtime.app);const profile=profileId?profiles.find(item=>text(item.profileId)===profileId):null;if(profileId&&!profile)throw new Error('Faction specialist profile was not found.');await saveConfig(runtime.app,{activeResultsProfileId:profileId});runtime.resultPage=0;runtime.searchFilters=profile?profileSearchFilters(profile):{...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-faction-profile-clear')?.addEventListener('click',async()=>{try{await saveConfig(runtime.app,{activeResultsProfileId:''});runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-faction-profile-save-search')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);if(!profileId)throw new Error('Choose a Faction specialist profile first.');const profiles=await getProfiles(runtime.app);const profile=profiles.find(item=>text(item.profileId)===profileId);if(!profile)throw new Error('Faction specialist profile was not found.');await saveProfile(runtime.app,{...profile,searchFilters:runtime.searchFilters});await saveConfig(runtime.app,{activeResultsProfileId:profileId});await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('faction-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('faction',link.dataset.playerCard);};});
     document.querySelectorAll('[data-go-page]').forEach(button=>{const route=text(button.dataset.goPage);if(isFactionRoute(route))button.onclick=event=>{event?.preventDefault?.();navigate(route,true).catch(reportError);};});
     document.querySelectorAll('[data-faction-stage-select]').forEach(select=>select.onchange=async()=>{try{await changeFactionStage(select.dataset.factionStageSelect,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);await renderPage(page,{persist:false});}});
     document.querySelectorAll('[data-faction-profile-pin]').forEach(select=>select.onchange=async()=>{try{await setProfilePin(select.dataset.factionProfilePin,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);}});
@@ -5151,7 +5519,7 @@
       html=FactionUI.renderToday(FactionUI.buildTodayModel(rows,{now:Date.now(),stageThresholds:config.stageThresholds||{},opportunities:Object.fromEntries(opportunities.map(item=>[item.userId,item.opportunity.score]))}));
     }
     else if(page==='faction-discover')html=renderDiscover(rows);
-    else if(page==='faction-candidates'){const filtered=filterRows(rows,runtime.searchFilters);const sorted=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,layout:app._test.state.settings?.candidates?.resultsLayout});}
+    else if(page==='faction-candidates'){const [config,profiles]=await Promise.all([getConfig(app),getProfiles(app)]);const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:text(config.activeResultsProfileId),pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}});}
     else if(page==='faction-pipeline')html=FactionUI.renderPipeline(FactionUI.buildPipelineModel(rows));
     else if(page==='faction-requirements')html=FactionUI.renderRequirementsPage({config,profiles,rows});
     else if(page==='faction-campaigns')html=WorkflowUI.renderCampaignsPage({campaigns,rows,profiles});
@@ -5194,7 +5562,7 @@
     uninstall,
     renderPage,
     syncNavigation,
-    _test:{IMPLEMENTED_ROUTES,buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,getCampaigns,getSessions,readCriteria,ensureFactionCandidate,changeFactionStage,setProfilePin,opportunityWeights,filterRows,sortRows,toggleSort,organizationInfo}
+    _test:{IMPLEMENTED_ROUTES,buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,getCampaigns,getSessions,readCriteria,ensureFactionCandidate,changeFactionStage,setProfilePin,opportunityWeights,profileSearchFilters,activeResultsProfile,filterRows,sortRows,toggleSort,organizationInfo,RESULTS_PAGE_SIZE}
   });
 });
 
@@ -5215,6 +5583,7 @@
     V46Navigation: root && root.RA_V46Navigation,
     V46CompanyCore: root && root.RA_V46CompanyCore,
     V46CompanyStorage: root && root.RA_V46CompanyStorage,
+    V46CompanyWorkflow: root && root.RA_V46CompanyWorkflow,
     V46CompanyPlatform: root && root.RA_V46CompanyPlatform,
     V47FactionCore: root && root.RA_V47FactionCore,
     V47FactionStorage: root && root.RA_V47FactionStorage,
@@ -5240,6 +5609,7 @@
     deps.V46Navigation = require('./v46-navigation');
     deps.V46CompanyCore = require('./v46-company-core');
     deps.V46CompanyStorage = require('./v46-company-storage');
+    deps.V46CompanyWorkflow = require('./v46-company-workflow');
     deps.V46CompanyPlatform = require('./v46-company-platform');
     deps.V47FactionCore = require('./v47-faction-core');
     deps.V47FactionStorage = require('./v47-faction-storage');
@@ -5256,8 +5626,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (D) {
   'use strict';
 
-  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform} = D;
-  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform].every(Boolean)) {
+  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform} = D;
+  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform].every(Boolean)) {
     throw new Error('Recruitment Agency v4.5 core modules are required.');
   }
 
@@ -5351,7 +5721,7 @@
   const repositories=V46Storage.createRepositories(idb);
   const companyRepositories=V46CompanyStorage.createRepositories(idb,V46CompanyCore);
   const factionRepositories=V47FactionStorage.createRepositories(idb,V47FactionCore);
-  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name,options)=>recruitCandidate(domain,userId,name,options),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
+  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name,options)=>recruitCandidate(domain,userId,name,options),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),discoverWorkstatProspects:(options={})=>discoverWorkstatProspects(options),listMatchProfiles:async()=> (await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile),getActiveMatchProfile:()=>getActiveMatchProfile(),setActiveMatchProfile:async profileId=>{const id=text(profileId);if(!id){await saveSettings({match:{...state.settings.match,activeProfileId:''}});return null;}const row=await idb.get('matchProfiles',id);if(!row)throw new Error('Match Profile was not found.');await saveSettings({match:{...state.settings.match,activeProfileId:id}});return MatchCore.normalizeProfile(row);},saveCompanySearchProfile:async(profileId,filters={})=>{const id=text(profileId);const row=id?await idb.get('matchProfiles',id):null;if(!row)throw new Error('Match Profile was not found.');const profile=MatchCore.normalizeProfile(row);profile.searchFilters={...profile.searchFilters,company:MatchCore.normalizeCompanySearchFilters(filters)};const saved=await saveMatchProfile(profile);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});return saved;},openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
 
   function mergeSettings(raw={}) {
     const base=defaultSettings();
@@ -5467,7 +5837,7 @@
   function extractStats(data){const p=data?.personalstats||data?.personal_stats||data?.personalStats||{};return p&&typeof p==='object'?p:{};}
   function extractProfile(data,userId){const p=data?.profile?.profile||data?.profile||data?.basic?.basic||data?.basic||data||{};const faction=p.faction||{};const last=p.last_action||p.lastAction||{};const status=p.status||{};return{id:Number(p.id||p.player_id||userId),name:text(p.name||p.username||`User ${userId}`),level:finite(p.level),age:finite(p.age),factionId:finite(faction.id??p.faction_id),factionName:text(faction.name||p.faction_name),status:text(status.state||status.description||p.online_status||last.status||'Unknown'),lastActionTs:finite(last.timestamp??last.time??p.last_action_timestamp)};}
   function scoutFit(snapshot){if(!snapshot)return null;if(snapshot.official&&snapshot.w30)return ScoutCore.scoreFit(snapshot.w30,state.settings.scout.scoring).score;if(snapshot.provisionalSource&&snapshot.provisionalDays)return ScoutCore.provisionalFit(snapshot.provisionalSource,snapshot.provisionalDays,state.settings.scout.scoring).score;return finite(snapshot.currentFit??snapshot.originalFit);}
-  async function scoutPlayer(userId,force=false){const id=Number(userId);if(!id)throw new Error('Invalid player ID.');const cached=await idb.get('scoutLatest',id);if(!force&&cached&&Date.now()-Number(cached.capturedAt||0)<12*60*60*1000)return cached;state.scout.currentId=id;state.scout.status=`Scouting ${id}: current totals`;refreshScoutRuntimeUi();const currentData=await tornRequest(`user/${id}`,{selections:'profile,personalstats',stat:SCOUT_STAT_LIST},{scout:true});const current=extractStats(currentData);const profile=extractProfile(currentData,id);const now=Math.floor(Date.now()/1000);let past7=null,past30=null,w7=null,w30=null;if(profile.age>=7){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 7-day history`;refreshScoutRuntimeUi();past7=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-7*86400},{scout:true}));w7=ScoutCore.deltaStats(current,past7);}if(profile.age>=30){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 30-day history`;refreshScoutRuntimeUi();past30=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-30*86400},{scout:true}));w30=ScoutCore.deltaStats(current,past30);}const official=profile.age>=30&&!!w30;let provisionalSource=null,provisionalDays=0;if(!official){if(profile.age>0&&profile.age<30){provisionalSource=ScoutCore.metricsFromTotals(current);provisionalDays=Math.max(1,Math.min(29,profile.age));}else if(w7){provisionalSource=w7;provisionalDays=7;}}const fitObj=official?ScoutCore.scoreFit(w30,state.settings.scout.scoring):null;const provisionalObj=!official&&provisionalSource?ScoutCore.provisionalFit(provisionalSource,provisionalDays,state.settings.scout.scoring):null;const trend= w7&&w30?ScoutCore.computeTrend(w7,w30,state.settings.scout.scoring):{percent:null,components:{}};const capturedAt=Date.now();const snapshot={snapshotId:`${id}:${capturedAt}`,userId:id,capturedAt,source:'scout',profile,currentRaw:current,past7Raw:past7,past30Raw:past30,w7,w30,official,provisionalSource,provisionalDays,provisionalConfidence:provisionalObj?.confidence||null,originalFit:fitObj?.score??provisionalObj?.score??null,currentFit:fitObj?.score??provisionalObj?.score??null,originalFitType:official?'official':(provisionalObj?'provisional':'unmeasured'),trend:trend.percent,trendComponents:trend.components,formula:ScoutCore.normalizeScoring(state.settings.scout.scoring),extra:{networth:finite(current.networth),activeStreak:finite(current.activestreak),bestActiveStreak:finite(current.bestactivestreak),statEnhancers30:w30?.statEnhancers??provisionalSource?.statEnhancers??0}};await idb.put('scoutLatest',snapshot);await idb.put('scoutHistory',snapshot);const scoutShared={name:profile.name,lastScoutAt:capturedAt,lastObservedAt:capturedAt,scoutStatus:ResultsCore.classifyScoutStatus(snapshot)};const measuredFit=finite(snapshot.currentFit??snapshot.originalFit);if(measuredFit!==null){scoutShared.fit=measuredFit;scoutShared.fitType=snapshot.official?'official':(snapshot.provisionalSource?'provisional':'unmeasured');}for(const [key,value] of Object.entries({level:profile.level,factionId:profile.factionId,factionName:profile.factionName||null,networth:snapshot.extra?.networth,lastActive:profile.lastActionTs?Number(profile.lastActionTs)*1000:null,activity30:(snapshot.w30||snapshot.provisionalSource||{}).activityHours,xanax30:(snapshot.w30||snapshot.provisionalSource||{}).xanax,refills30:(snapshot.w30||snapshot.provisionalSource||{}).refills,attacks30:(snapshot.w30||snapshot.provisionalSource||{}).attacks,rwHits30:(snapshot.w30||snapshot.provisionalSource||{}).rwHits}))if(value!==null&&value!==undefined&&value!=='')scoutShared[key]=value;await repositories.players.ensure(String(id),scoutShared,'scout',capturedAt);await enqueueGlobalObservation(snapshot).catch(()=>{});return snapshot;}
+  async function scoutPlayer(userId,force=false){const id=Number(userId);if(!id)throw new Error('Invalid player ID.');const cached=await idb.get('scoutLatest',id);if(!force&&cached&&Date.now()-Number(cached.capturedAt||0)<12*60*60*1000)return cached;state.scout.currentId=id;state.scout.status=`Scouting ${id}: current totals`;refreshScoutRuntimeUi();const currentData=await tornRequest(`user/${id}`,{selections:'profile,personalstats',stat:SCOUT_STAT_LIST},{scout:true});const current=extractStats(currentData);const profile=extractProfile(currentData,id);const now=Math.floor(Date.now()/1000);let past7=null,past30=null,w7=null,w30=null;if(profile.age>=7){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 7-day history`;refreshScoutRuntimeUi();past7=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-7*86400},{scout:true}));w7=ScoutCore.deltaStats(current,past7);}if(profile.age>=30){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 30-day history`;refreshScoutRuntimeUi();past30=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-30*86400},{scout:true}));w30=ScoutCore.deltaStats(current,past30);}const official=profile.age>=30&&!!w30;let provisionalSource=null,provisionalDays=0;if(!official){if(profile.age>0&&profile.age<30){provisionalSource=ScoutCore.metricsFromTotals(current);provisionalDays=Math.max(1,Math.min(29,profile.age));}else if(w7){provisionalSource=w7;provisionalDays=7;}}const fitObj=official?ScoutCore.scoreFit(w30,state.settings.scout.scoring):null;const provisionalObj=!official&&provisionalSource?ScoutCore.provisionalFit(provisionalSource,provisionalDays,state.settings.scout.scoring):null;const trend=w7&&w30?ScoutCore.computeTrend(w7,w30,state.settings.scout.scoring):{percent:null,components:{}};const capturedAt=Date.now();const snapshot={snapshotId:`${id}:${capturedAt}`,userId:id,capturedAt,source:'scout',profile,currentRaw:current,past7Raw:past7,past30Raw:past30,w7,w30,official,provisionalSource,provisionalDays,provisionalConfidence:provisionalObj?.confidence||null,originalFit:fitObj?.score??provisionalObj?.score??null,currentFit:fitObj?.score??provisionalObj?.score??null,originalFitType:official?'official':(provisionalObj?'provisional':'unmeasured'),trend:trend.percent,trendComponents:trend.components,formula:ScoutCore.normalizeScoring(state.settings.scout.scoring),extra:{networth:finite(current.networth),activeStreak:finite(current.activestreak),bestActiveStreak:finite(current.bestactivestreak),statEnhancers30:w30?.statEnhancers??provisionalSource?.statEnhancers??0}};await idb.put('scoutLatest',snapshot);await idb.put('scoutHistory',snapshot);const scoutShared={name:profile.name,lastScoutAt:capturedAt,lastObservedAt:capturedAt,scoutStatus:ResultsCore.classifyScoutStatus(snapshot)};const measuredFit=finite(snapshot.currentFit??snapshot.originalFit);if(measuredFit!==null){scoutShared.fit=measuredFit;scoutShared.fitType=snapshot.official?'official':(snapshot.provisionalSource?'provisional':'unmeasured');}for(const[key,value]of Object.entries({level:profile.level,age:profile.age,factionId:profile.factionId,factionName:profile.factionName||null,networth:snapshot.extra?.networth,activeStreak:snapshot.extra?.activeStreak,bestActiveStreak:snapshot.extra?.bestActiveStreak,lastActive:profile.lastActionTs?Number(profile.lastActionTs)*1000:null,activity30:(snapshot.w30||snapshot.provisionalSource||{}).activityHours,xanax30:(snapshot.w30||snapshot.provisionalSource||{}).xanax,refills30:(snapshot.w30||snapshot.provisionalSource||{}).refills,attacks30:(snapshot.w30||snapshot.provisionalSource||{}).attacks,rwHits30:(snapshot.w30||snapshot.provisionalSource||{}).rwHits}))if(value!==null&&value!==undefined&&value!=='')scoutShared[key]=value;await repositories.players.ensure(String(id),scoutShared,'scout',capturedAt);await enqueueGlobalObservation(snapshot).catch(()=>{});return snapshot;}
   async function runScout(ids,force=false){if(state.scout.running)throw new Error('Scout is already running.');const unique=[...new Set((ids||[]).map(Number).filter(Boolean))].slice(0,state.settings.scout.maxCandidates);if(!unique.length)throw new Error('No valid player IDs to Scout.');Object.assign(state.scout,{running:true,paused:false,cancelled:false,done:0,total:unique.length,calls:0,currentId:null,status:'Starting'});refreshScoutRuntimeUi();let cursor=0;const workers=Math.max(1,Math.min(state.settings.scout.workers,unique.length));const worker=async()=>{while(!state.scout.cancelled){const i=cursor++;if(i>=unique.length)break;const id=unique[i];try{await scoutPlayer(id,force);await logEvent('scout','Scout player completed',{playerId:id});}catch(error){if(!error.cancelled)await logEvent('error','Scout player failed',{playerId:id,error:text(error.message)});}finally{state.scout.done++;refreshScoutRuntimeUi();}}};try{await Promise.all(Array.from({length:workers},worker));}finally{state.scout.running=false;state.scout.paused=false;state.scout.currentId=null;state.scout.status=state.scout.cancelled?'Stopped':'Complete';refreshScoutRuntimeUi();if(state.page==='scout'||state.page==='company-candidates'||state.page==='company-pipeline')await route(state.page,false);}return true;}
   function pauseScout(){if(state.scout.running){state.scout.paused=!state.scout.paused;state.scout.status=state.scout.paused?'Paused':'Running';refreshScoutRuntimeUi();}}
   function cancelScout(){if(state.scout.running){state.scout.cancelled=true;state.scout.paused=false;state.scout.status='Cancelling';refreshScoutRuntimeUi();}}
@@ -5480,7 +5850,7 @@
   async function flushGlobalQueue(manual=false){if(!state.settings.global.enabled||!globalEndpoint())return{processed:0,pending:(await idb.getAll('globalSyncQueue')).length};const endpoint=globalEndpoint();let processed=0;const rows=(await idb.getAll('globalSyncQueue')).sort((a,b)=>a.createdAt-b.createdAt);for(const item of rows){if(!manual&&Number(item.nextRetryAt||0)>Date.now())continue;try{const raw=await globalJson(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(GlobalCore.buildObservePayload(item.observation,SCRIPT_VERSION))});const normalized=GlobalCore.normalizeServiceResponse(raw);if(GlobalCore.classifyRetry(normalized)==='done'||GlobalCore.classifyRetry(normalized)==='permanent')await idb.delete('globalSyncQueue',item.queueId);else throw new Error(normalized.code||'Global observation rejected');}catch(error){item.attempts=Number(item.attempts||0)+1;item.lastError=text(error.message).slice(0,160);item.nextRetryAt=Date.now()+Math.min(6*60*60*1000,60000*(2**Math.min(item.attempts,8)));await idb.put('globalSyncQueue',item);}processed++;}await logEvent('global','Global sync processed',{processed,pending:(await idb.getAll('globalSyncQueue')).length});return{processed,pending:(await idb.getAll('globalSyncQueue')).length};}
 
   async function ensureDefaultMatchProfile(){let profiles=await idb.getAll('matchProfiles');if(!profiles.length){const p=MatchCore.createDefaultProfile('Default Recruit');p.createdAt=new Date().toISOString();p.updatedAt=p.createdAt;await idb.put('matchProfiles',p);await saveSettings({match:{...state.settings.match,activeProfileId:p.profileId}});return p;}let active=profiles.find(p=>p.profileId===state.settings.match.activeProfileId)||profiles[0];if(active.profileId!==state.settings.match.activeProfileId)await saveSettings({match:{...state.settings.match,activeProfileId:active.profileId}});return MatchCore.normalizeProfile(active);}
-  async function getActiveMatchProfile(){const id=text(state.settings.match.activeProfileId);if(id){const row=await idb.get('matchProfiles',id);if(row)return MatchCore.normalizeProfile(row);}return ensureDefaultMatchProfile();}
+  async function getActiveMatchProfile(fallback=false){const id=text(state.settings.match.activeProfileId);if(id){const row=await idb.get('matchProfiles',id);if(row)return MatchCore.normalizeProfile(row);}return fallback?ensureDefaultMatchProfile():null;}
   async function saveMatchProfile(profile){const normalized=MatchCore.normalizeProfile(profile);const existing=normalized.profileId?await idb.get('matchProfiles',normalized.profileId):null;const now=new Date().toISOString();normalized.createdAt=existing?.createdAt||normalized.createdAt||now;normalized.updatedAt=now;await idb.put('matchProfiles',normalized);return normalized;}
 
   function latestSourceFor(candidate,sources){const id=text(candidate.latestForumSourceId);if(id)return sources.find(s=>s.sourceId===id)||null;return sources.filter(s=>String(s.userId)===String(candidate.userId)).sort((a,b)=>Number(b.postedAt||0)-Number(a.postedAt||0))[0]||null;}
@@ -5544,7 +5914,7 @@
     const factionRaw=value.faction_id??value.factionId;
     const factionId=factionRaw===null||factionRaw===undefined||factionRaw===''?null:Number(factionRaw);
     return{
-      id:Number(userId),userId,name:text(value.name)||`User ${userId}`,level:finite(value.level),
+      id:Number(userId),userId,name:text(value.name)||`User ${userId}`,level:finite(value.level),age:finite(value.age),
       factionId:Number.isFinite(factionId)?factionId:null,
       onlineStatus:text(value.online??lastAction.status),
       lastActive:Number.isFinite(lastActionTs)&&lastActionTs>0?lastActionTs*1000:null
@@ -5560,9 +5930,11 @@
     const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),'TORN API SEARCH'])];
     const sharedPatch={name:candidate.name,lastObservedAt:observedAt};
     if(candidate.level!==null)sharedPatch.level=candidate.level;
+    if(candidate.age!==null)sharedPatch.age=candidate.age;
     if(candidate.factionId!==null)sharedPatch.factionId=candidate.factionId;
     if(candidate.onlineStatus)sharedPatch.onlineStatus=candidate.onlineStatus;
     if(candidate.lastActive!==null)sharedPatch.lastActive=candidate.lastActive;
+    sharedPatch.lastObservedAt=observedAt;
     const patch={
       pipelineStage:existing?.pipelineStage||(normalizedDomain==='faction'?'Prospect':'Not Contacted'),
       availability:existing?.availability||'Unknown',
@@ -5571,6 +5943,80 @@
       updatedAt:observedAt
     };
     return repositories[normalizedDomain].ensure(candidate.userId,patch,{sharedPatch,source:'api-search',observedAt});
+  }
+
+  function normalizeWorkstatHofCandidate(raw={}){
+    const value=raw?.user||raw?.player||raw||{};
+    const userId=V46Domain.normalizeUserId(value.id??value.user_id??value.userId);
+    const level=finite(value.level);
+    const age=finite(value.age_in_days??value.age);
+    const total=finite(value.value??value.workstats??value.work_stats??value.total);
+    const factionRaw=value.faction_id??value.factionId;
+    const factionId=factionRaw===null||factionRaw===undefined||factionRaw===''?null:Number(factionRaw);
+    const lastRaw=finite(value.last_action??value.lastAction??value.last_action_timestamp);
+    const lastActive=lastRaw===null?null:(lastRaw>1e12?lastRaw:lastRaw*1000);
+    return{
+      id:Number(userId),userId,name:text(value.username??value.name)||`User ${userId}`,
+      level,age,total,
+      factionId:Number.isFinite(factionId)?factionId:null,
+      lastActive,
+      hofPosition:finite(value.position??value.rank),
+      hofRank:text(value.rank_name??value.rankName)
+    };
+  }
+
+  async function persistWorkstatHofCandidate(raw,observedAt=Date.now()){
+    const candidate=normalizeWorkstatHofCandidate(raw);
+    const existing=await idb.get('companyRecruitment',candidate.userId);
+    const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),'WORKSTAT LEADERBOARD'])];
+    const sharedPatch={name:candidate.name,lastObservedAt:observedAt};
+    if(candidate.level!==null)sharedPatch.level=candidate.level;
+    if(candidate.age!==null)sharedPatch.age=candidate.age;
+    if(candidate.total!==null)sharedPatch.total=candidate.total;
+    if(candidate.factionId!==null)sharedPatch.factionId=candidate.factionId;
+    if(candidate.lastActive!==null)sharedPatch.lastActive=candidate.lastActive;
+    const patch={
+      pipelineStage:existing?.pipelineStage||'Not Contacted',
+      availability:existing?.availability||'Unknown',
+      recruiterNote:existing?.recruiterNote||'',
+      discoverySources,
+      updatedAt:observedAt
+    };
+    return repositories.company.ensure(candidate.userId,patch,{sharedPatch,source:'workstat-leaderboard',observedAt});
+  }
+
+  async function discoverWorkstatProspects(options={},deps={}){
+    const request=deps.tornRequest||tornRequest;
+    const persist=deps.persistCandidate||persistWorkstatHofCandidate;
+    const injected=Object.keys(deps).length>0;
+    const limit=Math.max(1,Math.min(100,Math.floor(number(options.limit,100))));
+    const offset=Math.max(0,Math.floor(number(options.offset,0)));
+    const minTotal=Math.max(0,finite(options.minTotal)??0);
+    const minLevel=Math.max(0,finite(options.minLevel)??0);
+    const maxAgeDays=Math.max(0,finite(options.maxAgeDays)??0);
+    const maxLastActionDays=Math.max(0,finite(options.maxLastActionDays)??0);
+    const observedAt=Date.now();
+    const response=await request('torn/hof',{cat:'workstats',limit,offset});
+    const rows=Array.isArray(response?.hof)?response.hof:Array.isArray(response?.rankings)?response.rankings:Array.isArray(response?.entries)?response.entries:Array.isArray(response)?response:[];
+    let imported=0,skipped=0;
+    for(const raw of rows){
+      let candidate;
+      try{candidate=normalizeWorkstatHofCandidate(raw);}catch{skipped++;continue;}
+      if(minTotal>0&&(candidate.total===null||candidate.total<minTotal)){skipped++;continue;}
+      if(minLevel>0&&(candidate.level===null||candidate.level<minLevel)){skipped++;continue;}
+      if(maxAgeDays>0&&(candidate.age===null||candidate.age>maxAgeDays)){skipped++;continue;}
+      if(maxLastActionDays>0){
+        if(candidate.lastActive===null||observedAt-candidate.lastActive>maxLastActionDays*86400000){skipped++;continue;}
+      }
+      await persist(raw,observedAt);
+      imported++;
+    }
+    const result={source:'WORKSTAT LEADERBOARD',requested:rows.length,imported,skipped,limit,offset,nextOffset:offset+rows.length};
+    if(!injected){
+      await logEvent('discovery','Work-stat HOF prospect discovery completed',result);
+      toast(`HOF discovery: ${imported} prospect(s) imported from ${rows.length} result(s).`);
+    }
+    return result;
   }
 
   async function searchCandidates(domain,filters={},deps={}){
@@ -5612,7 +6058,7 @@
 
   function stageColor(stage){return state.settings.recruitment.stageColors?.[stage]||Runtime.STAGE_COLORS[stage]||'#64748b';}
   function availabilityColor(value){return state.settings.recruitment.availabilityColors?.[value]||Runtime.AVAILABILITY_COLORS[value]||'#64748b';}
-  function lastActiveText(view){const ts=finite(view.lastActive);if(ts===null)return '—';const seconds=Math.max(0,Math.floor(Date.now()/1000-ts));if(seconds<60)return `${seconds}s`;if(seconds<3600)return `${Math.floor(seconds/60)}m`;if(seconds<86400)return `${Math.floor(seconds/3600)}h`;return `${Math.floor(seconds/86400)}d`;}
+  function lastActiveText(view){const raw=finite(view.lastActive);if(raw===null)return '—';const ts=raw>1e12?raw/1000:raw;const seconds=Math.max(0,Math.floor(Date.now()/1000-ts));if(seconds<60)return `${seconds}s`;if(seconds<3600)return `${Math.floor(seconds/60)}m`;if(seconds<86400)return `${Math.floor(seconds/3600)}h`;return `${Math.floor(seconds/86400)}d`;}
   function scoreText(value){return finite(value)===null?'—':Number(value).toFixed(1);}
   function pill(label,color){return `<span class="ra-pill" style="--pill:${esc(color)}">${esc(label||'Unknown')}</span>`;}
   function helpButton(key){const item=Runtime.HELP_REGISTRY[key];return item?`<button type="button" class="ra-help" data-help-key="${esc(key)}" aria-label="About ${esc(item.title)}">i</button>`:'';}
@@ -5664,7 +6110,7 @@
   async function renderScout(){const history=(await idb.getAll('scoutHistory')).sort((a,b)=>b.capturedAt-a.capturedAt).slice(0,20);return `${panel('Scout','Official Torn player intelligence',`<div class="ra-formgrid"><div class="ra-field"><label>Player IDs / profile URLs</label><textarea id="ra-scout-ids" placeholder="3877028, profile URLs, etc."></textarea></div><div><div class="ra-detail-grid"><span>Queue<b>${state.scout.done}/${state.scout.total}</b></span><span>API calls<b>${state.scout.calls}</b></span><span>Current candidate<b>${state.scout.currentId||'—'}</b></span><span>Status<b id="ra-scout-status">${esc(state.scout.status)}</b></span></div><div class="ra-progress" style="margin-top:8px"><div id="ra-scout-progress" style="width:${state.scout.total?Math.min(100,state.scout.done/state.scout.total*100):0}%"></div></div></div></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-run-scout">Scout</button><button class="ra-btn" id="ra-pause-scout" ${state.scout.running?'':'disabled'}>${state.scout.paused?'Resume':'Pause'}</button><button class="ra-btn ra-danger" id="ra-cancel-scout" ${state.scout.running?'':'disabled'}>Cancel</button></div>`) }${panel('Scout History','Most recent local snapshots',`<div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Captured</th><th>Fit</th><th>Type</th><th>Trend</th></tr></thead><tbody>${history.map(s=>`<tr><td>${esc(s.profile?.name||s.userId)}</td><td>${new Date(s.capturedAt).toLocaleString()}</td><td>${scoreText(scoutFit(s))}</td><td>${esc(s.originalFitType||'—')}</td><td>${finite(s.trend)===null?'—':`${Number(s.trend)>=0?'+':''}${Number(s.trend).toFixed(1)}%`}</td></tr>`).join('')||'<tr><td colspan="5">No Scout history.</td></tr>'}</tbody></table></div>`)}`;}
 
   function criterionControl(key,c){const label={man:'MAN',int:'INT',end:'END',ee:'EE',fit:'Fit',activity30:'Activity 30d',xanax30:'Xanax 30d',refills30:'Refills 30d',attacks30:'Attacks 30d',rwHits30:'RW Hits 30d',company:'Company',role:'Role',salary:'Salary',availability:'Availability'}[key]||key;let value='';if(['company','role'].includes(key))value=`<input data-match-value="${key}" value="${esc(c.value||'')}">`;else if(key==='availability')value=`<select data-match-value="availability"><option value="">Any</option>${MatchCore.AVAILABILITY_VALUES.map(v=>`<option value="${esc(v)}" ${c.value===v?'selected':''}>${esc(v.replaceAll('_',' '))}</option>`).join('')}</select>`;else if(key==='salary')value=`<input data-match-max="salary" type="number" value="${esc(c.max||0)}">`;else value=`<input data-match-target="${key}" type="number" value="${esc(c.target||0)}">`;return `<div class="ra-formgrid" style="grid-template-columns:1.2fr 1fr 80px;align-items:end;margin:5px 0"><label><input type="checkbox" data-match-enabled="${esc(key)}" ${c.enabled?'checked':''}> ${esc(label)}</label><div class="ra-field"><label>Target / Value</label>${value}</div><div class="ra-field"><label>Weight</label><input data-match-weight="${esc(key)}" type="number" value="${esc(c.weight||0)}"></div></div>`;}
-  async function renderSmartMatch(){const profiles=(await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile);const active=await getActiveMatchProfile();const criteria=MatchCore.CRITERIA_KEYS.map(key=>criterionControl(key,active.criteria[key])).join('');return `${panel('Smart Match','Local-only matching · zero Torn API calls',`<div class="ra-actions"><select id="ra-match-profile-select" class="ra-btn">${profiles.map(p=>`<option value="${esc(p.profileId)}" ${p.profileId===active.profileId?'selected':''}>${esc(p.name)}</option>`).join('')}</select><button class="ra-btn" id="ra-match-new">Create</button><button class="ra-btn" id="ra-match-duplicate">Duplicate</button><button class="ra-btn ra-danger" id="ra-match-delete">Delete</button></div><div class="ra-field" style="margin-top:8px"><label>Profile name</label><input id="ra-match-name" value="${esc(active.name)}"></div><div style="margin-top:8px">${criteria}</div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-match-save">Save Profile</button></div>`) }${panel('Known / Unknown','How Match handles incomplete candidate data',`<div class="ra-muted">Enabled criteria with unknown candidate values are excluded from the denominator. Smart Match recalculation is local and never calls Torn.</div>`)}`;}
+  async function renderSmartMatch(){const profiles=(await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile);const active=await getActiveMatchProfile(true);const criteria=MatchCore.CRITERIA_KEYS.map(key=>criterionControl(key,active.criteria[key])).join('');return `${panel('Smart Match','Local-only matching · zero Torn API calls',`<div class="ra-actions"><select id="ra-match-profile-select" class="ra-btn">${profiles.map(p=>`<option value="${esc(p.profileId)}" ${p.profileId===active.profileId?'selected':''}>${esc(p.name)}</option>`).join('')}</select><button class="ra-btn" id="ra-match-new">Create</button><button class="ra-btn" id="ra-match-duplicate">Duplicate</button><button class="ra-btn ra-danger" id="ra-match-delete">Delete</button></div><div class="ra-field" style="margin-top:8px"><label>Profile name</label><input id="ra-match-name" value="${esc(active.name)}"></div><div style="margin-top:8px">${criteria}</div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-match-save">Save Profile</button></div>`) }${panel('Known / Unknown','How Match handles incomplete candidate data',`<div class="ra-muted">Enabled criteria with unknown candidate values are excluded from the denominator. Smart Match recalculation is local and never calls Torn.</div>`)}`;}
 
   async function renderGlobal(){const pending=(await idb.getAll('globalSyncQueue')).length;return `${panel('Global Intelligence','Sanitized shared public-player observations',`<div class="ra-detail-grid"><span>Enabled<b>${state.settings.global.enabled?'Yes':'No'}</b></span><span>Endpoint<b>${globalEndpoint()?'Configured':'Not configured'}</b></span><span>Pending queue<b>${pending}</b></span><span>Schema<b>${GlobalCore.GLOBAL_SCHEMA_VERSION}</b></span></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" id="ra-global-test">Test Service</button><button class="ra-btn" id="ra-global-retry">Retry Sync</button></div>`) }${panel('Privacy','Exactly what can leave the browser',`<div class="ra-muted">Shared fields: ${esc(GlobalCore.GLOBAL_FIELDS.join(', '))}.</div><p class="ra-muted">Forum text, source URLs/history, pipeline stage, notes, salary, availability overrides, Match/Profile data, recruitment messages and workflow state remain local.</p>`)}`;}
 
@@ -5726,15 +6172,36 @@
   async function handleMenuAction(action,view){closeContextMenu();if(action==='message')return openMessageModal(view.userId);if(action==='details')return openDrawer(view.userId);if(action==='profile')return window.open(profileUrl(view.userId),'_blank','noopener');if(action==='forum'&&view.forumUrl)return window.open(view.forumUrl,'_blank','noopener');if(action==='scout')return runScout([Number(view.userId)],true).catch(e=>toast(e.message,true));if(action==='edit')return openEditCandidateModal(view.userId);if(action==='delete')return deleteCandidate(view.userId);if(action.startsWith('stage:')){await changeCandidateStage(view.userId,action.slice(6));return route(state.page,false);}if(action.startsWith('availability:')){await changeCandidateAvailability(view.userId,action.slice(13));return route(state.page,false);}}
 
   function contactStateFromStage(stage,outcomes=[]){if(Array.isArray(outcomes)&&outcomes.length)return 'Contacted';const value=text(stage).toLowerCase();return ['contacted','replied','hired','joined','invite ready','evaluating'].includes(value)?'Contacted':'Not yet';}
+  async function setCompanyWatchlist(userId,enabled){
+    const id=V46Domain.normalizeUserId(userId);
+    const existing=await idb.get('companyRecruitment',id);
+    if(!existing)throw new Error('Company candidate was not found.');
+    const reason=enabled?(text(existing.talentPoolReason)||'Watched from Player Card'):'';
+    const next=V46CompanyWorkflow.setTalentPool(existing,enabled,reason,Date.now());
+    await idb.put('companyRecruitment',next);
+    return next;
+  }
+  function matchProfileRequirements(profile={}){
+    const criteria=profile?.criteria||{},requirements={};
+    for(const [key,target] of [['man','minMan'],['int','minInt'],['end','minEnd']]){
+      const criterion=criteria[key];
+      const value=criterion?.enabled===true?finite(criterion.target):null;
+      if(value!==null&&value>0)requirements[target]=value;
+    }
+    return requirements;
+  }
   async function openPlayerCard(domain,id,options={}){
     if(state.settings.candidates?.playerCard?.openOnName===false&&!options.force)return false;
     const normalizedDomain=text(domain).toLowerCase()==='faction'?'faction':'company';
     const userId=V46Domain.normalizeUserId(id);
     if(state.playerCard.pinned&&state.playerCard.userId&&state.playerCard.userId!==userId&&!options.force)return false;
-    const [player,domainRecord,candidate]=await Promise.all([
+    const [player,domainRecord,candidate,activeMatchProfile,factionConfig,factionProfiles]=await Promise.all([
       idb.get('playerIntelligence',userId),
       idb.get(normalizedDomain==='faction'?'factionRecruitment':'companyRecruitment',userId),
-      idb.get('candidateLocal',userId)
+      idb.get('candidateLocal',userId),
+      normalizedDomain==='company'?getActiveMatchProfile():Promise.resolve(null),
+      normalizedDomain==='faction'?factionRepositories.config.get():Promise.resolve(null),
+      normalizedDomain==='faction'?factionRepositories.profiles.list():Promise.resolve([])
     ]);
     const shared=player||{};
     const local=candidate||{};
@@ -5743,6 +6210,11 @@
     if(!drawer)return false;
     const name=text(shared.name)||text(local.name)||`User ${userId}`;
     const level=finite(shared.level);
+    const age=finite(shared.age);
+    const networth=finite(shared.networth);
+    const xanax30=finite(shared.xanax30);
+    const attacks30=finite(shared.attacks30);
+    const rwHits30=finite(shared.rwHits30);
     const man=shared.man??local.stats?.man??local.man??null;
     const intStat=shared.int??local.stats?.int??local.int??null;
     const end=shared.end??local.stats?.end??local.end??null;
@@ -5759,14 +6231,45 @@
     const statusLabel=normalizedDomain==='company'?'Company Status':'Faction Status';
     const fitLabel='Scout Fit';
     const lastText=finite(lastActive)===null?'—':lastActiveText({lastActive});
+    const intelligenceRow={
+      userId,name,level,age,man,int:intStat,end,networth,xanax30,attacks30,rwHits30,activity30,activeStreak:streak,fit:scoutFit,lastActive,
+      currentCompany:shared.currentCompany,currentFaction:shared.currentFaction||shared.factionName,
+      pipelineStage:stage,candidateLocal:local,playerRecord:shared,player:shared,
+      companyRecord:normalizedDomain==='company'?record:undefined,
+      factionRecord:normalizedDomain==='faction'?record:undefined
+    };
+    const activeFactionProfileId=normalizedDomain==='faction'?text(factionConfig?.activeResultsProfileId):'';
+    const activeFactionProfile=activeFactionProfileId?(factionProfiles||[]).find(profile=>text(profile.profileId)===activeFactionProfileId):null;
+    if(activeFactionProfile){
+      const profileEvaluation=V47FactionCore.evaluateSpecialistProfile(activeFactionProfile,shared,Array.isArray(record.waivers)?record.waivers:[]);
+      intelligenceRow.eligibilityScore=profileEvaluation.matchScore;
+    }
+    const recruitmentIntelligence=ResultsCore.recruitmentFit(intelligenceRow,{domain:normalizedDomain,useEligibility:normalizedDomain==='faction'?Boolean(activeFactionProfile):false,requirements:normalizedDomain==='company'?matchProfileRequirements(activeMatchProfile||{}):{}});
+    const recruitmentFit=recruitmentIntelligence.score;
+    const recruitmentConfidence=recruitmentIntelligence.confidence;
+    const provenance=recruitmentIntelligence.provenance;
+    const displayedObservedAt=shared.lastObservedAt??null;
+    const factionIntelHtml=normalizedDomain==='faction'?`<div class="ra-detail-section"><b>Faction Intelligence</b><div class="ra-detail-grid"><span>Net Worth<b>${formatNumber(networth)}</b></span><span>Xanax 30d<b>${formatNumber(xanax30)}</b></span><span>Attacks 30d<b>${formatNumber(attacks30)}</b></span><span>RW Hits 30d<b>${formatNumber(rwHits30)}</b></span></div></div>`:'';
+    const fitBreakdownHtml=recruitmentIntelligence.components.map(component=>`<div class="ra-detail-grid"><span>${esc(component.label)}<b>${component.known?`${Math.round(component.factor*100)}% · ${component.points.toFixed(1)} pts`:'Unknown'}</b></span><span>Why<b>${esc(component.reason||'—')}</b></span></div>`).join('');
     state.playerCard={domain:normalizedDomain,userId,pinned:state.playerCard.pinned,popout:state.playerCard.popout};
     state.drawerCandidateId=userId;
     drawer.classList.toggle('is-popout',state.playerCard.popout);
-    drawer.innerHTML=`<div class="ra-drawer-head"><div class="ra-player-card-title"><div><div class="ra-player-card-domain">${esc(normalizedDomain)} player card</div><b>${esc(name)}</b><div class="ra-muted">Player ID ${esc(userId)}</div></div>${finite(scoutFit)!==null?`<span class="ra-player-card-score" title="Existing Scout activity Fit, not v4.9 Recruitment Fit">${scoreText(scoutFit)}</span>`:''}</div><button class="ra-btn" id="ra-close-drawer">×</button></div><div class="ra-detail-section"><b>Player</b><div class="ra-detail-grid"><span>Level<b>${level===null?'—':formatNumber(level)}</b></span><span>Last Action<b>${esc(lastText)}</b></span><span>MAN<b>${formatNumber(man)}</b></span><span>INT<b>${formatNumber(intStat)}</b></span><span>END<b>${formatNumber(end)}</b></span><span>30d Activity<b>${formatNumber(activity30,1)}</b></span><span>Activity Streak<b>${formatNumber(streak)}</b></span><span>${fitLabel}<b>${scoreText(scoutFit)}</b></span></div></div><div class="ra-detail-section"><b>${statusLabel}</b><div class="ra-detail-grid"><span>${orgLabel}<b>${esc(orgValue)}</b></span><span>Recruitment Stage<b>${esc(stage)}</b></span><span>Contacted<b>${esc(contactStateFromStage(stage,record.outcomes))}</b></span><span>Availability<b>${esc(record.availability||'Unknown')}</b></span></div></div><div class="ra-detail-section"><b>Provenance</b><div class="ra-detail-grid"><span>Sources<b>${esc(sources.join(' · ')||'Unknown')}</b></span><span>Last Observed<b>${shared.lastObservedAt?esc(dateOrDash(shared.lastObservedAt)):'—'}</b></span></div><div class="ra-note">Player Card reads existing browser-local intelligence. Opening it does not make a Torn API request.</div></div><div class="ra-player-card-actions"><button class="ra-btn ${record.doNotContact===true?'ra-danger':'ra-primary'}" id="ra-card-recruit" ${record.doNotContact===true?'disabled title="Do Not Contact is set for this recruitment domain"':''}>${record.doNotContact===true?'Do Not Contact':'Recruit'}</button><button class="ra-btn" id="ra-card-profile">Open Profile</button><button class="ra-btn" id="ra-card-popout">${state.playerCard.popout?'Dock':'Pop Out'}</button><button class="ra-btn" id="ra-card-pin">${state.playerCard.pinned?'Unpin':'Pin'}</button></div>`;
+    drawer.innerHTML=`<div class="ra-drawer-head"><div class="ra-player-card-title"><div><div class="ra-player-card-domain">${esc(normalizedDomain)} player card</div><b>${esc(name)}</b><div class="ra-muted">Player ID ${esc(userId)} · ${esc(provenance.state)}</div></div>${finite(recruitmentFit)!==null?`<span class="ra-player-card-score" title="Explainable Recruitment Fit · ${esc(recruitmentConfidence)} confidence">${Number(recruitmentFit).toFixed(1)} · ${esc(recruitmentConfidence)}</span>`:''}</div><button class="ra-btn" id="ra-close-drawer">×</button></div><div class="ra-detail-section"><b>Player</b><div class="ra-detail-grid"><span>Level<b>${level===null?'—':formatNumber(level)}</b></span><span>Age<b>${formatNumber(age)}</b></span><span>Last Action<b>${esc(lastText)}</b></span><span>MAN<b>${formatNumber(man)}</b></span><span>INT<b>${formatNumber(intStat)}</b></span><span>END<b>${formatNumber(end)}</b></span><span>30d Activity<b>${formatNumber(activity30,1)}</b></span><span>Activity Streak<b>${formatNumber(streak)}</b></span><span>${fitLabel}<b>${scoreText(scoutFit)}</b></span></div></div><div class="ra-detail-section"><b>${statusLabel}</b><div class="ra-detail-grid"><span>${orgLabel}<b>${esc(orgValue)}</b></span><span>Recruitment Stage<b>${esc(stage)}</b></span><span>Contacted<b>${esc(contactStateFromStage(stage,record.outcomes))}</b></span><span>Availability<b>${esc(record.availability||'Unknown')}</b></span></div></div>${factionIntelHtml}<div class="ra-detail-section"><b>Recruitment Fit</b><div class="ra-detail-grid"><span>Score<b>${finite(recruitmentFit)===null?'—':Number(recruitmentFit).toFixed(1)}</b></span><span>Confidence<b>${esc(recruitmentConfidence)}</b></span><span>Profile<b>${normalizedDomain==='company'?esc(activeMatchProfile?.name||'No profile'):esc(activeFactionProfile?.name||'Faction default')}</b></span><span>Prospect State<b>${esc(provenance.state)}</b></span><span>Freshness<b>${esc(provenance.freshness)}</b></span></div>${fitBreakdownHtml}</div><div class="ra-detail-section"><b>Provenance</b><div class="ra-detail-grid"><span>Sources<b>${esc((provenance.sources||[]).join(' · ')||sources.join(' · ')||'Unknown')}</b></span><span>First Discovered<b>${provenance.firstDiscoveredAt?esc(dateOrDash(provenance.firstDiscoveredAt)):'—'}</b></span><span>Last Observed<b>${displayedObservedAt?esc(dateOrDash(displayedObservedAt)):'—'}</b></span><span>Last Enriched<b>${provenance.lastEnrichedAt?esc(dateOrDash(provenance.lastEnrichedAt)):'—'}</b></span></div><div class="ra-note">Player Card reads existing browser-local intelligence. Opening it does not make a Torn API request. Scout Fit remains a separate activity metric.</div></div><div class="ra-player-card-actions"><button class="ra-btn ${record.doNotContact===true?'ra-danger':'ra-primary'}" id="ra-card-recruit" ${record.doNotContact===true?'disabled title="Do Not Contact is set for this recruitment domain"':''}>${record.doNotContact===true?'Do Not Contact':'Recruit'}</button>${normalizedDomain==='company'?`<button class="ra-btn" id="ra-card-watch">${record.talentPool===true?'Unwatch':'Watch'}</button>`:''}<button class="ra-btn" id="ra-card-refresh">Refresh Intelligence</button><button class="ra-btn" id="ra-card-profile">Open Profile</button><button class="ra-btn" id="ra-card-popout">${state.playerCard.popout?'Dock':'Pop Out'}</button><button class="ra-btn" id="ra-card-pin">${state.playerCard.pinned?'Unpin':'Pin'}</button></div>`;
     drawer.hidden=false;
     const close=()=>{drawer.hidden=true;state.drawerCandidateId='';if(!state.playerCard.pinned)state.playerCard.userId='';};
     document.getElementById('ra-close-drawer').onclick=close;
-    const recruitButton=document.getElementById('ra-card-recruit');if(record.doNotContact!==true)recruitButton.onclick=()=>recruitCandidate(normalizedDomain,userId,name).catch(error=>toast(error.message,true));
+    const recruitButton=document.getElementById('ra-card-recruit');if(record.doNotContact!==true)recruitButton.onclick=async()=>{try{const latest=await idb.get(normalizedDomain==='faction'?'factionRecruitment':'companyRecruitment',userId);if(latest?.doNotContact===true)throw new Error('Do Not Contact is set for this recruitment domain.');await recruitCandidate(normalizedDomain,userId,name);}catch(error){toast(error.message,true);}};
+    const watchButton=document.getElementById('ra-card-watch');
+    if(watchButton)watchButton.onclick=async()=>{
+      try{const next=await setCompanyWatchlist(userId,record.talentPool!==true);record.talentPool=next.talentPool;await openPlayerCard('company',userId,{force:true});}
+      catch(error){toast(error.message,true);}
+    };
+    const refreshButton=document.getElementById('ra-card-refresh');
+    refreshButton.onclick=async()=>{
+      try{refreshButton.disabled=true;refreshButton.textContent='Refreshing…';await runScout([Number(userId)],true);await openPlayerCard(normalizedDomain,userId,{force:true});}
+      catch(error){toast(error.message,true);}
+      finally{if(refreshButton?.isConnected){refreshButton.disabled=false;refreshButton.textContent='Refresh Intelligence';}}
+    };
     document.getElementById('ra-card-profile').onclick=()=>window.open(profileUrl(userId),'_blank','noopener');
     const popoutButton=document.getElementById('ra-card-popout');if(state.settings.candidates?.playerCard?.allowPopout===false){popoutButton.disabled=true;popoutButton.title='Enable Player Card pop-out in Settings';}else popoutButton.onclick=()=>{state.playerCard.popout=!state.playerCard.popout;openPlayerCard(normalizedDomain,userId,{force:true}).catch(error=>toast(error.message,true));};
     document.getElementById('ra-card-pin').onclick=()=>{state.playerCard.pinned=!state.playerCard.pinned;openPlayerCard(normalizedDomain,userId,{force:true}).catch(error=>toast(error.message,true));};
@@ -5784,7 +6287,8 @@
   function closeModal(){const modal=document.getElementById('ra-modal');if(modal){modal.hidden=true;modal.innerHTML='';}state.messageCandidateId='';}
 
   function candidateCsvRow(v){return[v.userId,v.name,v.pipelineStage,v.matchScore??'',v.fitScore??'',v.lookingFor,v.sourceType,v.currentCompany,v.availability,v.man??'',v.int??'',v.end??'',v.ee??''];}
-  async function exportCsv(){const rows=await candidateViews();const header=['Player ID','Name','Stage','Match','Fit','Looking For','Source','Current Company','Availability','MAN','INT','END','EE'];const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;const csv=[header,...rows.map(candidateCsvRow)].map(row=>row.map(quote).join(',')).join('\n');try{await navigator.clipboard.writeText(csv);toast(`Copied ${rows.length} candidate(s) as CSV.`);}catch{const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='recruitment-candidates.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}
+  function csvCell(value){let safe=String(value??'');if(/^\s*[=+\-@]/u.test(safe))safe=`'${safe}`;return `"${safe.replaceAll('"','""')}"`;}
+  async function exportCsv(){const rows=await candidateViews();const header=['Player ID','Name','Stage','Match','Fit','Looking For','Source','Current Company','Availability','MAN','INT','END','EE'];const csv=[header,...rows.map(candidateCsvRow)].map(row=>row.map(csvCell).join(',')).join('\n');try{await navigator.clipboard.writeText(csv);toast(`Copied ${rows.length} candidate(s) as CSV.`);}catch{const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='recruitment-candidates.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}
 
   async function hardReset(){if(!confirm('NUKE IT ALL will permanently delete Recruitment Agency browser-local candidates, forum imports, Scout cache/history, Global cache/queue, Match Profiles, logs, messages/settings and layout. Torn account data and unrelated userscripts are not touched. Continue?'))return;const typed=text(prompt('Type NUKE to confirm the hard local reset:','')).toUpperCase();if(typed!=='NUKE'){toast('Hard reset cancelled.',true);return;}for(const store of STORE_NAMES)await idb.clear(store);state.settings=mergeSettings({});state.page='company-candidates';applyTheme();rebuildNav();closeModal();document.getElementById('ra-drawer').hidden=true;await route('company-candidates',false);toast('Recruitment Agency local data was reset.');}
   async function clearRecruitmentData(){for(const store of ['users','candidateLocal','companyRecruitment','factionRecruitment','companyVacancies','companyCampaigns','companyRecruitmentConfig','companyRecruitmentSessions','factionSpecialistProfiles','factionCampaigns','factionRecruitmentConfig','factionRecruitmentSessions','forumSources','forumSyncState'])await idb.clear(store);return true;}
@@ -5813,7 +6317,7 @@
     ['ra-filter-search','ra-filter-stage','ra-filter-source','ra-filter-looking','ra-filter-company','ra-filter-match','ra-filter-fit','ra-filter-active','ra-filter-man','ra-filter-int','ra-filter-end','ra-filter-activity'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>persistFilters().catch(e=>toast(e.message,true))));document.getElementById('ra-more-filters')?.addEventListener('click',async()=>{const f={...readFiltersFromUi(),moreOpen:!state.settings.candidates.filters.moreOpen};await saveSettings({candidates:{...state.settings.candidates,filters:f}});await route('company-candidates',false);});document.getElementById('ra-clear-candidate-filters')?.addEventListener('click',async()=>{await saveSettings({candidates:{...state.settings.candidates,filters:{...defaultSettings().candidates.filters}}});await route('company-candidates',false);});document.getElementById('ra-toggle-view')?.addEventListener('click',async()=>{await saveSettings({candidates:{...state.settings.candidates,view:state.settings.candidates.view==='table'?'cards':'table'}});await route('company-candidates',false);});document.getElementById('ra-columns')?.addEventListener('click',()=>{const x=document.getElementById('ra-column-picker');if(x)x.hidden=!x.hidden;});document.querySelectorAll('[data-column]').forEach(el=>el.onchange=async()=>{let cols=[...state.settings.candidates.visibleColumns];if(el.checked)cols=[...new Set([...cols,el.dataset.column])];else cols=cols.filter(x=>x!==el.dataset.column);if(!cols.includes('player'))cols.unshift('player');await saveSettings({candidates:{...state.settings.candidates,visibleColumns:cols}});await route('company-candidates',false);});document.querySelectorAll('.ra-inline-stage').forEach(el=>el.onchange=async()=>{await changeCandidateStage(el.dataset.stageId,el.value);toast('Stage updated.');});
     document.getElementById('ra-mobile-stage-select')?.addEventListener('change',async e=>{await saveSettings({candidates:{...state.settings.candidates,mobilePipelineStage:e.target.value}});await route('company-pipeline',false);});
     document.getElementById('ra-run-scout')?.addEventListener('click',()=>{const ids=ScoutCore.parseIds(document.getElementById('ra-scout-ids')?.value||'',state.settings.scout.maxCandidates);runScout(ids,true).catch(e=>toast(e.message,true));});document.getElementById('ra-pause-scout')?.addEventListener('click',pauseScout);document.getElementById('ra-cancel-scout')?.addEventListener('click',cancelScout);
-    document.getElementById('ra-match-profile-select')?.addEventListener('change',async e=>{await saveSettings({match:{...state.settings.match,activeProfileId:e.target.value}});await route('smart-match',false);});document.getElementById('ra-match-new')?.addEventListener('click',async()=>{const p=await saveMatchProfile(MatchCore.createDefaultProfile('New Match Profile'));await saveSettings({match:{...state.settings.match,activeProfileId:p.profileId}});await route('smart-match',false);});document.getElementById('ra-match-duplicate')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile();const p=MatchCore.normalizeProfile({...active,profileId:'',name:`${active.name} Copy`,createdAt:'',updatedAt:''});const saved=await saveMatchProfile(p);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});await route('smart-match',false);});document.getElementById('ra-match-delete')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile();if(!confirm(`Delete Match Profile "${active.name}"?`))return;await idb.delete('matchProfiles',active.profileId);await saveSettings({match:{...state.settings.match,activeProfileId:''}});await ensureDefaultMatchProfile();await route('smart-match',false);});document.getElementById('ra-match-save')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile();const criteria={};for(const key of MatchCore.CRITERIA_KEYS){const old=active.criteria[key];const enabled=!!document.querySelector(`[data-match-enabled="${key}"]`)?.checked;const weight=number(document.querySelector(`[data-match-weight="${key}"]`)?.value,old.weight);if(['company','role','availability'].includes(key))criteria[key]={enabled,weight,value:text(document.querySelector(`[data-match-value="${key}"]`)?.value)};else if(key==='salary')criteria[key]={enabled,weight,max:number(document.querySelector('[data-match-max="salary"]')?.value,old.max)};else criteria[key]={enabled,weight,target:number(document.querySelector(`[data-match-target="${key}"]`)?.value,old.target)};}const saved=await saveMatchProfile({profileId:active.profileId,name:text(document.getElementById('ra-match-name')?.value)||active.name,criteria,createdAt:active.createdAt});await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});toast('Match Profile saved.');await route('smart-match',false);});
+    document.getElementById('ra-match-profile-select')?.addEventListener('change',async e=>{await saveSettings({match:{...state.settings.match,activeProfileId:e.target.value}});await route('smart-match',false);});document.getElementById('ra-match-new')?.addEventListener('click',async()=>{const p=await saveMatchProfile(MatchCore.createDefaultProfile('New Match Profile'));await saveSettings({match:{...state.settings.match,activeProfileId:p.profileId}});await route('smart-match',false);});document.getElementById('ra-match-duplicate')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);const p=MatchCore.normalizeProfile({...active,profileId:'',name:`${active.name} Copy`,createdAt:'',updatedAt:''});const saved=await saveMatchProfile(p);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});await route('smart-match',false);});document.getElementById('ra-match-delete')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);if(!confirm(`Delete Match Profile "${active.name}"?`))return;await idb.delete('matchProfiles',active.profileId);await saveSettings({match:{...state.settings.match,activeProfileId:''}});await ensureDefaultMatchProfile();await route('smart-match',false);});document.getElementById('ra-match-save')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);const criteria={};for(const key of MatchCore.CRITERIA_KEYS){const old=active.criteria[key];const enabled=!!document.querySelector(`[data-match-enabled="${key}"]`)?.checked;const weight=number(document.querySelector(`[data-match-weight="${key}"]`)?.value,old.weight);if(['company','role','availability'].includes(key))criteria[key]={enabled,weight,value:text(document.querySelector(`[data-match-value="${key}"]`)?.value)};else if(key==='salary')criteria[key]={enabled,weight,max:number(document.querySelector('[data-match-max="salary"]')?.value,old.max)};else criteria[key]={enabled,weight,target:number(document.querySelector(`[data-match-target="${key}"]`)?.value,old.target)};}const saved=await saveMatchProfile({profileId:active.profileId,name:text(document.getElementById('ra-match-name')?.value)||active.name,criteria,createdAt:active.createdAt});await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});toast('Match Profile saved.');await route('smart-match',false);});
     document.getElementById('ra-global-test')?.addEventListener('click',()=>testGlobalService().then(()=>toast('Global service connected.')).catch(e=>toast(e.message,true)));document.getElementById('ra-global-retry')?.addEventListener('click',()=>flushGlobalQueue(true).then(r=>toast(`Global sync processed ${r.processed}; ${r.pending} pending.`)).catch(e=>toast(e.message,true)));
     document.getElementById('ra-save-settings')?.addEventListener('click',()=>saveSettingsPage().catch(e=>toast(e.message,true)));document.getElementById('ra-set-key')?.addEventListener('click',()=>ensureApiKey(true).then(()=>toast('API key saved.')).catch(e=>toast(e.message,true)));document.getElementById('ra-cache-diagnostic')?.addEventListener('click',()=>runCacheDiagnostic().catch(e=>toast(e.message,true)));document.getElementById('ra-reset-colors')?.addEventListener('click',async()=>{await saveSettings({recruitment:{...state.settings.recruitment,stageColors:{...Runtime.STAGE_COLORS},availabilityColors:{...Runtime.AVAILABILITY_COLORS}}});await route('settings',false);});document.getElementById('ra-reset-layout')?.addEventListener('click',resetLayout);document.getElementById('ra-reset-layout-2')?.addEventListener('click',resetLayout);document.getElementById('ra-clear-scout')?.addEventListener('click',async()=>{if(!confirm('Clear local Scout cache and history?'))return;await idb.clear('scoutLatest');await idb.clear('scoutHistory');toast('Scout cache cleared.');});document.getElementById('ra-clear-recruitment')?.addEventListener('click',clearRecruitment);document.getElementById('ra-nuke')?.addEventListener('click',()=>hardReset().catch(e=>toast(e.message,true)));document.querySelectorAll('[data-go-page]').forEach(b=>b.onclick=()=>route(b.dataset.goPage));document.getElementById('ra-setting-global-test')?.addEventListener('click',()=>testGlobalService().then(()=>toast('Global service connected.')).catch(e=>toast(e.message,true)));document.getElementById('ra-setting-global-retry')?.addEventListener('click',()=>flushGlobalQueue(true).then(()=>toast('Global queue retried.')).catch(e=>toast(e.message,true)));
     document.getElementById('ra-export-csv')?.addEventListener('click',exportCsv);document.getElementById('ra-data-clear-candidates')?.addEventListener('click',clearRecruitment);document.getElementById('ra-refresh-logs')?.addEventListener('click',()=>route('logs',false));document.getElementById('ra-clear-logs')?.addEventListener('click',async()=>{if(!confirm('Clear local application logs?'))return;await idb.clear('appLogs');await route('logs',false);});
@@ -5880,7 +6384,7 @@
     return true;
   }
 
-  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
+  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,setCompanyWatchlist,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
 });
 
 /* userscript bootstrap */

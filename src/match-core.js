@@ -193,6 +193,19 @@
     return base;
   }
 
+  const COMPANY_SEARCH_FILTER_KEYS = Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
+
+  function normalizeCompanySearchFilters(input) {
+    const source=input&&typeof input==='object'?input:{};
+    const out={};
+    for(const key of COMPANY_SEARCH_FILTER_KEYS)out[key]=cleanText(source[key]);
+    const presence=cleanText(out.organizationPresence).toLowerCase();
+    out.organizationPresence=['any','none','has'].includes(presence)?presence:'any';
+    const status=cleanText(out.onlineStatus);
+    out.onlineStatus=['Online','Idle','Offline'].includes(status)?status:'';
+    return out;
+  }
+
   function normalizeProfile(input) {
     const source = input && typeof input === 'object' ? input : {};
     const hasCriteria = !!(source.criteria && typeof source.criteria === 'object');
@@ -201,10 +214,12 @@
     CRITERIA_KEYS.forEach((key) => {
       criteria[key] = normalizeCriterion(key, criteriaSource[key], hasCriteria);
     });
+    const searchSource=source.searchFilters&&typeof source.searchFilters==='object'?source.searchFilters:{};
     return {
       profileId: cleanText(source.profileId) || `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: cleanText(source.name) || 'Smart Match',
       criteria,
+      searchFilters:{company:normalizeCompanySearchFilters(searchSource.company)},
       createdAt: cleanText(source.createdAt),
       updatedAt: cleanText(source.updatedAt)
     };
@@ -285,6 +300,7 @@
     AVAILABILITY_VALUES,
     createDefaultProfile,
     normalizeProfile,
+    normalizeCompanySearchFilters,
     normalizeCandidate,
     normalizeRole,
     normalizeCompany,
