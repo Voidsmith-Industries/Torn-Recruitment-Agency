@@ -5388,15 +5388,24 @@
     return /^\d+$/.test(fromButton)?fromButton:'';
   }
   function visibleElement(element){if(!element)return false;const style=globalThis.getComputedStyle?.(element);if(style&&(style.display==='none'||style.visibility==='hidden'))return false;const rect=element.getBoundingClientRect?.();return !rect||(rect.width>0&&rect.height>0);}
-  function findPrivateChatButton(userId){return document.querySelector(`[id="button2-profile-${userId}"]`)||document.querySelector('a.profile-button.profile-button-initiateChat')||document.querySelector('a[aria-label="Start chat"]');}
+  function findPrivateChatButton(userId){const id=text(userId);if(currentProfileUserId()!==id)return null;return document.querySelector(`[id="button2-profile-${id}"]`)||document.querySelector('a.profile-button.profile-button-initiateChat')||document.querySelector('a[aria-label="Start chat"]');}
+  function privateChatContainerUserId(container){
+    if(!container)return '';
+    for(const attr of ['data-user-id','data-user']){const value=text(container.getAttribute?.(attr));if(/^\d+$/.test(value))return value;}
+    const link=container.querySelector?.('a[href*="profiles.php"][href*="XID="]');
+    const href=text(link?.getAttribute?.('href'));const match=href.match(/[?&]XID=(\d+)/i);
+    return match?match[1]:'';
+  }
   function privateChatInputs(userId){
+    const target=text(userId);if(!/^\d+$/.test(target))return[];
     const selectors=['textarea','div[contenteditable="true"]','input[type="text"]','[role="textbox"]'];
     return [...document.querySelectorAll(selectors.join(','))].filter(visibleElement).map(element=>{
-      let score=0;const container=element.closest('[class*="chat" i],[class*="conversation" i],[class*="message" i],[class*="pm" i],[data-user-id],[data-user]');
-      if(container)score+=5;if(text(container?.getAttribute?.('data-user-id'))===userId||text(container?.getAttribute?.('data-user'))===userId)score+=8;
+      const container=element.closest('[class*="chat" i],[class*="conversation" i],[class*="message" i],[class*="pm" i],[data-user-id],[data-user]');
+      if(privateChatContainerUserId(container)!==target)return null;
+      let score=10;
       if(element.matches('textarea,[contenteditable="true"],[role="textbox"]'))score+=2;
       return{element,score};
-    }).sort((a,b)=>b.score-a.score).map(item=>item.element);
+    }).filter(Boolean).sort((a,b)=>b.score-a.score).map(item=>item.element);
   }
   function findPrivateChatInput(userId){return privateChatInputs(text(userId))[0]||null;}
   function setPrivateChatInputValue(input,value){
