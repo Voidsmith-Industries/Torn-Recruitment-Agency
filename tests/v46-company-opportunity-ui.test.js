@@ -76,3 +76,26 @@ test('Company Opportunity renders excluded evidence as unknown, never zero',()=>
   assert.doesNotMatch(html,/Match: 0/);
   assert.doesNotMatch(html,/Fit: 0/);
 });
+
+
+test('Company Compare renders unknown EE and salary as em dash, never zero',()=>{
+  const rows=[{
+    userId:'999',
+    name:'Unknown Compare',
+    pipelineStage:'Not Contacted',
+    eligibility:'Unknown',
+    availability:'Unknown',
+    fit:null,
+    ee:null,
+    expectedSalary:null,
+    desiredRole:'',
+    playerRecord:{currentCompany:''},
+    vacancyEvaluations:[],
+    vacancyOptions:[]
+  }];
+  const html=OpportunityUI.renderComparePage(rows,['999']);
+  assert.match(html,/EE<b>—<\/b>/);
+  assert.match(html,/Expected Salary<b>—<\/b>/);
+  assert.doesNotMatch(html,/EE<b>0<\/b>/);
+  assert.doesNotMatch(html,/Expected Salary<b>\$0<\/b>/);
+});
