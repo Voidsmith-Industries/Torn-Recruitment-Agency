@@ -237,7 +237,7 @@
     try{
       const response=await tornRequest(kind==='company'?`user/${targetId}/job`:`user/${targetId}/faction`);
       const eligibility=kind==='company'?Messaging.companyRecruitmentEligibility(response):Messaging.factionRecruitmentEligibility(response);
-      if(!eligibility.eligible){try{targetWindow?.close?.();}catch{}const label=kind==='company'?'company':'faction';throw new Error(`${playerName} already belongs to ${eligibility.currentName||('a '+label)}. Recruitment stopped.`);}
+      if(!eligibility.eligible){try{targetWindow?.close?.();}catch{}const label=kind==='company'?'company':'faction';if(eligibility.known===false)throw new Error(`Could not verify ${playerName}'s ${label} affiliation. Recruitment stopped.`);throw new Error(`${playerName} already belongs to ${eligibility.currentName||('a '+label)}. Recruitment stopped.`);}
       const template=kind==='company'?recruitment.companyRecruitmentMessage:recruitment.factionRecruitmentMessage;
       const values=kind==='company'?{userId:targetId,name:playerName,company_name:state.settings.ownCompanyName,company_type:recruitment.companyType}:{userId:targetId,name:playerName,faction_name:recruitment.factionName};
       const plan=Messaging.recruitmentChatPlan(kind,template,values);
