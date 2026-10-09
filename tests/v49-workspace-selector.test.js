@@ -149,9 +149,51 @@ test('v4.9 Player Card uses shared intelligence observation time, not workflow e
   dom.window.close();
 });
 
-test('v4.9 navigation closes Player Card when rememberPanel is disabled',()=>{
-  const source=require('node:fs').readFileSync(require.resolve('../src/v45-app'),'utf8');
-  assert.match(source,/requested!==previousPage&&state\.settings\.candidates\?\.playerCard\?\.rememberPanel===false/);
-  assert.match(source,/drawer\.hidden=true/);
-  assert.match(source,/state\.playerCard=\{\.\.\.state\.playerCard,userId:'',pinned:false\}/);
+test('v4.9 navigation closes Player Card only when changing pages and rememberPanel is disabled',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><div class="ra-shell"><nav id="ra-nav"></nav><h1 id="ra-page-title"></h1><p id="ra-page-desc"></p><main id="ra-content"></main><aside id="ra-drawer"></aside></div></body></html>',{url:'https://www.torn.com/'});
+  global.window=dom.window;
+  global.document=dom.window.document;
+  global.MutationObserver=dom.window.MutationObserver;
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  App._test.state.settings=App.mergeSettings({
+    activeDomain:'company',
+    activePage:'settings',
+    optionalModules:{data:true},
+    candidates:{playerCard:{rememberPanel:false}}
+  });
+  App._test.state.page='settings';
+  App._test.state.playerCard={domain:'company',userId:'777',pinned:true,popout:true};
+  App._test.state.drawerCandidateId='777';
+  const drawer=document.getElementById('ra-drawer');
+  drawer.hidden=false;
+
+  await App._test.navigate('settings',false);
+  assert.equal(drawer.hidden,false);
+  assert.equal(App._test.state.playerCard.userId,'777');
+  assert.equal(App._test.state.playerCard.pinned,true);
+
+  await App._test.navigate('data',false);
+  assert.equal(drawer.hidden,true);
+  assert.equal(App._test.state.playerCard.userId,'');
+  assert.equal(App._test.state.playerCard.pinned,false);
+
+  db.close();
+  dom.window.close();
+});
+
+test('v4.9 Player Card Contacted state honors recorded outcomes even after stage changes',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><aside id="ra-drawer" class="ra-drawer" hidden></aside></body></html>',{url:'https://www.torn.com/'});
+  global.window=dom.window;
+  global.document=dom.window.document;
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  App._test.state.settings=App.mergeSettings({});
+  App._test.state.playerCard={domain:'company',userId:'',pinned:false,popout:false};
+  await put(db,'playerIntelligence',{userId:'888',name:'Outcome Candidate',updatedAt:1000});
+  await put(db,'companyRecruitment',{userId:'888',domain:'company',pipelineStage:'Rejected',outcomes:[{kind:'declined',at:900}],updatedAt:1200});
+  await App._test.openPlayerCard('company','888',{force:true});
+  assert.match(document.getElementById('ra-drawer').textContent,/ContactedContacted/);
+  db.close();
+  dom.window.close();
 });
