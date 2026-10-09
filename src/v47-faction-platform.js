@@ -227,7 +227,7 @@
 
   function recruitPlayer(row,override=false){
     if(row.doNotContact&&!override)throw new Error('This player is marked Do Not Contact. Use the deliberate override control if contact is still required.');
-    if(override&&typeof globalThis.confirm==='function'&&!globalThis.confirm('This player is marked Do Not Contact. Override it for this recruitment chat only?'))return false;
+    if(override){if(typeof globalThis.confirm!=='function')throw new Error('Do Not Contact override confirmation is unavailable. Recruitment stopped.');if(!globalThis.confirm('This player is marked Do Not Contact. Override it for this recruitment chat only?'))return false;}
     if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');
     return runtime.app.recruitCandidate?.('faction',row.userId,row.name,{overrideDnc:override,dncConfirmed:override});
   }
