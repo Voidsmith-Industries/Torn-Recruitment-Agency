@@ -223,3 +223,40 @@ test('legacy backfill cannot overwrite newer authoritative Player Intelligence',
   assert.ok(player.sources.includes('legacy-candidate'));
   db.close();
 });
+
+
+test('undated legacy backfill only fills missing fields on an existing undated Player Intelligence row',async()=>{
+  const name=`ra-storage-protect-undated-modern-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'996',
+    name:'Old Legacy',
+    ee:1,
+    pipelineStage:'Replied',
+    discoverySources:['MANUAL']
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  await idb.put('playerIntelligence',{
+    userId:'996',
+    name:'Current Unknown-Time',
+    nameLower:'current unknown-time',
+    ee:99,
+    level:75,
+    updatedAt:9000,
+    createdAt:8000,
+    sources:['manual']
+  });
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','996');
+  assert.equal(player.name,'Current Unknown-Time');
+  assert.equal(player.ee,99);
+  assert.equal(player.level,75);
+  assert.equal(Object.hasOwn(player,'lastObservedAt'),false);
+  db.close();
+});
