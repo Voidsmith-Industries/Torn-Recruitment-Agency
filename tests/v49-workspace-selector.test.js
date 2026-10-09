@@ -256,3 +256,23 @@ test('legacy startup migration is one-time and cannot use workflow timestamps as
   assert.match(migration,/existingCompany/);
   assert.doesNotMatch(migration,/row\.updatedAt|row\.createdAt|candidate\?\.updatedAt|candidate\?\.createdAt/);
 });
+
+
+test('v4.9 acquisition paths preserve missing Scout, work-stat and company facts as unknown',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
+  assert.match(source,/level:finite\(p\.level\)/);
+  assert.match(source,/factionId:finite\(faction\.id\?\?p\.faction_id\)/);
+  assert.match(source,/networth:finite\(current\.networth\)/);
+  assert.match(source,/workStats\.every\(value=>value!==null\)\?workStats\.reduce/);
+  assert.match(source,/eligibility\.known===false\)throw new Error\('Company affiliation data was missing from the Torn response\.'\)/);
+  assert.doesNotMatch(source,/view\.total=\[view\.man,view\.int,view\.end\]\.reduce\(\(s,x\)=>s\+\(finite\(x\)\|\|0\),0\)/);
+});
+
+test('v4.9 Scout shared patch only persists measured optional facts',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
+  assert.match(source,/const scoutShared=\{name:profile\.name,fit:/);
+  assert.match(source,/if\(value!==null&&value!==undefined&&value!==''\)scoutShared\[key\]=value/);
+  assert.match(source,/repositories\.players\.ensure\(String\(id\),scoutShared,'scout',capturedAt\)/);
+});
