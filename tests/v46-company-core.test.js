@@ -98,3 +98,14 @@ test('Today queue surfaces replies, overdue follow-ups, stale and opportunity wo
   assert.ok(queue.find(v=>v.userId==='3').reasons.includes('High opportunity'));
   assert.equal(JSON.stringify(records),before);
 });
+
+
+test('unknown Company criteria and vacancy evidence remain unscored',()=>{
+  const criteria=[{id:'fit',field:'fit',operator:'gte',value:80,kind:'Preferred',weight:1}];
+  const baseline=Company.evaluateCriteria(criteria,{fit:null},[]);
+  assert.equal(baseline.score,null);
+  assert.equal(baseline.results[0].known,false);
+  const vacancy=Company.normalizeVacancy({id:'unknown',name:'Unknown',status:'Open',criteria});
+  const result=Company.evaluateVacancy(vacancy,{fit:null},[]);
+  assert.equal(result.matchScore,null);
+});
