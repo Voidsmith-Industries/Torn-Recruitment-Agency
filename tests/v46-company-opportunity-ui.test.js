@@ -61,3 +61,14 @@ test('Opportunity queue excludes unknown evidence instead of inventing neutral s
   assert.equal(result.intelligenceFreshness,'Unknown');
   assert.match(result.opportunity.explanation,/Match: Unknown \(excluded\)/);
 });
+
+
+test('Company Opportunity renders excluded evidence as unknown, never zero',()=>{
+  const unknown={userId:'910',name:'Unknown Render',pipelineStage:'Not Contacted',eligibility:'Unknown',availability:'Unknown',fit:null,lastActive:null,playerRecord:{userId:'910'},companyRecord:{userId:'910',domain:'company',followUps:[],doNotContact:false},vacancyEvaluations:[{vacancyId:'v0',matchScore:null,eligible:true}],vacancyOptions:[{vacancyId:'v0',name:'Unknown Vacancy'}],suggestedVacancyId:'v0'};
+  const model=OpportunityUI.buildOpportunityRows([unknown],{weights,now:NOW});
+  const html=OpportunityUI.renderOpportunityPage(model);
+  assert.match(html,/Match: —/);
+  assert.match(html,/Fit: —/);
+  assert.doesNotMatch(html,/Match: 0/);
+  assert.doesNotMatch(html,/Fit: 0/);
+});
