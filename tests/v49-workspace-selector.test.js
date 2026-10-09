@@ -151,7 +151,7 @@ test('v4.9 Player Card uses shared intelligence observation time, not workflow e
 
 test('v4.9 navigation closes Player Card when rememberPanel is disabled',()=>{
   const source=require('node:fs').readFileSync(require.resolve('../src/v45-app'),'utf8');
-  assert.match(source,/playerCard\?\.rememberPanel===false/);
+  assert.match(source,/requested!==previousPage&&state\.settings\.candidates\?\.playerCard\?\.rememberPanel===false/);
   assert.match(source,/drawer\.hidden=true/);
   assert.match(source,/state\.playerCard=\{\.\.\.state\.playerCard,userId:'',pinned:false\}/);
 });

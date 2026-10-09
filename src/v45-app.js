@@ -465,10 +465,11 @@
   function defaultDomainRoute(){return `${state.settings.activeDomain==='faction'?'faction':'company'}-candidates`;}
   async function route(page,persist=true){
     const requested=String(page||'').trim().toLowerCase();
+    const previousPage=state.page;
     if(!V46Navigation.ROUTES.includes(requested)||(requested!=='settings'&&!visibleRouteSet().has(requested))||(requested==='logs'&&state.settings.complexity!=='advanced'))return false;
     if(requested===state.page&&persist){document.querySelector('.ra-shell')?.classList.remove('sidebar-open');return true;}
     state.page=requested;
-    if(state.settings.candidates?.playerCard?.rememberPanel===false){const drawer=document.getElementById('ra-drawer');if(drawer)drawer.hidden=true;state.drawerCandidateId='';state.playerCard={...state.playerCard,userId:'',pinned:false};}
+    if(requested!==previousPage&&state.settings.candidates?.playerCard?.rememberPanel===false){const drawer=document.getElementById('ra-drawer');if(drawer)drawer.hidden=true;state.drawerCandidateId='';state.playerCard={...state.playerCard,userId:'',pinned:false};}
     if(persist)await saveSettings({activePage:state.page});
     if(V46CompanyPlatform._test.IMPLEMENTED_ROUTES.has(state.page)){
       rebuildNav();
