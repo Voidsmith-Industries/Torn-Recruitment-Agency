@@ -195,3 +195,14 @@ test('Faction Today queue recognizes Replied, overdue follow-up, stale stage and
     'High opportunity'
   ]);
 });
+
+
+test('unknown Faction criteria and specialist evidence remain unscored',()=>{
+  const Core=requireFaction();
+  const criteria=[{id:'fit',field:'fit',operator:'gte',value:80,kind:'Preferred',weight:1}];
+  const baseline=Core.evaluateCriteria(criteria,{fit:null},[]);
+  assert.equal(baseline.score,null);
+  assert.equal(baseline.results[0].known,false);
+  const result=Core.evaluateSpecialistProfile({profileId:'unknown',name:'Unknown',status:'Active',criteria},{fit:null},[]);
+  assert.equal(result.matchScore,null);
+});
