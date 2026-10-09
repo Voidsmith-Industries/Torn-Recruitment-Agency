@@ -119,3 +119,15 @@ test('Faction Results pagination shows filtered range without rendering the full
   assert.match(html,/data-results-page="prev"/);
   assert.match(html,/data-results-page="next"/);
 });
+
+// Verified RA-002 regression coverage retained during RA-003 reconciliation.
+test('v4.9 Faction Results keep unknown battle intelligence unknown and honor contact outcomes',()=>{
+  const U=ui();
+  const row=U.buildCandidateRows([{userId:'404',domain:'faction',pipelineStage:'Rejected',outcomes:[{kind:'declined',at:123}],availability:'Unknown'}],[{userId:'404',name:'Delta',recruitmentFit:null,attacks30:null,rwHits30:null}],{baseline,profiles})[0];
+  const html=U.renderCandidates([row],{layout:'expanded'});
+  assert.doesNotMatch(html,/0 \/ 0/);
+  assert.doesNotMatch(html,/>0<\/td>/);
+  assert.match(html,/>Contacted<\/td>/);
+  const partial=U.renderCandidates([{...row,attacks30:12,rwHits30:null}],{layout:'expanded'});
+  assert.match(partial,/12 \/ —/);
+});

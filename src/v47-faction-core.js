@@ -106,7 +106,7 @@
     const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
     const results=normalized.map(req=>{
       const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
+      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
       return {
         ...req,
         known:verdict.known,
@@ -116,21 +116,24 @@
         effectivePass:verdict.passed||Boolean(waiver)
       };
     });
-    const hardFailures=results.filter(result=>result.kind==='Hard'&&!result.passed);
+    const hardFailures=results.filter(result=>result.kind==='Hard'&&result.known&&!result.passed);
+    const unknownHard=results.filter(result=>result.kind==='Hard'&&!result.known);
     const unwaivedHardFailures=hardFailures.filter(result=>!result.waived);
-    const failures=results.filter(result=>!result.passed);
+    const failures=results.filter(result=>result.known&&!result.passed);
     const known=results.filter(result=>result.known);
     const totalWeight=known.reduce((sum,result)=>sum+(result.weight||1),0);
     const earned=known.filter(result=>result.passed).reduce((sum,result)=>sum+(result.weight||1),0);
-    const score=totalWeight?Math.round(earned/totalWeight*100):0;
+    const score=totalWeight?Math.round(earned/totalWeight*100):null;
     const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':'Eligible';
-    return {results,failures,hardFailures,unwaivedHardFailures,hardFailed,eligibility,score};
+    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
+    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
   function ratioScore(req,facts){
-    const actual=Number(facts?.[req.field]);
-    const target=Number(req.value);
+    const rawActual=facts?.[req.field],rawTarget=req.value;
+    if(rawActual===null||rawActual===undefined||text(rawActual)===''||rawTarget===null||rawTarget===undefined||text(rawTarget)==='')return null;
+    const actual=Number(rawActual);
+    const target=Number(rawTarget);
     if(!Number.isFinite(actual)||!Number.isFinite(target))return null;
     if(['gte','gt'].includes(req.operator))return target<=0?100:clamp(actual/target*100);
     if(['lte','lt'].includes(req.operator))return actual<=target?100:(actual<=0?0:clamp(target/actual*100));
@@ -142,14 +145,14 @@
     const criteria=evaluateCriteria(profile.criteria,facts,waivers,{context:'specialist',profileId:profile.profileId});
     const measured=profile.criteria.map(req=>({req,score:ratioScore(req,facts)})).filter(row=>row.score!==null);
     const totalWeight=measured.reduce((sum,row)=>sum+(row.req.weight||1),0);
-    const raw=totalWeight?measured.reduce((sum,row)=>sum+row.score*(row.req.weight||1),0)/totalWeight:0;
-    const matchScore=Math.round(clamp(raw));
+    const raw=totalWeight?measured.reduce((sum,row)=>sum+row.score*(row.req.weight||1),0)/totalWeight:null;
+    const matchScore=raw===null?null:Math.round(clamp(raw));
     return {
       profileId:profile.profileId,
       matchScore,
-      eligible:!criteria.hardFailed,
+      eligible:criteria.eligibility==='Eligible'||criteria.eligibility==='Eligible by Waiver',
       hardFailed:criteria.hardFailed,
-      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
+      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.eligibility==='Unknown'?'Unknown':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
       criteria
     };
   }
@@ -172,17 +175,19 @@
   }
 
   function opportunityComponent(label,value,weight){
-    const normalized=clamp(value);
     const w=Math.max(0,number(weight));
-    return {label,value:normalized,weight:w,contribution:Math.round(normalized*w)/100};
+    const known=value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));
+    return {label,value:known?clamp(value):null,weight:w,known,contribution:0};
   }
 
   function computeOpportunity(input={},weights={}){
-    const availability=text(input.availability).toLowerCase()==='available'?100:text(input.availability).toLowerCase()==='unavailable'?0:50;
-    const age=Math.max(0,number(input.lastActiveAgeHours,999));
-    const activity=age<=6?100:age<=24?80:age<=72?55:age<=168?30:10;
+    const availabilityText=text(input.availability).toLowerCase();
+    const availability=availabilityText==='available'?100:availabilityText==='unavailable'?0:null;
+    const ageKnown=input.lastActiveAgeHours!==null&&input.lastActiveAgeHours!==undefined&&text(input.lastActiveAgeHours)!==''&&Number.isFinite(Number(input.lastActiveAgeHours));
+    const age=ageKnown?Math.max(0,Number(input.lastActiveAgeHours)):null;
+    const activity=age===null?null:(age<=6?100:age<=24?80:age<=72?55:age<=168?30:10);
     const freshMap={fresh:100,aging:70,stale:40,'very stale':15};
-    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??50;
+    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??null;
     const rows=[
       opportunityComponent('Match',input.match,weights.match),
       opportunityComponent('Fit',input.fit,weights.fit),
@@ -190,13 +195,18 @@
       opportunityComponent('Activity',activity,weights.activity),
       opportunityComponent('Freshness',freshness,weights.freshness),
       opportunityComponent('Follow-up',input.followUpDue?100:0,weights.followUp),
-      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),contribution:0}
+      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
     ];
-    const rawScore=Math.round(rows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
+    const scoredRows=rows.slice(0,6);
+    const primaryRows=rows.slice(0,5);
+    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
+    const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
+    for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
+    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=Math.round(clamp(rawScore-penalty));
+    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
     const explanation=rows.slice(0,6)
-      .map(row=>`${row.label}: ${row.value} × ${row.weight}% = ${row.contribution}`)
+      .map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`)
       .join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
     return {score,rawScore,penalty,breakdown:rows,explanation};
   }

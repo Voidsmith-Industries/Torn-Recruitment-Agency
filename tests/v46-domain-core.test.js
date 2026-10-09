@@ -40,3 +40,14 @@ test('shared player intelligence preserves v4.9 age, streak and explicit observa
   assert.equal(Object.hasOwn(row,'recruiterNote'),false);
   assert.equal(Object.hasOwn(row,'pipelineStage'),false);
 });
+
+// Verified RA-002 regression coverage retained during RA-003 reconciliation.
+test('lastObservedAt is monotonic and changes only from explicit observation patches',()=>{
+  const first=D.mergePlayerIntelligence(null,{userId:1,name:'Alpha',lastObservedAt:2000},'api',2000);
+  const older=D.mergePlayerIntelligence(first,{userId:1,name:'Alpha',lastObservedAt:1000},'legacy',3000);
+  assert.equal(older.lastObservedAt,2000);
+  const workflow=D.mergePlayerIntelligence(older,{userId:1,name:'Alpha'},'company-workflow',4000);
+  assert.equal(workflow.lastObservedAt,2000);
+  const newer=D.mergePlayerIntelligence(workflow,{userId:1,lastObservedAt:5000},'scout',5000);
+  assert.equal(newer.lastObservedAt,5000);
+});

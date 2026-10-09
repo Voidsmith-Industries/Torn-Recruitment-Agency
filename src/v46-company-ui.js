@@ -39,7 +39,7 @@
         campaigns:Array.isArray(record.campaigns)?[...record.campaigns]:[],outcomes:Array.isArray(record.outcomes)?record.outcomes.map(item=>({...item})):[],tags:Array.isArray(record.tags)?[...record.tags]:[],
         doNotContact:record.doNotContact===true,archived:record.archived===true,createdAt:record.createdAt??null,updatedAt:record.updatedAt??null,
         stageChangedAt:record.stageChangedAt??record.updatedAt??null,newlyDiscoveredAt:record.newlyDiscoveredAt??null,newlyEligibleAt:record.newlyEligibleAt??null,
-        eligibility:text(evaluation.eligibility)||'Unknown',eligibilityScore:Number.isFinite(Number(evaluation.score))?Number(evaluation.score):null,hardFailed:evaluation.hardFailed===true,
+        eligibility:text(evaluation.eligibility)||'Unknown',eligibilityScore:evaluation.score===null||evaluation.score===undefined||text(evaluation.score)===''?null:(Number.isFinite(Number(evaluation.score))?Number(evaluation.score):null),hardFailed:evaluation.hardFailed===true,
         companyRecord:record,playerRecord:player
       });
     }
@@ -55,7 +55,7 @@
   function buildPipelineModel(rows=[]){const buckets=Object.fromEntries(COMPANY_STAGES.map(stage=>[stage,[]]));for(const row of Array.isArray(rows)?rows:[]){if(!row||text(row.companyRecord?.domain).toLowerCase()==='faction')continue;buckets[normalizeStage(row.pipelineStage)].push(row);}return buckets;}
 
   function kpi(label,value){return `<div class="ra-kpi"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;}
-  function score(value){return Number.isFinite(Number(value))?Number(value).toFixed(1):'—';}
+  function score(value){if(value===null||value===undefined||text(value)==='')return '—';return Number.isFinite(Number(value))?Number(value).toFixed(1):'—';}
   function money(value){return Number.isFinite(Number(value))?`$${Math.round(Number(value)).toLocaleString()}`:'—';}
   function stageOptions(selected){return COMPANY_STAGES.map(stage=>`<option value="${esc(stage)}" ${stage===selected?'selected':''}>${esc(stage)}</option>`).join('');}
   function vacancyStateOptions(selected){return VACANCY_STATES.map(state=>`<option value="${state}" ${state===selected?'selected':''}>${state}</option>`).join('');}
@@ -68,9 +68,9 @@
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
   function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
   function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-company-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
-  function recruitmentFitCell(row={}){const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
+  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
   function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
-  function contactedLabel(row={}){const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','hired'].includes(stage)?'Contacted':'Not yet';}
+  function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','hired'].includes(stage)?'Contacted':'Not yet';}
   function renderCandidates(rows=[],options={}){
     const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
     const profiles=Array.isArray(options.profiles)?options.profiles:[],activeProfileId=text(options.activeProfileId);

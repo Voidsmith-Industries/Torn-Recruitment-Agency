@@ -65,7 +65,7 @@
     async function ensureCompany(userId, recruitmentPatch = {}, options = {}) {
       const id = Domain.normalizeUserId(userId);
       const observedAt = legacyTimestamp(options.observedAt,Date.now());
-      await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'company',observedAt);
+      if(options.skipShared!==true)await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'company',observedAt);
       const existing = await idb.get('companyRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
@@ -77,7 +77,7 @@
     async function ensureFaction(userId, recruitmentPatch = {}, options = {}) {
       const id = Domain.normalizeUserId(userId);
       const observedAt = legacyTimestamp(options.observedAt,Date.now());
-      await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'faction',observedAt);
+      if(options.skipShared!==true)await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'faction',observedAt);
       const existing = await idb.get('factionRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
@@ -86,12 +86,15 @@
       return next;
     }
 
-    function addObservation(map,userId,patch,source,observedAt) {
+    function addObservation(map,userId,patch,source,observedAt,fallbackAt=Date.now()) {
       let id;
       try { id = Domain.normalizeUserId(userId); } catch { return; }
-      const clean = definedPatch(patch);
+      const explicitAt=legacyTimestamp(observedAt,0);
+      const hasExplicitAt=Number.isFinite(explicitAt)&&explicitAt>0;
+      const processingAt=hasExplicitAt?explicitAt:0;
+      const clean = definedPatch({...patch,...(hasExplicitAt?{lastObservedAt:explicitAt}:{})});
       const list = map.get(id) || [];
-      list.push({patch:clean,source,observedAt:legacyTimestamp(observedAt,Date.now())});
+      list.push({patch:clean,source,observedAt:processingAt});
       map.set(id,list);
     }
 
@@ -175,24 +178,41 @@
 
       const observations = new Map();
       for (const row of candidates) {
-        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.updatedAt || row.createdAt || observedAt);
+        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.companyCheckedAt || row.lastSeenPost || row.observedAt || row.postedAt || row.postDate,observedAt);
       }
       for (const row of forumSources) {
-        addObservation(observations,row.userId,{name:row.authorName},'legacy-forum',row.lastSeenPost || row.postedAt || row.observedAt || observedAt);
+        addObservation(observations,row.userId,{name:row.authorName},'legacy-forum',row.lastSeenPost || row.postedAt || row.observedAt,observedAt);
       }
       for (const row of users) {
-        addObservation(observations,row.userId,{...candidateSharedPatch(row),name:row.name,ee:row.ee},'legacy-user',row.lastSeenPost || row.postedAt || row.postDate || observedAt);
+        addObservation(observations,row.userId,{...candidateSharedPatch(row),name:row.name,ee:row.ee},'legacy-user',row.lastSeenPost || row.postedAt || row.postDate,observedAt);
       }
       for (const row of scouts) {
-        addObservation(observations,row.userId,scoutSharedPatch(row),'scout',row.capturedAt || observedAt);
+        addObservation(observations,row.userId,scoutSharedPatch(row),'scout',row.capturedAt,observedAt);
       }
       for (const row of globals) {
-        addObservation(observations,row.userId ?? row.playerId,globalSharedPatch(row),'global',row.observedAt || observedAt);
+        addObservation(observations,row.userId ?? row.playerId,globalSharedPatch(row),'global',row.observedAt,observedAt);
       }
 
       for (const [userId,list] of observations.entries()) {
         list.sort((a,b)=>a.observedAt-b.observedAt);
-        for (const item of list) await players.ensure(userId,item.patch,item.source,item.observedAt);
+        let current=await idb.get('playerIntelligence',userId);
+        for (const item of list) {
+          const currentObserved=Number(current?.lastObservedAt),incomingObserved=Number(item.patch?.lastObservedAt);
+          const currentIsAuthoritative=Number.isFinite(currentObserved)&&currentObserved>0;
+          const incomingHasObservation=Number.isFinite(incomingObserved)&&incomingObserved>0;
+          const incomingIsNewer=incomingHasObservation&&(!currentIsAuthoritative||incomingObserved>currentObserved);
+          let patch=item.patch;
+          if(current&&(!incomingHasObservation||(currentIsAuthoritative&&!incomingIsNewer))){
+            const safe={};
+            for(const [key,value] of Object.entries(item.patch||{})){
+              if(key==='lastObservedAt')continue;
+              const existing=current?.[key];
+              if(existing===undefined||existing===null||existing==='')safe[key]=value;
+            }
+            patch=safe;
+          }
+          current=await players.ensure(userId,patch,item.source,item.observedAt);
+        }
       }
 
       let companyCount = 0;
@@ -209,28 +229,21 @@
         if (ambiguous) ambiguousCount += 1;
 
         if (domains.includes('company')) {
-          const converted = Domain.legacyCandidateToCompany(candidate,at,{ambiguous,assumed:!knownEvidence});
           const existing = await idb.get('companyRecruitment',userId);
-          const next = existing ? {...converted,...existing,
-            discoverySources:[...new Set([...(converted.discoverySources || []),...(existing.discoverySources || [])])],
-            migrationReviewRequired:converted.migrationReviewRequired || existing.migrationReviewRequired || false,
-            legacySharedState:existing.legacySharedState || converted.legacySharedState,
-            legacyDomainAssumed:existing.legacyDomainAssumed || converted.legacyDomainAssumed
-          } : converted;
-          await idb.put('companyRecruitment',next);
-          companyCount += 1;
+          if(!existing){
+            const converted = Domain.legacyCandidateToCompany(candidate,at,{ambiguous,assumed:!knownEvidence});
+            await idb.put('companyRecruitment',converted);
+            companyCount += 1;
+          }
         }
 
         if (domains.includes('faction')) {
-          const converted = Domain.legacyCandidateToFaction(candidate,at,{ambiguous});
           const existing = await idb.get('factionRecruitment',userId);
-          const next = existing ? {...converted,...existing,
-            discoverySources:[...new Set([...(converted.discoverySources || []),...(existing.discoverySources || [])])],
-            migrationReviewRequired:converted.migrationReviewRequired || existing.migrationReviewRequired || false,
-            legacySharedState:existing.legacySharedState || converted.legacySharedState
-          } : converted;
-          await idb.put('factionRecruitment',next);
-          factionCount += 1;
+          if(!existing){
+            const converted = Domain.legacyCandidateToFaction(candidate,at,{ambiguous});
+            await idb.put('factionRecruitment',converted);
+            factionCount += 1;
+          }
         }
       }
 

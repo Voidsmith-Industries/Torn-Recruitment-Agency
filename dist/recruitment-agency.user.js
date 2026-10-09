@@ -585,6 +585,269 @@
     return sortRows(applyFilters(rows, filters, nowMs), sortState, nowMs);
   }
 
+
+  const RECRUITMENT_FIT_DEFAULT_WEIGHTS = Object.freeze({
+    requirements:28,
+    eligibility:20,
+    activity:15,
+    scoutFit:12,
+    organization:10,
+    intent:15,
+    contact:10
+  });
+
+  function uniqueText(values=[]) {
+    const seen=new Set(),out=[];
+    for(const value of values){const cleaned=text(value);if(!cleaned)continue;const key=cleaned.toLowerCase();if(seen.has(key))continue;seen.add(key);out.push(cleaned);}
+    return out;
+  }
+
+  function normalizeSourceLabel(value) {
+    const raw=text(value),key=lower(raw);
+    if(!raw)return '';
+    if(/job seeker|company forum|faction forum|recruitment forum|forum/.test(key))return 'Recruitment Forum';
+    if(/leaderboard|work[- ]?stat/.test(key))return 'Work-Stat Leaderboard';
+    if(/user search|api search|torn search|search/.test(key))return 'Torn User Search';
+    if(/scout/.test(key))return 'Scout';
+    if(/global|existing intelligence|player intelligence/.test(key))return 'Existing Intelligence';
+    if(/manual/.test(key))return 'Manual';
+    return raw;
+  }
+
+  function candidateRecordOf(row,domain='company') {
+    if(domain==='faction')return row?.factionRecord||row?.candidateLocal||row?.candidate||{};
+    return row?.companyRecord||row?.candidateLocal||row?.candidate||{};
+  }
+
+  function timestamp(value) {
+    const n=finite(value);
+    if(n!==null&&n>0)return n < 1e12 ? n*1000 : n;
+    const parsed=Date.parse(value);
+    return Number.isFinite(parsed)?parsed:null;
+  }
+
+  function latestTimestamp(values=[]) {
+    const known=values.map(timestamp).filter(v=>v!==null);
+    return known.length?Math.max(...known):null;
+  }
+
+  function earliestTimestamp(values=[]) {
+    const known=values.map(timestamp).filter(v=>v!==null);
+    return known.length?Math.min(...known):null;
+  }
+
+  function domainStageOf(row={},domain='company') {
+    const record=candidateRecordOf(row,domain);
+    const stage=text(row?.pipelineStage||record?.pipelineStage);
+    return stage||(domain==='faction'?'Prospect':'Not Contacted');
+  }
+
+  function prospectProvenance(row={},options={}) {
+    const domain=options.domain==='faction'?'faction':'company';
+    const record=candidateRecordOf(row,domain);
+    const candidate=candidateOf(row);
+    const player=row?.playerRecord||row?.player||row;
+    const latestSource=row?.latestSource||candidate?.latestSource||{};
+    const rawSources=uniqueText([
+      ...(Array.isArray(record?.discoverySources)?record.discoverySources:[]),
+      ...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),
+      ...(Array.isArray(row?.discoverySources)?row.discoverySources:[]),
+      row?.sourceType,candidate?.sourceType,latestSource?.sourceType,latestSource?.feedId,latestSource?.kind
+    ]);
+    const sources=uniqueText(rawSources.map(normalizeSourceLabel));
+    const firstDiscoveredAt=earliestTimestamp([
+      record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,candidate?.firstSeenAt,row?.createdAt,row?.firstSeenAt,
+      latestSource?.postedAt,latestSource?.observedAt
+    ]);
+    const observedEvidenceAt=latestTimestamp([
+      candidate?.lastSeenAt,row?.lastSeenPost,row?.lastObservedAt,
+      player?.lastObservedAt,player?.lastSeenAt,player?.lastScoutAt,latestSource?.postedAt,latestSource?.observedAt
+    ]);
+    const lastObservedAt=observedEvidenceAt??latestTimestamp([
+      record?.newlyDiscoveredAt,record?.createdAt,candidate?.createdAt,row?.createdAt
+    ]);
+    const lastEnrichedAt=latestTimestamp([
+      row?.lastEnrichedAt,player?.lastEnrichedAt,player?.lastScoutAt,row?.scout?.capturedAt
+    ]);
+    const now=timestamp(options.nowMs)||Date.now();
+    const ageMs=lastObservedAt===null?null:Math.max(0,now-lastObservedAt);
+    const freshness=ageMs===null?'Unknown':ageMs<=86400000?'Fresh':ageMs<=7*86400000?'Recent':ageMs<=30*86400000?'Aging':'Stale';
+    const stage=domainStageOf(row,domain);
+    const explicitForum=sources.includes('Recruitment Forum');
+    const passiveSource=sources.includes('Work-Stat Leaderboard')||sources.includes('Torn User Search');
+    const terminal=['Hired','Rejected','Joined'].includes(stage);
+    let state='Known Candidate';
+    if(!terminal&&ageMs!==null&&ageMs>60*86400000)state='Reactivation Candidate';
+    else if(!terminal&&(explicitForum||['Shortlisted','Contacted','Replied','Evaluating','Invite Ready'].includes(stage)))state='Active Lead';
+    else if(!terminal&&passiveSource)state='Passive Prospect';
+    return Object.freeze({
+      sources:Object.freeze(sources),
+      rawSources:Object.freeze(rawSources),
+      firstDiscoveredAt,
+      lastObservedAt,
+      lastEnrichedAt,
+      freshness,
+      state
+    });
+  }
+
+  function activityFactor(lastActive,nowMs=Date.now()) {
+    const ts=timestamp(lastActive);
+    if(ts===null)return null;
+    const age=Math.max(0,nowMs-ts);
+    if(age<=3600000)return 1;
+    if(age<=86400000)return .9;
+    if(age<=3*86400000)return .75;
+    if(age<=7*86400000)return .55;
+    if(age<=30*86400000)return .25;
+    return 0;
+  }
+
+  function organizationFactor(row,domain='company') {
+    const player=row?.playerRecord||row?.player||{};
+    const direct=domain==='faction'
+      ? text(row?.currentFaction||row?.factionName||player?.factionName||row?.currentOrganizationLabel)
+      : text(row?.currentCompany||player?.currentCompany||row?.currentOrganizationLabel);
+    if(direct&&!/^unknown$/i.test(direct)){
+      if(/^(none|no company|no faction|unemployed)$/i.test(direct))return 1;
+      return .25;
+    }
+    const rawId=domain==='faction'
+      ? (row?.factionId??player?.factionId)
+      : (row?.currentCompanyId??player?.currentCompanyId);
+    if(rawId===null||rawId===undefined||rawId==='')return null;
+    const id=Number(rawId);
+    if(!Number.isFinite(id)||id<0)return null;
+    return id===0?1:.25;
+  }
+
+  function intentFactor(provenance) {
+    const sources=provenance?.sources||[];
+    if(sources.includes('Recruitment Forum'))return 1;
+    if(sources.includes('Torn User Search'))return .65;
+    if(sources.includes('Work-Stat Leaderboard'))return .55;
+    if(sources.includes('Existing Intelligence')||sources.includes('Scout'))return .45;
+    if(sources.includes('Manual'))return .4;
+    return sources.length?.4:null;
+  }
+
+  function eligibilityFactor(row) {
+    const score=finite(row?.eligibilityScore??row?.matchScore??row?.specialistMatchScore);
+    if(score!==null)return Math.max(0,Math.min(1,score>1?score/100:score));
+    const label=lower(row?.eligibility);
+    if(!label||label==='unknown')return null;
+    if(label.includes('not currently eligible')||label.includes('ineligible'))return 0;
+    if(label.includes('eligible by waiver'))return .8;
+    if(label==='eligible')return 1;
+    return null;
+  }
+
+  function contactFactor(row,domain='company',nowMs=Date.now(),exclusionWindowDays=7) {
+    const record=candidateRecordOf(row,domain);
+    const outcomes=Array.isArray(record?.outcomes)?record.outcomes:[];
+    const lastContactAt=latestTimestamp([
+      row?.lastContactAt,record?.lastContactAt,
+      ...outcomes.map(item=>item?.at??item?.createdAt??item?.timestamp)
+    ]);
+    if(lastContactAt!==null){
+      const age=Math.max(0,nowMs-lastContactAt);
+      if(age<Math.max(1,finite(exclusionWindowDays)??7)*86400000)return .2;
+      return .85;
+    }
+    const stage=domainStageOf(row,domain);
+    if(stage==='Not Contacted'||stage==='Prospect')return 1;
+    if(stage==='Shortlisted'||stage==='Evaluating')return .9;
+    if(stage==='Contacted'||stage==='Invite Ready')return .35;
+    if(stage==='Replied')return .55;
+    if(stage==='Hired'||stage==='Rejected'||stage==='Joined')return 0;
+    return null;
+  }
+
+  function workStatFactor(row,requirements={}) {
+    const specs=[
+      ['man',finite(requirements.minMan??requirements.man)],
+      ['int',finite(requirements.minInt??requirements.int)],
+      ['end',finite(requirements.minEnd??requirements.end)]
+    ].filter(([,threshold])=>threshold!==null&&threshold>0);
+    if(!specs.length)return {factor:null,coverage:0,reason:'No work-stat requirement configured.'};
+    let known=0,total=0;
+    for(const[key,threshold]of specs){
+      const value=finite(row?.[key]??row?.stats?.[key]);
+      if(value===null)continue;
+      known++;
+      total+=Math.max(0,Math.min(1,value/threshold));
+    }
+    if(!known)return {factor:null,coverage:0,reason:'Required work stats are not known.'};
+    return{
+      factor:total/known,
+      coverage:known/specs.length,
+      reason:`${known}/${specs.length} configured work-stat requirement${specs.length===1?'':'s'} measured.`
+    };
+  }
+
+  function recruitmentFit(row={},options={}) {
+    const domain=options.domain==='faction'?'faction':'company';
+    const now=timestamp(options.nowMs)||Date.now();
+    const weights={...RECRUITMENT_FIT_DEFAULT_WEIGHTS,...(options.weights||{})};
+    const requirements=options.requirements||{};
+    const provenance=prospectProvenance(row,{domain,nowMs:now});
+    const components=[];
+    let possibleWeight=0,knownWeight=0,weighted=0;
+
+    const add=(key,label,weight,factor,reason,coverage=1)=>{
+      const safeWeight=Math.max(0,finite(weight)??0);
+      if(!safeWeight)return;
+      possibleWeight+=safeWeight;
+      const known=factor!==null&&factor!==undefined&&Number.isFinite(Number(factor));
+      const evidenceWeight=known?safeWeight*Math.max(0,Math.min(1,finite(coverage)??1)):0;
+      const normalized=known?Math.max(0,Math.min(1,Number(factor))):null;
+      if(known){knownWeight+=evidenceWeight;weighted+=evidenceWeight*normalized;}
+      components.push(Object.freeze({key,label,weight:safeWeight,evidenceWeight,known,factor:normalized,points:known?evidenceWeight*normalized:null,reason:text(reason)}));
+    };
+
+    const work=workStatFactor(row,requirements);
+    if(Object.values(requirements).some(value=>finite(value)!==null&&finite(value)>0))add('requirements','Work-stat match',weights.requirements,work.factor,work.reason,work.coverage);
+
+    if(options.useEligibility!==false){
+      const elig=eligibilityFactor(row);
+      add('eligibility','Role / eligibility match',weights.eligibility,elig,
+        elig===null?'No role or eligibility evaluation is available.':'Uses the existing domain eligibility/match evaluation.');
+    }
+
+    const activity=activityFactor(row?.lastActive??row?.lastActionTs??row?.playerRecord?.lastActive??row?.player?.lastActive,now);
+    add('activity','Recent activity',weights.activity,activity,
+      activity===null?'Last activity is unknown.':'Based on observed last-action recency.');
+
+    const scout=finite(row?.fit??row?.scoutFit??row?.playerRecord?.fit??row?.player?.fit);
+    add('scoutFit','Scout Fit signal',weights.scoutFit,scout===null?null:Math.max(0,Math.min(1,scout/100)),
+      scout===null?'Scout Fit is unavailable.':'Existing Scout Fit is used only as one activity-quality signal; it remains a separate metric.');
+
+    const org=organizationFactor(row,domain);
+    add('organization',domain==='faction'?'Faction availability':'Company availability',weights.organization,org,
+      org===null?'Current organization state is unknown.':org===1?'No current organization detected.':'Currently belongs to an organization.');
+
+    const intent=intentFactor(provenance);
+    add('intent','Recruitment intent / source',weights.intent,intent,
+      intent===null?'No discovery provenance is available.':`Derived from: ${provenance.sources.join(', ')}.`);
+
+    const contact=contactFactor(row,domain,now,options.exclusionWindowDays);
+    add('contact','Contact timing',weights.contact,contact,
+      contact===null?'Contact timing is unknown.':'Uses existing contact/stage history to avoid over-prioritizing recently contacted candidates.');
+
+    const score=knownWeight>0?Math.round((weighted/knownWeight)*1000)/10:null;
+    const coverage=possibleWeight>0?knownWeight/possibleWeight:0;
+    let confidence=coverage>=.72?'High':coverage>=.42?'Medium':'Low';
+    if(provenance.freshness==='Stale'&&confidence==='High')confidence='Medium';
+    if(provenance.freshness==='Stale'&&confidence==='Medium'&&coverage<.58)confidence='Low';
+    return Object.freeze({
+      score,
+      confidence,
+      coverage:Math.round(coverage*1000)/1000,
+      provenance,
+      components:Object.freeze(components)
+    });
+  }
+
   return Object.freeze({
     PIPELINE_STAGES,
     DEFAULT_VISIBLE_COLUMNS,
@@ -609,7 +872,12 @@
     sortRows,
     applyFilters,
     processRows,
-    activeFilterCount
+    activeFilterCount,
+    RECRUITMENT_FIT_DEFAULT_WEIGHTS,
+    normalizeSourceLabel,
+    domainStageOf,
+    prospectProvenance,
+    recruitmentFit
   });
 });
 
@@ -986,6 +1254,19 @@
     return base;
   }
 
+  const COMPANY_SEARCH_FILTER_KEYS = Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
+
+  function normalizeCompanySearchFilters(input) {
+    const source=input&&typeof input==='object'?input:{};
+    const out={};
+    for(const key of COMPANY_SEARCH_FILTER_KEYS)out[key]=cleanText(source[key]);
+    const presence=cleanText(out.organizationPresence).toLowerCase();
+    out.organizationPresence=['any','none','has'].includes(presence)?presence:'any';
+    const status=cleanText(out.onlineStatus);
+    out.onlineStatus=['Online','Idle','Offline'].includes(status)?status:'';
+    return out;
+  }
+
   function normalizeProfile(input) {
     const source = input && typeof input === 'object' ? input : {};
     const hasCriteria = !!(source.criteria && typeof source.criteria === 'object');
@@ -994,10 +1275,12 @@
     CRITERIA_KEYS.forEach((key) => {
       criteria[key] = normalizeCriterion(key, criteriaSource[key], hasCriteria);
     });
+    const searchSource=source.searchFilters&&typeof source.searchFilters==='object'?source.searchFilters:{};
     return {
       profileId: cleanText(source.profileId) || `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: cleanText(source.name) || 'Smart Match',
       criteria,
+      searchFilters:{company:normalizeCompanySearchFilters(searchSource.company)},
       createdAt: cleanText(source.createdAt),
       updatedAt: cleanText(source.updatedAt)
     };
@@ -1078,6 +1361,7 @@
     AVAILABILITY_VALUES,
     createDefaultProfile,
     normalizeProfile,
+    normalizeCompanySearchFilters,
     normalizeCandidate,
     normalizeRole,
     normalizeCompany,
@@ -1963,30 +2247,42 @@
   }
 
   function companyRecruitmentEligibility(response = {}) {
-    const job = response?.job ?? response?.user?.job ?? null;
-    const type = text(job?.type).toLowerCase();
-    if (job && type === 'company') {
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasTop=Object.prototype.hasOwnProperty.call(response,'job'),hasNested=Object.prototype.hasOwnProperty.call(user,'job');
+    if(!hasTop&&!hasNested)return {eligible:false,known:false,currentName:'',currentId:''};
+    const job=hasTop?response.job:user.job;
+    if(job===null)return {eligible:true,known:true,currentName:'',currentId:''};
+    if(!job||typeof job!=='object')return {eligible:false,known:false,currentName:'',currentId:''};
+    const type=text(job.type).toLowerCase();
+    if(!type)return {eligible:false,known:false,currentName:'',currentId:''};
+    if (type === 'company') {
       const currentId = text(job.id ?? job.company_id ?? job.companyId);
       return {
         eligible:false,
+        known:true,
         currentName:text(job.name ?? job.company_name ?? job.companyName) || (currentId ? `Company #${currentId}` : 'a company'),
         currentId
       };
     }
-    return {eligible:true,currentName:'',currentId:''};
+    return {eligible:true,known:true,currentName:'',currentId:''};
   }
 
   function factionRecruitmentEligibility(response = {}) {
-    const faction = response?.faction ?? response?.user?.faction ?? null;
-    if (faction && (faction.id != null || text(faction.name))) {
-      const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
-      return {
-        eligible:false,
-        currentName:text(faction.name ?? faction.faction_name ?? faction.factionName) || (currentId ? `Faction #${currentId}` : 'a faction'),
-        currentId
-      };
-    }
-    return {eligible:true,currentName:'',currentId:''};
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasTop=Object.prototype.hasOwnProperty.call(response,'faction'),hasNested=Object.prototype.hasOwnProperty.call(user,'faction');
+    if(!hasTop&&!hasNested)return {eligible:false,known:false,currentName:'',currentId:''};
+    const faction=hasTop?response.faction:user.faction;
+    if(faction===null)return {eligible:true,known:true,currentName:'',currentId:''};
+    if(!faction||typeof faction!=='object')return {eligible:false,known:false,currentName:'',currentId:''};
+    const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
+    const currentName=text(faction.name ?? faction.faction_name ?? faction.factionName);
+    if(!currentId&&!currentName)return {eligible:false,known:false,currentName:'',currentId:''};
+    return {
+      eligible:false,
+      known:true,
+      currentName:currentName || (currentId ? `Faction #${currentId}` : 'a faction'),
+      currentId
+    };
   }
 
   function profileUrl(userId) {
@@ -2027,6 +2323,7 @@
       profileUrl:text(plan.profileUrl) || profileUrl(userId),
       transport:'private-chat',
       autoSubmit:false,
+      dncOverrideConfirmed:plan?.dncOverrideConfirmed===true,
       queuedAt:Number(now) || Date.now(),
       expiresAt:(Number(now) || Date.now()) + PRIVATE_CHAT_DRAFT_TTL_MS
     };
@@ -2107,10 +2404,10 @@
   'use strict';
 
   const SHARED_PLAYER_FIELDS = Object.freeze([
-    'name','level','ee','man','int','end','total','factionId','factionName',
+    'name','level','age','ee','man','int','end','total','factionId','factionName',
     'currentCompany','currentCompanyId','currentCompanyRating','currentCompanyPosition','companyCheckedAt',
-    'networth','fit','fitType','lastActive','onlineStatus','lastScoutAt','lastGlobalAt',
-    'activity30','xanax30','refills30','attacks30','rwHits30','scoutStatus'
+    'networth','fit','fitType','lastActive','onlineStatus','lastScoutAt','lastGlobalAt','lastObservedAt',
+    'activity30','activeStreak','bestActiveStreak','xanax30','refills30','attacks30','rwHits30','scoutStatus'
   ]);
 
   const COMPANY_STAGES = Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
@@ -2133,7 +2430,8 @@
 
   function mergePlayerIntelligence(existing, patch = {}, source = 'unknown', observedAt = Date.now()) {
     const at = timestamp(observedAt);const userId = normalizeUserId(patch.userId ?? existing?.userId);const next = {...(existing || {}), userId};
-    for (const key of SHARED_PLAYER_FIELDS) if (Object.prototype.hasOwnProperty.call(patch, key)) next[key] = patch[key];
+    for (const key of SHARED_PLAYER_FIELDS) if (key!=='lastObservedAt'&&Object.prototype.hasOwnProperty.call(patch, key)) next[key] = patch[key];
+    const previousObserved=Number(existing?.lastObservedAt),incomingObserved=Number(patch?.lastObservedAt);const hasPreviousObserved=Number.isFinite(previousObserved)&&previousObserved>0,hasIncomingObserved=Number.isFinite(incomingObserved)&&incomingObserved>0;if(hasPreviousObserved||hasIncomingObserved)next.lastObservedAt=Math.max(hasPreviousObserved?previousObserved:0,hasIncomingObserved?incomingObserved:0);
     const sourceLabel = text(source) || 'unknown';next.sources = uniqueStrings([...(Array.isArray(existing?.sources) ? existing.sources : []), sourceLabel]);next.createdAt = existing?.createdAt == null ? at : timestamp(existing.createdAt, at);next.updatedAt = Math.max(timestamp(existing?.updatedAt, 0), at);
     const history = Array.isArray(existing?.nameHistory) ? existing.nameHistory.map(item => ({name:text(item?.name), observedAt:timestamp(item?.observedAt, at)})).filter(item => item.name) : [];
     const currentName = text(next.name);if (currentName && history.at(-1)?.name !== currentName) history.push({name:currentName, observedAt:at});next.nameHistory = history;return next;
@@ -2248,7 +2546,7 @@
     async function ensureCompany(userId, recruitmentPatch = {}, options = {}) {
       const id = Domain.normalizeUserId(userId);
       const observedAt = legacyTimestamp(options.observedAt,Date.now());
-      await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'company',observedAt);
+      if(options.skipShared!==true)await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'company',observedAt);
       const existing = await idb.get('companyRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
@@ -2260,7 +2558,7 @@
     async function ensureFaction(userId, recruitmentPatch = {}, options = {}) {
       const id = Domain.normalizeUserId(userId);
       const observedAt = legacyTimestamp(options.observedAt,Date.now());
-      await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'faction',observedAt);
+      if(options.skipShared!==true)await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'faction',observedAt);
       const existing = await idb.get('factionRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
@@ -2269,12 +2567,15 @@
       return next;
     }
 
-    function addObservation(map,userId,patch,source,observedAt) {
+    function addObservation(map,userId,patch,source,observedAt,fallbackAt=Date.now()) {
       let id;
       try { id = Domain.normalizeUserId(userId); } catch { return; }
-      const clean = definedPatch(patch);
+      const explicitAt=legacyTimestamp(observedAt,0);
+      const hasExplicitAt=Number.isFinite(explicitAt)&&explicitAt>0;
+      const processingAt=hasExplicitAt?explicitAt:0;
+      const clean = definedPatch({...patch,...(hasExplicitAt?{lastObservedAt:explicitAt}:{})});
       const list = map.get(id) || [];
-      list.push({patch:clean,source,observedAt:legacyTimestamp(observedAt,Date.now())});
+      list.push({patch:clean,source,observedAt:processingAt});
       map.set(id,list);
     }
 
@@ -2300,13 +2601,17 @@
       return definedPatch({
         name:profile.name,
         level:profile.level,
+        age:profile.age,
         factionId:profile.factionId,
         factionName:profile.factionName,
         networth:snapshot.extra?.networth,
+        activeStreak:snapshot.extra?.activeStreak,
+        bestActiveStreak:snapshot.extra?.bestActiveStreak,
         fit:snapshot.currentFit ?? snapshot.originalFit,
         fitType:snapshot.official ? 'official' : (snapshot.provisionalSource ? 'provisional' : 'unmeasured'),
         lastActive:profile.lastActionTs ? Number(profile.lastActionTs) * 1000 : null,
-        lastScoutAt:snapshot.capturedAt
+        lastScoutAt:snapshot.capturedAt,
+        lastObservedAt:snapshot.capturedAt
       });
     }
 
@@ -2324,8 +2629,11 @@
         fit:global.fit,
         fitType:global.fitType,
         lastActive:global.lastActive,
+        activeStreak:global.activeStreak,
+        bestActiveStreak:global.bestActiveStreak,
         scoutStatus:global.scoutStatus,
-        lastGlobalAt:global.observedAt
+        lastGlobalAt:global.observedAt,
+        lastObservedAt:global.observedAt
       });
     }
 
@@ -2351,24 +2659,41 @@
 
       const observations = new Map();
       for (const row of candidates) {
-        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.updatedAt || row.createdAt || observedAt);
+        addObservation(observations,row.userId,candidateSharedPatch(row),'legacy-candidate',row.companyCheckedAt || row.lastSeenPost || row.observedAt || row.postedAt || row.postDate,observedAt);
       }
       for (const row of forumSources) {
-        addObservation(observations,row.userId,{name:row.authorName},'legacy-forum',row.lastSeenPost || row.postedAt || row.observedAt || observedAt);
+        addObservation(observations,row.userId,{name:row.authorName},'legacy-forum',row.lastSeenPost || row.postedAt || row.observedAt,observedAt);
       }
       for (const row of users) {
-        addObservation(observations,row.userId,{...candidateSharedPatch(row),name:row.name,ee:row.ee},'legacy-user',row.lastSeenPost || row.postedAt || row.postDate || observedAt);
+        addObservation(observations,row.userId,{...candidateSharedPatch(row),name:row.name,ee:row.ee},'legacy-user',row.lastSeenPost || row.postedAt || row.postDate,observedAt);
       }
       for (const row of scouts) {
-        addObservation(observations,row.userId,scoutSharedPatch(row),'scout',row.capturedAt || observedAt);
+        addObservation(observations,row.userId,scoutSharedPatch(row),'scout',row.capturedAt,observedAt);
       }
       for (const row of globals) {
-        addObservation(observations,row.userId ?? row.playerId,globalSharedPatch(row),'global',row.observedAt || observedAt);
+        addObservation(observations,row.userId ?? row.playerId,globalSharedPatch(row),'global',row.observedAt,observedAt);
       }
 
       for (const [userId,list] of observations.entries()) {
         list.sort((a,b)=>a.observedAt-b.observedAt);
-        for (const item of list) await players.ensure(userId,item.patch,item.source,item.observedAt);
+        let current=await idb.get('playerIntelligence',userId);
+        for (const item of list) {
+          const currentObserved=Number(current?.lastObservedAt),incomingObserved=Number(item.patch?.lastObservedAt);
+          const currentIsAuthoritative=Number.isFinite(currentObserved)&&currentObserved>0;
+          const incomingHasObservation=Number.isFinite(incomingObserved)&&incomingObserved>0;
+          const incomingIsNewer=incomingHasObservation&&(!currentIsAuthoritative||incomingObserved>currentObserved);
+          let patch=item.patch;
+          if(current&&(!incomingHasObservation||(currentIsAuthoritative&&!incomingIsNewer))){
+            const safe={};
+            for(const [key,value] of Object.entries(item.patch||{})){
+              if(key==='lastObservedAt')continue;
+              const existing=current?.[key];
+              if(existing===undefined||existing===null||existing==='')safe[key]=value;
+            }
+            patch=safe;
+          }
+          current=await players.ensure(userId,patch,item.source,item.observedAt);
+        }
       }
 
       let companyCount = 0;
@@ -2385,28 +2710,21 @@
         if (ambiguous) ambiguousCount += 1;
 
         if (domains.includes('company')) {
-          const converted = Domain.legacyCandidateToCompany(candidate,at,{ambiguous,assumed:!knownEvidence});
           const existing = await idb.get('companyRecruitment',userId);
-          const next = existing ? {...converted,...existing,
-            discoverySources:[...new Set([...(converted.discoverySources || []),...(existing.discoverySources || [])])],
-            migrationReviewRequired:converted.migrationReviewRequired || existing.migrationReviewRequired || false,
-            legacySharedState:existing.legacySharedState || converted.legacySharedState,
-            legacyDomainAssumed:existing.legacyDomainAssumed || converted.legacyDomainAssumed
-          } : converted;
-          await idb.put('companyRecruitment',next);
-          companyCount += 1;
+          if(!existing){
+            const converted = Domain.legacyCandidateToCompany(candidate,at,{ambiguous,assumed:!knownEvidence});
+            await idb.put('companyRecruitment',converted);
+            companyCount += 1;
+          }
         }
 
         if (domains.includes('faction')) {
-          const converted = Domain.legacyCandidateToFaction(candidate,at,{ambiguous});
           const existing = await idb.get('factionRecruitment',userId);
-          const next = existing ? {...converted,...existing,
-            discoverySources:[...new Set([...(converted.discoverySources || []),...(existing.discoverySources || [])])],
-            migrationReviewRequired:converted.migrationReviewRequired || existing.migrationReviewRequired || false,
-            legacySharedState:existing.legacySharedState || converted.legacySharedState
-          } : converted;
-          await idb.put('factionRecruitment',next);
-          factionCount += 1;
+          if(!existing){
+            const converted = Domain.legacyCandidateToFaction(candidate,at,{ambiguous});
+            await idb.put('factionRecruitment',converted);
+            factionCount += 1;
+          }
         }
       }
 
@@ -2630,24 +2948,27 @@
     const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
     const results=normalized.map(req=>{
       const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&!verdict.passed?waiverFor(req.id,waivers):null;
+      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers):null;
       return {...req,known:verdict.known,passed:verdict.passed,waived:Boolean(waiver),waiver,effectivePass:verdict.passed||Boolean(waiver)};
     });
-    const hardFailures=results.filter(r=>r.kind==='Hard'&&!r.passed);
+    const hardFailures=results.filter(r=>r.kind==='Hard'&&r.known&&!r.passed);
+    const unknownHard=results.filter(r=>r.kind==='Hard'&&!r.known);
     const unwaivedHardFailures=hardFailures.filter(r=>!r.waived);
-    const failures=results.filter(r=>!r.passed);
+    const failures=results.filter(r=>r.known&&!r.passed);
     const known=results.filter(r=>r.known);
     const totalWeight=known.reduce((sum,r)=>sum+(r.weight||1),0);
     const earned=known.filter(r=>r.passed).reduce((sum,r)=>sum+(r.weight||1),0);
-    const score=totalWeight?Math.round(earned/totalWeight*100):0;
+    const score=totalWeight?Math.round(earned/totalWeight*100):null;
     const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':'Eligible';
-    return {results,failures,hardFailures,unwaivedHardFailures,hardFailed,eligibility,score};
+    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
+    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
   function ratioScore(req,facts){
-    const actual=Number(facts?.[req.field]);
-    const target=Number(req.value);
+    const rawActual=facts?.[req.field],rawTarget=req.value;
+    if(rawActual===null||rawActual===undefined||text(rawActual)===''||rawTarget===null||rawTarget===undefined||text(rawTarget)==='')return null;
+    const actual=Number(rawActual);
+    const target=Number(rawTarget);
     if(!Number.isFinite(actual)||!Number.isFinite(target))return null;
     if(['gte','gt'].includes(req.operator))return target<=0?100:clamp(actual/target*100);
     if(['lte','lt'].includes(req.operator))return actual<=target?100:(actual<=0?0:clamp(target/actual*100));
@@ -2659,14 +2980,14 @@
     const criteria=evaluateCriteria(vacancy.criteria,facts,waivers);
     const measured=vacancy.criteria.map(req=>({req,score:ratioScore(req,facts)})).filter(v=>v.score!==null);
     const totalWeight=measured.reduce((sum,v)=>sum+(v.req.weight||1),0);
-    const raw=totalWeight?measured.reduce((sum,v)=>sum+v.score*(v.req.weight||1),0)/totalWeight:0;
-    const matchScore=Math.round(clamp(raw));
+    const raw=totalWeight?measured.reduce((sum,v)=>sum+v.score*(v.req.weight||1),0)/totalWeight:null;
+    const matchScore=raw===null?null:Math.round(clamp(raw));
     return {
       vacancyId:vacancy.vacancyId,
       matchScore,
-      eligible:!criteria.hardFailed,
+      eligible:criteria.eligibility==='Eligible'||criteria.eligibility==='Eligible by Waiver',
       hardFailed:criteria.hardFailed,
-      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
+      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.eligibility==='Unknown'?'Unknown':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
       criteria
     };
   }
@@ -2680,17 +3001,19 @@
   }
 
   function opportunityComponent(label,value,weight){
-    const normalized=clamp(value);
     const w=Math.max(0,number(weight));
-    return {label,value:normalized,weight:w,contribution:Math.round(normalized*w)/100};
+    const known=value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));
+    return {label,value:known?clamp(value):null,weight:w,known,contribution:0};
   }
 
   function computeOpportunity(input={},weights={}){
-    const availability=text(input.availability).toLowerCase()==='available'?100:text(input.availability).toLowerCase()==='unavailable'?0:50;
-    const age=Math.max(0,number(input.lastActiveAgeHours,999));
-    const activity=age<=6?100:age<=24?80:age<=72?55:age<=168?30:10;
+    const availabilityText=text(input.availability).toLowerCase();
+    const availability=availabilityText==='available'?100:availabilityText==='unavailable'?0:null;
+    const ageKnown=input.lastActiveAgeHours!==null&&input.lastActiveAgeHours!==undefined&&text(input.lastActiveAgeHours)!==''&&Number.isFinite(Number(input.lastActiveAgeHours));
+    const age=ageKnown?Math.max(0,Number(input.lastActiveAgeHours)):null;
+    const activity=age===null?null:(age<=6?100:age<=24?80:age<=72?55:age<=168?30:10);
     const freshMap={fresh:100,aging:70,stale:40,'very stale':15};
-    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??50;
+    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??null;
     const rows=[
       opportunityComponent('Match',input.match,weights.match),
       opportunityComponent('Fit',input.fit,weights.fit),
@@ -2698,13 +3021,18 @@
       opportunityComponent('Activity',activity,weights.activity),
       opportunityComponent('Freshness',freshness,weights.freshness),
       opportunityComponent('Follow-up',input.followUpDue?100:0,weights.followUp),
-      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),contribution:0}
+      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
     ];
-    const rawScore=Math.round(rows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
+    const scoredRows=rows.slice(0,6);
+    const primaryRows=rows.slice(0,5);
+    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
+    const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
+    for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
+    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=Math.round(clamp(rawScore-penalty));
-    const explanation=rows.slice(0,6).map(row=>`${row.label}: ${row.value} × ${row.weight}% = ${row.contribution}`).join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
-    return {score,rawScore,penalty,breakdown:rows,explanation};
+    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
+    const explanation=scoredRows.map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`).join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
+    return {score,rawScore,penalty,availableWeight,breakdown:rows,explanation};
   }
 
   function stageAgeStatus(record={},thresholds={},now=Date.now()){
@@ -2919,15 +3247,15 @@
       const player=players.get(userId)||{userId};
       const evaluation=eligibilityFor(record,player)||{};
       rows.push({
-        userId,name:text(player.name)||`User ${userId}`,level:player.level??null,ee:player.ee??null,fit:player.fit??null,fitType:text(player.fitType),
-        lastActive:player.lastActive??null,onlineStatus:text(player.onlineStatus),activity30:player.activity30??null,xanax30:player.xanax30??null,refills30:player.refills30??null,
+        userId,name:text(player.name)||`User ${userId}`,level:player.level??null,age:player.age??player.ageDays??null,ee:player.ee??null,fit:player.fit??null,fitType:text(player.fitType),recruitmentFit:player.recruitmentFit??null,
+        lastActive:player.lastActive??null,onlineStatus:text(player.onlineStatus),activity30:player.activity30??null,activeStreak:player.activestreak??player.activeStreak??null,drugUse:player.drugUse??player.drugUseLabel??null,xanax30:player.xanax30??null,refills30:player.refills30??null,
         attacks30:player.attacks30??null,rwHits30:player.rwHits30??null,networth:player.networth??null,currentCompany:text(player.currentCompany),
         pipelineStage:normalizeStage(record.pipelineStage),availability:text(record.availability)||'Unknown',desiredCompany:text(record.desiredCompany),desiredRole:text(record.desiredRole),
         expectedSalary:record.expectedSalary??null,recruiterNote:text(record.recruiterNote),followUps:Array.isArray(record.followUps)?record.followUps.map(item=>({...item})):[],
         campaigns:Array.isArray(record.campaigns)?[...record.campaigns]:[],outcomes:Array.isArray(record.outcomes)?record.outcomes.map(item=>({...item})):[],tags:Array.isArray(record.tags)?[...record.tags]:[],
         doNotContact:record.doNotContact===true,archived:record.archived===true,createdAt:record.createdAt??null,updatedAt:record.updatedAt??null,
         stageChangedAt:record.stageChangedAt??record.updatedAt??null,newlyDiscoveredAt:record.newlyDiscoveredAt??null,newlyEligibleAt:record.newlyEligibleAt??null,
-        eligibility:text(evaluation.eligibility)||'Unknown',eligibilityScore:Number.isFinite(Number(evaluation.score))?Number(evaluation.score):null,hardFailed:evaluation.hardFailed===true,
+        eligibility:text(evaluation.eligibility)||'Unknown',eligibilityScore:evaluation.score===null||evaluation.score===undefined||text(evaluation.score)===''?null:(Number.isFinite(Number(evaluation.score))?Number(evaluation.score):null),hardFailed:evaluation.hardFailed===true,
         companyRecord:record,playerRecord:player
       });
     }
@@ -2943,7 +3271,7 @@
   function buildPipelineModel(rows=[]){const buckets=Object.fromEntries(COMPANY_STAGES.map(stage=>[stage,[]]));for(const row of Array.isArray(rows)?rows:[]){if(!row||text(row.companyRecord?.domain).toLowerCase()==='faction')continue;buckets[normalizeStage(row.pipelineStage)].push(row);}return buckets;}
 
   function kpi(label,value){return `<div class="ra-kpi"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;}
-  function score(value){return Number.isFinite(Number(value))?Number(value).toFixed(1):'—';}
+  function score(value){if(value===null||value===undefined||text(value)==='')return '—';return Number.isFinite(Number(value))?Number(value).toFixed(1):'—';}
   function money(value){return Number.isFinite(Number(value))?`$${Math.round(Number(value)).toLocaleString()}`:'—';}
   function stageOptions(selected){return COMPANY_STAGES.map(stage=>`<option value="${esc(stage)}" ${stage===selected?'selected':''}>${esc(stage)}</option>`).join('');}
   function vacancyStateOptions(selected){return VACANCY_STATES.map(state=>`<option value="${state}" ${state===selected?'selected':''}>${state}</option>`).join('');}
@@ -2956,10 +3284,25 @@
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
   function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
   function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-company-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
+  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
+  function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
+  function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','hired'].includes(stage)?'Contacted':'Not yet';}
   function renderCandidates(rows=[],options={}){
-    const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'};const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
-    const body=(Array.isArray(rows)?rows:[]).map(row=>{const message=row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-company-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-company-recruit="${esc(row.userId)}">Message</button>`;return `<tr data-context-id="${esc(row.userId)}"><td><a class="ra-link" href="https://www.torn.com/profiles.php?XID=${esc(row.userId)}" target="_blank" rel="noopener">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small></td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${message}</td></tr>`;}).join('');
-    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-company-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-company-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Company</label><input id="ra-company-filter-organization" value="${esc(filters.organization||'')}" placeholder="Company name"></div><div class="ra-field"><label>Company Presence</label><select id="ra-company-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Company</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-company-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-company-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-company-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-company-search-apply">Search</button><button type="button" class="ra-btn" id="ra-company-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${(Array.isArray(rows)?rows:[]).length} matching of ${total} Company candidate(s).</p></div></div><div class="ra-table-wrap"><table class="ra-table ra-core-results"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Current Company</th><th>Message</th></tr></thead><tbody>${body||'<tr><td colspan="7">No matching Company candidates.</td></tr>'}</tbody></table></div></section>`;
+    const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
+    const profiles=Array.isArray(options.profiles)?options.profiles:[],activeProfileId=text(options.activeProfileId);
+    const pagination=options.pagination||{page:0,pageCount:1,start:0,end:(Array.isArray(rows)?rows:[]).length};const filteredTotal=Number.isFinite(Number(options.filteredTotal))?Number(options.filteredTotal):(Array.isArray(rows)?rows:[]).length;
+    const rangeText=filteredTotal?`${Number(pagination.start||0)+1}-${Number(pagination.end||0)}`:'0';
+    const pager=`<div class="ra-actions"><button type="button" class="ra-btn" data-results-page="prev" ${Number(pagination.page||0)<=0?'disabled':''}>Previous</button><span class="ra-muted">${rangeText} of ${filteredTotal}</span><button type="button" class="ra-btn" data-results-page="next" ${Number(pagination.page||0)>=Number(pagination.pageCount||1)-1?'disabled':''}>Next</button></div>`;
+    const profileOptions=`<option value="" ${activeProfileId?'':'selected'}>No profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${text(profile.profileId)===activeProfileId?'selected':''}>${esc(profile.name)}</option>`).join('');
+    const profileBar=`<div class="ra-actions ra-profile-bar"><label class="ra-muted" for="ra-company-profile-select">Recruitment profile</label><select id="ra-company-profile-select" class="ra-btn">${profileOptions}</select><button type="button" class="ra-btn" id="ra-company-profile-apply" ${profiles.length?'':'disabled'}>Apply Profile</button><button type="button" class="ra-btn" id="ra-company-profile-clear" ${activeProfileId?'':'disabled'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-company-profile-save-search" ${profiles.length?'':'disabled'}>Save Search to Profile</button><button type="button" class="ra-btn" id="ra-company-profile-manage">Manage Profiles</button></div>`;
+    const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="company">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
+    const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-company-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-company-recruit="${esc(row.userId)}">Message</button>`;
+    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.end)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${stat(row.activeStreak)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const resultsTable=layout==='compact'
+      ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Company candidates.</td></tr>'}</tbody></table>`
+      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>Employment</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="15">No matching Company candidates.</td></tr>'}</tbody></table>`;
+    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div></div>${profileBar}<div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-company-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-company-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Company</label><input id="ra-company-filter-organization" value="${esc(filters.organization||'')}" placeholder="Company name"></div><div class="ra-field"><label>Company Presence</label><select id="ra-company-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Company</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-company-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-company-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-company-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-company-search-apply">Search</button><button type="button" class="ra-btn" id="ra-company-search-clear">Clear</button><button type="button" class="ra-btn" id="ra-company-hof-discover" title="Import one bounded page of public work-stat HOF prospects without per-player enrichment">Discover Workstat Prospects</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Company candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
   }
   function renderPipeline(model={}){return `<div class="ra-pipeline">${COMPANY_STAGES.map(stage=>`<section class="ra-stage" data-company-stage="${esc(stage)}"><div class="ra-stage-head"><b>${esc(stage)}</b><span>${(model[stage]||[]).length}</span></div><div class="ra-stage-drop">${(model[stage]||[]).map(row=>`<article class="ra-stage-card" data-context-id="${esc(row.userId)}"><b>${esc(row.name)}</b><div>${esc(row.eligibility)} · Fit ${score(row.fit)}</div><div>${esc(row.desiredRole||'No role specified')}</div><select class="ra-btn" data-company-stage-select="${esc(row.userId)}">${stageOptions(row.pipelineStage)}</select></article>`).join('')}</div></section>`).join('')}</div>`;}
 
@@ -3207,12 +3550,12 @@
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const hours=(now,at)=>Math.max(0,(number(now)-number(at,0))/3600000);
-  const money=value=>Number.isFinite(Number(value))?`$${Math.round(Number(value)).toLocaleString()}`:'—';
-  const metric=value=>Number.isFinite(Number(value))?Number(value).toLocaleString():'—';
-  const score=value=>Number.isFinite(Number(value))?Math.round(Number(value)):'—';
+  const money=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?`${Math.round(Number(value)).toLocaleString()}`:'—');
+  const metric=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toLocaleString():'—');
+  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Math.round(Number(value)):'—');
 
   function freshness(lastScoutAt,now){
-    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Very stale';
+    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Unknown';
     const age=hours(now,lastScoutAt);
     if(age<=24)return 'Fresh';
     if(age<=72)return 'Aging';
@@ -3243,10 +3586,10 @@
     return (Array.isArray(rows)?rows:[]).map(row=>{
       const vacancy=selectedVacancy(row);
       const input={
-        match:number(vacancy.evaluation?.matchScore,0),
-        fit:number(row.fit,0),
+        match:vacancy.evaluation?.matchScore??null,
+        fit:row.fit??null,
         availability:text(row.availability),
-        lastActiveAgeHours:Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):999,
+        lastActiveAgeHours:row.lastActive!==null&&row.lastActive!==undefined&&Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):null,
         intelligenceFreshness:freshness(row.playerRecord?.lastScoutAt,now),
         contactPenalty:row.doNotContact===true||row.companyRecord?.doNotContact===true?100:0,
         followUpDue:followUpDue(row.companyRecord||row,now)
@@ -3263,7 +3606,7 @@
   }
 
   function renderBreakdown(opportunity={}){
-    return (opportunity.breakdown||[]).map(item=>`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
+    return (opportunity.breakdown||[]).map(item=>item.known===false?`<span>${esc(item.label)}: — (excluded)</span>`:`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
   }
 
   function renderOpportunityPage(rows=[]){
@@ -3296,7 +3639,8 @@
     Workflow:root&&root.RA_V46CompanyWorkflow,
     WorkflowUI:root&&root.RA_V46CompanyWorkflowUI,
     OpportunityUI:root&&root.RA_V46CompanyOpportunityUI,
-    Messaging:root&&root.RA_V45Messaging
+    Messaging:root&&root.RA_V45Messaging,
+    ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.CompanyCore=require('./v46-company-core');
@@ -3306,6 +3650,7 @@
     deps.WorkflowUI=require('./v46-company-workflow-ui');
     deps.OpportunityUI=require('./v46-company-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
+    deps.ResultsCore=require('./results-core');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -3313,8 +3658,8 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {CompanyCore,CompanyUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging}=D;
-  if(!CompanyCore||!CompanyUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging)throw new Error('CompanyCore, CompanyUI, Operations, Workflow, WorkflowUI, OpportunityUI and Messaging are required.');
+  const {CompanyCore,CompanyUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
+  if(!CompanyCore||!CompanyUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('CompanyCore, CompanyUI, Operations, Workflow, WorkflowUI, OpportunityUI, Messaging and ResultsCore are required.');
 
   const COMPANY_ROUTES=Object.freeze([
     'company-overview','company-today','company-discover','company-candidates','company-pipeline',
@@ -3349,17 +3694,36 @@
 
   const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
   const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
-  const SORT_KEYS=new Set(['player','end','man','int','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT}};
+  const RESULTS_PAGE_SIZE=100;
+  const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
+  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},hofOffset:0,resultPage:0};
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   function parseThreshold(value){const raw=text(value).toLowerCase().replace(/,/g,'');if(!raw)return null;const match=raw.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([kmb])?$/);if(!match)return null;const mult={k:1e3,m:1e6,b:1e9}[match[2]]||1;const out=Number(match[1])*mult;return Number.isFinite(out)?out:null;}
   function organizationInfo(row={}){const player=row.playerRecord||{};const name=text(row.currentCompany||player.currentCompany);const rawId=row.currentCompanyId??player.currentCompanyId;if(name)return{state:'has',label:name};if(rawId!==null&&rawId!==undefined&&rawId!==''){const id=Number(rawId);if(Number.isFinite(id)){if(id===0)return{state:'none',label:'None'};if(id>0)return{state:'has',label:`Company #${id}`};}}return{state:'unknown',label:'Unknown'};}
   function filterRows(rows,filters={}){const search=text(filters.search).toLowerCase(),minEnd=parseThreshold(filters.minEnd),minMan=parseThreshold(filters.minMan),minInt=parseThreshold(filters.minInt),onlineStatus=text(filters.onlineStatus).toLowerCase(),organization=text(filters.organization).toLowerCase(),presence=text(filters.organizationPresence).toLowerCase()||'any';return (Array.isArray(rows)?rows:[]).filter(row=>{if(search&&!`${text(row.name).toLowerCase()} ${text(row.userId)}`.includes(search))return false;if(minEnd!==null&&(!Number.isFinite(Number(row.end))||row.end===null||row.end===undefined||row.end===''||Number(row.end)<minEnd))return false;if(minMan!==null&&(!Number.isFinite(Number(row.man))||row.man===null||row.man===undefined||row.man===''||Number(row.man)<minMan))return false;if(minInt!==null&&(!Number.isFinite(Number(row.int))||row.int===null||row.int===undefined||row.int===''||Number(row.int)<minInt))return false;if(onlineStatus&&text(row.onlineStatus).toLowerCase()!==onlineStatus)return false;const org=organizationInfo(row);if(organization&&(org.state!=='has'||!org.label.toLowerCase().includes(organization)))return false;if(presence==='has'&&org.state!=='has')return false;if(presence==='none'&&org.state!=='none')return false;return true;});}
-  function sortValue(row,key,now){if(key==='player')return text(row.name).toLowerCase()||null;if(key==='end'||key==='man'||key==='int'){const raw=row[key];if(raw===null||raw===undefined||raw==='')return null;const value=Number(raw);return Number.isFinite(value)?value:null;}if(key==='lastActive'){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return ts;const status=text(row.onlineStatus).toLowerCase();if(status==='online')return now+2;if(status==='idle')return now+1;if(status==='offline')return 0;return null;}return null;}
+  function sortValue(row,key,now){if(key==='player')return text(row.name).toLowerCase()||null;if(['level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit'].includes(key)){const raw=row[key];if(raw===null||raw===undefined||raw==='')return null;const value=Number(raw);return Number.isFinite(value)?value:null;}if(key==='lastActive'){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return ts;const status=text(row.onlineStatus).toLowerCase();if(status==='online')return now+2;if(status==='idle')return now+1;if(status==='offline')return 0;return null;}return null;}
   function sortTieBreak(a,b){const byName=text(a.name).localeCompare(text(b.name),undefined,{sensitivity:'base'});if(byName)return byName;return text(a.userId).localeCompare(text(b.userId),undefined,{numeric:true});}
   function sortRows(rows,sortState=DEFAULT_SORT,now=Date.now()){const key=SORT_KEYS.has(text(sortState?.key))?text(sortState.key):DEFAULT_SORT.key;const direction=sortState?.direction==='desc'?'desc':'asc';const sign=direction==='asc'?1:-1;return [...(Array.isArray(rows)?rows:[])].sort((a,b)=>{const av=sortValue(a,key,now),bv=sortValue(b,key,now),am=av===null||av===undefined,bm=bv===null||bv===undefined;if(am!==bm)return am?1:-1;if(am&&bm)return sortTieBreak(a,b);const cmp=key==='player'?String(av).localeCompare(String(bv)):Number(av)-Number(bv);return cmp?cmp*sign:sortTieBreak(a,b);});}
   function toggleSort(current,key){const nextKey=SORT_KEYS.has(text(key))?text(key):DEFAULT_SORT.key;if(text(current?.key)===nextKey)return{key:nextKey,direction:current?.direction==='asc'?'desc':'asc'};return{key:nextKey,direction:nextKey==='player'?'asc':'desc'};}
+  function profileRequirements(profile={}){
+    const criteria=profile?.criteria||{},out={};
+    for(const [key,target] of [['man','minMan'],['int','minInt'],['end','minEnd']]){
+      const criterion=criteria[key];
+      const value=criterion?.enabled===true?Number(criterion.target):NaN;
+      if(Number.isFinite(value)&&value>0)out[target]=value;
+    }
+    return out;
+  }
+  function profileSearchFilters(profile={}){
+    const saved=profile?.searchFilters?.company||{};
+    const filters={...DEFAULT_SEARCH_FILTERS,...saved};
+    const requirements=profileRequirements(profile);
+    if(!text(filters.minMan)&&requirements.minMan)filters.minMan=String(requirements.minMan);
+    if(!text(filters.minInt)&&requirements.minInt)filters.minInt=String(requirements.minInt);
+    if(!text(filters.minEnd)&&requirements.minEnd)filters.minEnd=String(requirements.minEnd);
+    return filters;
+  }
   let idSequence=0;
   function makeId(prefix){
     const uuid=globalThis.crypto?.randomUUID?.();
@@ -3404,7 +3768,7 @@
 
   async function buildRows(app){
     const db=app._test.state.db;
-    const[companyRecords,players,candidateLocals,config,vacancies]=await Promise.all([dbGetAll(db,'companyRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getVacancies(app)]);
+    const[companyRecords,players,candidateLocals,config,vacancies,activeProfile]=await Promise.all([dbGetAll(db,'companyRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getVacancies(app),typeof app.getActiveMatchProfile==='function'?app.getActiveMatchProfile():Promise.resolve(null)]);
     const baseline=CompanyCore.normalizeBaseline(config.baseline||{});
     const rows=CompanyUI.buildCandidateRows(companyRecords,players,{eligibilityFor:(record,player)=>CompanyCore.evaluateCriteria(baseline.criteria,player,record.waivers||[])});
     const vacancyMap=new Map(vacancies.map(v=>[text(v.vacancyId),v]));
@@ -3414,7 +3778,9 @@
       const evaluationMap=new Map(result.evaluations.map(e=>[text(e.vacancyId),e]));
       const options=vacancies.filter(v=>text(v.status)==='Open').map(v=>({vacancyId:text(v.vacancyId),name:text(v.name)||text(v.role)||text(v.vacancyId),matchScore:evaluationMap.get(text(v.vacancyId))?.matchScore??null,eligible:evaluationMap.get(text(v.vacancyId))?.eligible===true}));
       const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.playerRecord||{};
-      return{...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),talentPool:row.companyRecord?.talentPool===true,talentPoolReason:text(row.companyRecord?.talentPoolReason),vacancyEvaluations:result.evaluations,pinnedVacancyId:text(result.selection.pinnedVacancyId),suggestedVacancyId:text(result.selection.suggestedVacancyId),suggestedVacancyName:text(vacancyMap.get(text(result.selection.suggestedVacancyId))?.name),vacancyOptions:options};
+      const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),talentPool:row.companyRecord?.talentPool===true,talentPoolReason:text(row.companyRecord?.talentPoolReason),vacancyEvaluations:result.evaluations,pinnedVacancyId:text(result.selection.pinnedVacancyId),suggestedVacancyId:text(result.selection.suggestedVacancyId),suggestedVacancyName:text(vacancyMap.get(text(result.selection.suggestedVacancyId))?.name),vacancyOptions:options,candidateLocal:candidate};
+      const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'company',useEligibility:false,requirements:profileRequirements(activeProfile||{})});
+      return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness};
     });
   }
 
@@ -3439,7 +3805,7 @@
   async function addTimelineNoteFromUi(){const userId=text(document.getElementById('ra-company-timeline-player')?.value);const row=await rowFor(userId);const value=text(document.getElementById('ra-company-timeline-note')?.value);if(!value)throw new Error('Timeline note cannot be empty.');return saveOperationalRecord(userId,Operations.addTimelineNote(row.companyRecord,{text:value},Date.now()));}
   async function editTimelineNote(userId,noteId){const row=await rowFor(userId);const current=(row.companyRecord.timelineNotes||[]).find(note=>text(note.noteId)===text(noteId));if(!current)throw new Error('Timeline note not found.');const value=text(globalThis.prompt?.('Edit recruiter timeline note:',current.text));if(!value)return false;return saveOperationalRecord(userId,Operations.editTimelineNote(row.companyRecord,noteId,value,Date.now()));}
   async function deleteTimelineNote(userId,noteId){if(typeof globalThis.confirm==='function'&&!globalThis.confirm('Delete this recruiter timeline note?'))return false;const row=await rowFor(userId);return saveOperationalRecord(userId,Operations.deleteTimelineNote(row.companyRecord,noteId,Date.now()));}
-  async function recruitPlayer(userId,override=false){const row=await rowFor(userId);if(!Operations.canMessage(row.companyRecord,override))throw new Error('This candidate is marked Do Not Contact. Use the explicit override only when you deliberately intend to contact them.');if(override&&typeof globalThis.confirm==='function'&&!globalThis.confirm('This candidate is marked Do Not Contact. Override it for this recruitment chat only?'))return false;if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');return runtime.app.recruitCandidate?.('company',text(userId),row.name);}
+  async function recruitPlayer(userId,override=false){const row=await rowFor(userId);if(!Operations.canMessage(row.companyRecord,override))throw new Error('This candidate is marked Do Not Contact. Use the explicit override only when you deliberately intend to contact them.');if(override){if(typeof globalThis.confirm!=='function')throw new Error('Do Not Contact override confirmation is unavailable. Recruitment stopped.');if(!globalThis.confirm('This candidate is marked Do Not Contact. Override it for this recruitment chat only?'))return false;}if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');return runtime.app.recruitCandidate?.('company',text(userId),row.name,{overrideDnc:override,dncConfirmed:override});}
 
   async function createCampaignFromUi(){return saveCampaign(runtime.app,{campaignId:makeId('campaign'),title:text(document.getElementById('ra-company-campaign-title')?.value)||'Untitled Campaign',target:text(document.getElementById('ra-company-campaign-target')?.value),vacancyId:text(document.getElementById('ra-company-campaign-vacancy')?.value),status:text(document.getElementById('ra-company-campaign-status')?.value)||'Draft',notes:text(document.getElementById('ra-company-campaign-notes')?.value),candidateIds:[],createdAt:Date.now()});}
   async function saveCampaignFromCard(campaignId,card){const existing=await getCampaign(runtime.app,campaignId)||{campaignId,candidateIds:[]};const field=key=>card?.querySelector(`[data-campaign-field="${key}"]`)?.value??'';return saveCampaign(runtime.app,{...existing,campaignId,title:text(field('title'))||existing.title,target:text(field('target')),vacancyId:text(field('vacancyId')),status:text(field('status'))||existing.status,notes:text(field('notes'))});}
@@ -3451,9 +3817,14 @@
 
   function bindContentControls(currentPage){
     const page=text(currentPage||runtime.app?._test?.state?.page);
-    document.getElementById('ra-company-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.searchFilters={search:text(document.getElementById('ra-company-filter-search')?.value),minEnd:text(document.getElementById('ra-company-filter-end')?.value),minMan:text(document.getElementById('ra-company-filter-man')?.value),minInt:text(document.getElementById('ra-company-filter-int')?.value),onlineStatus:text(document.getElementById('ra-company-filter-status')?.value),organization:text(document.getElementById('ra-company-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-company-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('company',runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
-    document.getElementById('ra-company-search-clear')?.addEventListener('click',()=>{runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('company-candidates',{persist:false}).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-company-sort]').forEach(button=>{button.onclick=()=>{runtime.sort=toggleSort(runtime.sort,button.dataset.companySort);renderPage('company-candidates',{persist:false}).catch(reportError);};});
+    document.getElementById('ra-company-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters={search:text(document.getElementById('ra-company-filter-search')?.value),minEnd:text(document.getElementById('ra-company-filter-end')?.value),minMan:text(document.getElementById('ra-company-filter-man')?.value),minInt:text(document.getElementById('ra-company-filter-int')?.value),onlineStatus:text(document.getElementById('ra-company-filter-status')?.value),organization:text(document.getElementById('ra-company-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-company-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('company',runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
+    document.getElementById('ra-company-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('company-candidates',{persist:false}).catch(reportError);});
+    document.getElementById('ra-company-profile-apply')?.addEventListener('click',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');const profile=await runtime.app.setActiveMatchProfile(id);runtime.resultPage=0;runtime.searchFilters=profileSearchFilters(profile);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-company-profile-clear')?.addEventListener('click',async()=>{try{if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');await runtime.app.setActiveMatchProfile('');runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-company-profile-save-search')?.addEventListener('click',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.saveCompanySearchProfile!=='function')throw new Error('Saving Match Profile searches is unavailable.');await runtime.app.saveCompanySearchProfile(id,runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-company-profile-manage')?.addEventListener('click',()=>runtime.app?.navigate?.('smart-match',true));
+    document.getElementById('ra-company-hof-discover')?.addEventListener('click',async event=>{const button=event?.currentTarget;try{if(button){button.disabled=true;button.textContent=runtime.hofOffset>0?'Loading next 100…':'Discovering…';}if(typeof runtime.app?.discoverWorkstatProspects!=='function')throw new Error('Work-stat HOF discovery is unavailable.');const result=await runtime.app.discoverWorkstatProspects({limit:100,offset:runtime.hofOffset});runtime.hofOffset=Math.max(runtime.hofOffset,Number(result?.nextOffset||runtime.hofOffset));await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent=runtime.hofOffset>0?'Discover Next 100':'Discover Workstat Prospects';}}});
+    document.querySelectorAll('#ra-content [data-company-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.companySort);renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('company',link.dataset.playerCard);};});
     document.querySelectorAll('#ra-content [data-go-page]').forEach(button=>{if(!isCompanyRoute(button.dataset.goPage))return;button.onclick=event=>{event?.preventDefault?.();navigate(button.dataset.goPage,true).catch(reportError);};});
     document.querySelectorAll('#ra-content [data-company-stage-select]').forEach(select=>{select.onchange=()=>changeCompanyStage(select.dataset.companyStageSelect,select.value).then(()=>renderPage(page,{persist:false})).catch(error=>{reportError(error);renderPage(page,{persist:false}).catch(reportError);});});
     document.querySelectorAll('#ra-content [data-company-vacancy-pin]').forEach(select=>{select.onchange=()=>setVacancyPin(select.dataset.companyVacancyPin,select.value).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);});
@@ -3504,7 +3875,7 @@
       const opportunities=Object.fromEntries(opportunityRows.map(row=>[row.userId,row.opportunity.score]));
       html=CompanyUI.renderToday(CompanyUI.buildTodayModel(rows,{now,stageThresholds:config.stageThresholds||{},opportunities}));
     }
-    else if(page==='company-candidates'){const filtered=filterRows(rows,runtime.searchFilters);const sorted=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));html=CompanyUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length});}
+    else if(page==='company-candidates'){const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];const activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);html=CompanyUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:activeProfile?.profileId||'',pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}});}
     else if(page==='company-pipeline')html=CompanyUI.renderPipeline(CompanyUI.buildPipelineModel(rows));
     else if(page==='company-vacancies')html=CompanyUI.renderVacanciesPage({config:await getConfig(app),vacancies:await getVacancies(app),rows});
     else if(page==='company-followups')html=CompanyUI.renderFollowUpsPage(rows,{now:Date.now()});
@@ -3527,7 +3898,7 @@
   function install(app,options={}){if(!app?._test?.state?.db)throw new Error('A mounted Recruitment Agency app with DB state is required.');uninstall();runtime.app=app;runtime.installed=true;bindNav();const nav=document.getElementById('ra-nav');if(nav&&typeof MutationObserver==='function'){runtime.observer=new MutationObserver(()=>bindNav());runtime.observer.observe(nav,{childList:true,subtree:true});}const page=text(app._test.state.page||app._test.state.settings?.activePage);if(options.renderInitial!==false&&IMPLEMENTED_ROUTES.has(page))renderPage(page,{persist:false}).catch(reportError);return true;}
   function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.compareSelection.clear();runtime.app=null;runtime.installed=false;}
 
-  return Object.freeze({COMPANY_ROUTES,isCompanyRoute,routeMeta,install,uninstall,renderPage,syncNavigation,_test:{buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,evaluateCandidateVacancies,canMoveToStage,readCriteria,getCampaigns,getSessions,opportunityWeights,filterRows,sortRows,toggleSort,organizationInfo,IMPLEMENTED_ROUTES}});
+  return Object.freeze({COMPANY_ROUTES,isCompanyRoute,routeMeta,install,uninstall,renderPage,syncNavigation,_test:{buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,evaluateCandidateVacancies,canMoveToStage,readCriteria,getCampaigns,getSessions,opportunityWeights,filterRows,sortRows,toggleSort,profileRequirements,profileSearchFilters,organizationInfo,RESULTS_PAGE_SIZE,IMPLEMENTED_ROUTES}});
 });
 
 /* bundled runtime: v47-faction-core.js */
@@ -3571,6 +3942,17 @@
     };
   }
 
+  const FACTION_SEARCH_FILTER_KEYS=Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
+  function normalizeFactionSearchFilters(input={}){
+    const source=input&&typeof input==='object'?input:{},out={};
+    for(const key of FACTION_SEARCH_FILTER_KEYS)out[key]=text(source[key]);
+    const presence=text(out.organizationPresence).toLowerCase();
+    out.organizationPresence=['any','none','has'].includes(presence)?presence:'any';
+    const status=text(out.onlineStatus);
+    out.onlineStatus=['Online','Idle','Offline'].includes(status)?status:'';
+    return out;
+  }
+
   function normalizeSpecialistProfile(raw={}){
     const statusRaw=text(raw.status).toLowerCase();
     const status=PROFILE_STATES.find(value=>value.toLowerCase()===statusRaw)||'Draft';
@@ -3579,6 +3961,7 @@
       name:text(raw.name),
       status,
       criteria:(Array.isArray(raw.criteria)?raw.criteria:[]).map(normalizeRequirement),
+      searchFilters:normalizeFactionSearchFilters(raw.searchFilters),
       notes:text(raw.notes),
       version:Math.max(1,Math.floor(number(raw.version,1))),
       createdAt:number(raw.createdAt,0),
@@ -3627,7 +4010,7 @@
     const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
     const results=normalized.map(req=>{
       const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
+      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
       return {
         ...req,
         known:verdict.known,
@@ -3637,21 +4020,24 @@
         effectivePass:verdict.passed||Boolean(waiver)
       };
     });
-    const hardFailures=results.filter(result=>result.kind==='Hard'&&!result.passed);
+    const hardFailures=results.filter(result=>result.kind==='Hard'&&result.known&&!result.passed);
+    const unknownHard=results.filter(result=>result.kind==='Hard'&&!result.known);
     const unwaivedHardFailures=hardFailures.filter(result=>!result.waived);
-    const failures=results.filter(result=>!result.passed);
+    const failures=results.filter(result=>result.known&&!result.passed);
     const known=results.filter(result=>result.known);
     const totalWeight=known.reduce((sum,result)=>sum+(result.weight||1),0);
     const earned=known.filter(result=>result.passed).reduce((sum,result)=>sum+(result.weight||1),0);
-    const score=totalWeight?Math.round(earned/totalWeight*100):0;
+    const score=totalWeight?Math.round(earned/totalWeight*100):null;
     const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':'Eligible';
-    return {results,failures,hardFailures,unwaivedHardFailures,hardFailed,eligibility,score};
+    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
+    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
   function ratioScore(req,facts){
-    const actual=Number(facts?.[req.field]);
-    const target=Number(req.value);
+    const rawActual=facts?.[req.field],rawTarget=req.value;
+    if(rawActual===null||rawActual===undefined||text(rawActual)===''||rawTarget===null||rawTarget===undefined||text(rawTarget)==='')return null;
+    const actual=Number(rawActual);
+    const target=Number(rawTarget);
     if(!Number.isFinite(actual)||!Number.isFinite(target))return null;
     if(['gte','gt'].includes(req.operator))return target<=0?100:clamp(actual/target*100);
     if(['lte','lt'].includes(req.operator))return actual<=target?100:(actual<=0?0:clamp(target/actual*100));
@@ -3663,14 +4049,14 @@
     const criteria=evaluateCriteria(profile.criteria,facts,waivers,{context:'specialist',profileId:profile.profileId});
     const measured=profile.criteria.map(req=>({req,score:ratioScore(req,facts)})).filter(row=>row.score!==null);
     const totalWeight=measured.reduce((sum,row)=>sum+(row.req.weight||1),0);
-    const raw=totalWeight?measured.reduce((sum,row)=>sum+row.score*(row.req.weight||1),0)/totalWeight:0;
-    const matchScore=Math.round(clamp(raw));
+    const raw=totalWeight?measured.reduce((sum,row)=>sum+row.score*(row.req.weight||1),0)/totalWeight:null;
+    const matchScore=raw===null?null:Math.round(clamp(raw));
     return {
       profileId:profile.profileId,
       matchScore,
-      eligible:!criteria.hardFailed,
+      eligible:criteria.eligibility==='Eligible'||criteria.eligibility==='Eligible by Waiver',
       hardFailed:criteria.hardFailed,
-      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
+      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.eligibility==='Unknown'?'Unknown':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
       criteria
     };
   }
@@ -3693,17 +4079,19 @@
   }
 
   function opportunityComponent(label,value,weight){
-    const normalized=clamp(value);
     const w=Math.max(0,number(weight));
-    return {label,value:normalized,weight:w,contribution:Math.round(normalized*w)/100};
+    const known=value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));
+    return {label,value:known?clamp(value):null,weight:w,known,contribution:0};
   }
 
   function computeOpportunity(input={},weights={}){
-    const availability=text(input.availability).toLowerCase()==='available'?100:text(input.availability).toLowerCase()==='unavailable'?0:50;
-    const age=Math.max(0,number(input.lastActiveAgeHours,999));
-    const activity=age<=6?100:age<=24?80:age<=72?55:age<=168?30:10;
+    const availabilityText=text(input.availability).toLowerCase();
+    const availability=availabilityText==='available'?100:availabilityText==='unavailable'?0:null;
+    const ageKnown=input.lastActiveAgeHours!==null&&input.lastActiveAgeHours!==undefined&&text(input.lastActiveAgeHours)!==''&&Number.isFinite(Number(input.lastActiveAgeHours));
+    const age=ageKnown?Math.max(0,Number(input.lastActiveAgeHours)):null;
+    const activity=age===null?null:(age<=6?100:age<=24?80:age<=72?55:age<=168?30:10);
     const freshMap={fresh:100,aging:70,stale:40,'very stale':15};
-    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??50;
+    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??null;
     const rows=[
       opportunityComponent('Match',input.match,weights.match),
       opportunityComponent('Fit',input.fit,weights.fit),
@@ -3711,13 +4099,18 @@
       opportunityComponent('Activity',activity,weights.activity),
       opportunityComponent('Freshness',freshness,weights.freshness),
       opportunityComponent('Follow-up',input.followUpDue?100:0,weights.followUp),
-      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),contribution:0}
+      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
     ];
-    const rawScore=Math.round(rows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
+    const scoredRows=rows.slice(0,6);
+    const primaryRows=rows.slice(0,5);
+    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
+    const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
+    for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
+    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=Math.round(clamp(rawScore-penalty));
+    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
     const explanation=rows.slice(0,6)
-      .map(row=>`${row.label}: ${row.value} × ${row.weight}% = ${row.contribution}`)
+      .map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`)
       .join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
     return {score,rawScore,penalty,breakdown:rows,explanation};
   }
@@ -3786,6 +4179,7 @@
     PROFILE_STATES,
     REQUIREMENT_KINDS,
     normalizeBaseline,
+    normalizeFactionSearchFilters,
     normalizeSpecialistProfile,
     evaluateCriteria,
     evaluateSpecialistProfile,
@@ -3858,6 +4252,7 @@
       baseline:FactionCore.normalizeBaseline(raw.baseline||{}),
       stageThresholds:thresholds,
       opportunityWeights:weights,
+      activeResultsProfileId:text(raw.activeResultsProfileId),
       updatedAt:number(raw.updatedAt,Date.now())
     };
   }
@@ -3980,7 +4375,7 @@
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const score=value=>Number.isFinite(Number(value))?Number(value).toFixed(0):'—';
+  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toFixed(0):'—');
   const dateText=value=>{const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n).toLocaleString():'—';};
 
   function normalizeStage(value){const raw=text(value).toLowerCase();return FACTION_STAGES.find(stage=>stage.toLowerCase()===raw)||'Prospect';}
@@ -4003,8 +4398,12 @@
         userId,
         name:text(player.name)||`User ${userId}`,
         level:player.level??null,
+        age:player.age??player.ageDays??null,
         ee:player.ee??null,
         fit:player.fit??null,
+        recruitmentFit:player.recruitmentFit??null,
+        drugUse:player.drugUse??player.drugUseLabel??null,
+        activeStreak:player.activestreak??player.activeStreak??null,
         fitType:text(player.fitType),
         activity30:player.activity30??null,
         xanax30:player.xanax30??null,
@@ -4103,12 +4502,27 @@
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
   function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
   function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-faction-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
+  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
+  function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
+  function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','evaluating','invite ready','joined'].includes(stage)?'Contacted':'Not yet';}
   function renderCandidates(rows=[],options={}){
-    const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'};const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
-    const body=(Array.isArray(rows)?rows:[]).map(row=>{const message=row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">Message</button>`;return `<tr data-context-id="${esc(row.userId)}"><td><a class="ra-link" href="https://www.torn.com/profiles.php?XID=${esc(row.userId)}" target="_blank" rel="noopener">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small></td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${message}</td></tr>`;}).join('');
-    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-faction-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-faction-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Faction</label><input id="ra-faction-filter-organization" value="${esc(filters.organization||'')}" placeholder="Faction name or ID"></div><div class="ra-field"><label>Faction Presence</label><select id="ra-faction-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Faction</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-faction-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-faction-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-faction-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-search-apply">Search</button><button type="button" class="ra-btn" id="ra-faction-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${(Array.isArray(rows)?rows:[]).length} matching of ${total} Faction candidate(s).</p></div></div><div class="ra-table-wrap"><table class="ra-table ra-core-results"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Current Faction</th><th>Message</th></tr></thead><tbody>${body||'<tr><td colspan="7">No matching Faction candidates.</td></tr>'}</tbody></table></div></section>`;
+    const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
+    const profiles=(Array.isArray(options.profiles)?options.profiles:[]).map(FactionCore.normalizeSpecialistProfile);
+    const activeProfileId=text(options.activeProfileId);
+    const pagination=options.pagination||{page:0,pageCount:1,start:0,end:(Array.isArray(rows)?rows:[]).length};const filteredTotal=Number.isFinite(Number(options.filteredTotal))?Number(options.filteredTotal):(Array.isArray(rows)?rows:[]).length;
+    const rangeText=filteredTotal?`${Number(pagination.start||0)+1}-${Number(pagination.end||0)}`:'0';
+    const pager=`<div class="ra-actions"><button type="button" class="ra-btn" data-results-page="prev" ${Number(pagination.page||0)<=0?'disabled':''}>Previous</button><span class="ra-muted">${rangeText} of ${filteredTotal}</span><button type="button" class="ra-btn" data-results-page="next" ${Number(pagination.page||0)>=Number(pagination.pageCount||1)-1?'disabled':''}>Next</button></div>`;
+    const profileOptions=`<option value="" ${activeProfileId?'':'selected'}>No profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${profile.profileId===activeProfileId?'selected':''}>${esc(profile.name||profile.profileId)}${profile.status==='Active'?'':' · '+esc(profile.status)}</option>`).join('');
+    const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="faction">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
+    const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">Message</button>`;
+    const battle=row=>{const attackKnown=row.attacks30!==null&&row.attacks30!==undefined&&text(row.attacks30)!==''&&Number.isFinite(Number(row.attacks30));const rwKnown=row.rwHits30!==null&&row.rwHits30!==undefined&&text(row.rwHits30)!==''&&Number.isFinite(Number(row.rwHits30));if(!attackKnown&&!rwKnown)return '—';return `${attackKnown?Number(row.attacks30).toLocaleString():'—'} / ${rwKnown?Number(row.rwHits30).toLocaleString():'—'}`;};
+    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.networth)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${battle(row)}</td><td>${stat(row.activeStreak)}</td><td>${stat(row.xanax30)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const resultsTable=layout==='compact'
+      ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Faction candidates.</td></tr>'}</tbody></table>`
+      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('networth','Net Worth',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>Battle / RW</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>${sortHeader('xanax30','Xanax 30d',sort)}</th><th>Faction</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="18">No matching Faction candidates.</td></tr>'}</tbody></table>`;
+    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Search configured recruitment forums and Torn users, then filter the combined candidate intelligence.</p></div><div class="ra-actions"><select id="ra-faction-results-profile" class="ra-btn" aria-label="Faction recruitment profile">${profileOptions}</select><button type="button" class="ra-btn" id="ra-faction-profile-apply">Apply Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-clear" ${activeProfileId?'':'disabled'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-save-search" ${activeProfileId?'':'disabled title="Choose a specialist profile first"'}>Save Search</button></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-faction-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-faction-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Faction</label><input id="ra-faction-filter-organization" value="${esc(filters.organization||'')}" placeholder="Faction name or ID"></div><div class="ra-field"><label>Faction Presence</label><select id="ra-faction-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Faction</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-faction-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-faction-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-faction-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-search-apply">Search</button><button type="button" class="ra-btn" id="ra-faction-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Faction candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
   }
-
   function renderPipeline(model={}){
     return `<div class="ra-pipeline">${FACTION_STAGES.map(stage=>`<section class="ra-stage" data-faction-stage="${esc(stage)}"><div class="ra-stage-head"><b>${esc(stage)}</b><span>${(model[stage]||[]).length}</span></div><div class="ra-stage-drop">${(model[stage]||[]).map(row=>`<article class="ra-stage-card" data-context-id="${esc(row.userId)}"><b>${esc(row.name)}</b><div>${esc(row.baselineEligibility)} · Fit ${score(row.fit)}</div><div>${esc(row.pinnedSpecialistProfileId||row.suggestedProfileId||'No specialist profile')}</div><select class="ra-btn" data-faction-stage-select="${esc(row.userId)}">${stageOptions(row.pipelineStage)}</select></article>`).join('')}</div></section>`).join('')}</div>`;
   }
@@ -4564,11 +4978,11 @@
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const hours=(now,at)=>Math.max(0,(number(now)-number(at,0))/3600000);
-  const metric=value=>Number.isFinite(Number(value))?Number(value).toLocaleString():'—';
-  const score=value=>Number.isFinite(Number(value))?Math.round(Number(value)):'—';
+  const metric=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toLocaleString():'—');
+  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Math.round(Number(value)):'—');
 
   function freshness(lastScoutAt,now){
-    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Very stale';
+    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Unknown';
     const age=hours(now,lastScoutAt);
     if(age<=24)return 'Fresh';
     if(age<=72)return 'Aging';
@@ -4598,7 +5012,7 @@
         selectedMatchSource:'Pinned specialist',
         selectedProfileId:pinnedId,
         selectedProfileName:profileName(row,pinnedId),
-        selectedMatchScore:number(pinned.matchScore,0),
+        selectedMatchScore:pinned.matchScore??null,
         evaluation:pinned
       };
     }
@@ -4610,7 +5024,7 @@
         selectedMatchSource:'Suggested specialist',
         selectedProfileId:suggestedId,
         selectedProfileName:profileName(row,suggestedId),
-        selectedMatchScore:number(suggested.matchScore,0),
+        selectedMatchScore:suggested.matchScore??null,
         evaluation:suggested
       };
     }
@@ -4624,7 +5038,7 @@
         selectedMatchSource:'Suggested specialist',
         selectedProfileId:profileId,
         selectedProfileName:profileName(row,profileId),
-        selectedMatchScore:number(best.matchScore,0),
+        selectedMatchScore:best.matchScore??null,
         evaluation:best
       };
     }
@@ -4633,7 +5047,7 @@
       selectedMatchSource:'Faction Baseline',
       selectedProfileId:'',
       selectedProfileName:'',
-      selectedMatchScore:number(row.baselineScore,0),
+      selectedMatchScore:row.baselineScore??null,
       evaluation:null
     };
   }
@@ -4647,9 +5061,9 @@
       const player=row.player||{};
       const input={
         match:chosen.selectedMatchScore,
-        fit:number(row.fit,0),
+        fit:row.fit??null,
         availability:text(row.availability),
-        lastActiveAgeHours:Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):999,
+        lastActiveAgeHours:row.lastActive!==null&&row.lastActive!==undefined&&Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):null,
         intelligenceFreshness:freshness(player.lastScoutAt,now),
         contactPenalty:row.doNotContact===true||factionRecord.doNotContact===true?100:0,
         followUpDue:followUpDue(factionRecord,now)
@@ -4682,7 +5096,7 @@
   }
 
   function renderBreakdown(opportunity={}){
-    return (opportunity.breakdown||[]).map(item=>`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
+    return (opportunity.breakdown||[]).map(item=>item.known===false?`<span>${esc(item.label)}: — (excluded)</span>`:`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
   }
 
   function renderOpportunityPage(rows=[]){
@@ -4761,7 +5175,8 @@
     Workflow:root&&root.RA_V47FactionWorkflow,
     WorkflowUI:root&&root.RA_V47FactionWorkflowUI,
     OpportunityUI:root&&root.RA_V47FactionOpportunityUI,
-    Messaging:root&&root.RA_V45Messaging
+    Messaging:root&&root.RA_V45Messaging,
+    ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.FactionCore=require('./v47-faction-core');
@@ -4771,6 +5186,7 @@
     deps.WorkflowUI=require('./v47-faction-workflow-ui');
     deps.OpportunityUI=require('./v47-faction-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
+    deps.ResultsCore=require('./results-core');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -4778,8 +5194,8 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging}=D;
-  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging)throw new Error('Faction platform dependencies are required.');
+  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
+  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('Faction platform dependencies are required.');
 
   const FACTION_ROUTES=Object.freeze([
     'faction-overview','faction-today','faction-discover','faction-candidates','faction-pipeline',
@@ -4807,15 +5223,16 @@
   const DEFAULT_OPPORTUNITY_WEIGHTS=Object.freeze({match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
   const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
   const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
-  const SORT_KEYS=new Set(['player','end','man','int','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT}};
+  const RESULTS_PAGE_SIZE=100;
+  const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
+  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},resultPage:0};
 
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   function parseThreshold(value){const raw=text(value).toLowerCase().replace(/,/g,'');if(!raw)return null;const match=raw.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([kmb])?$/);if(!match)return null;const mult={k:1e3,m:1e6,b:1e9}[match[2]]||1;const out=Number(match[1])*mult;return Number.isFinite(out)?out:null;}
   function organizationInfo(row={}){const player=row.player||{};const name=text(row.factionName||player.factionName);const rawId=row.factionId??player.factionId;if(name)return{state:'has',label:name};if(rawId!==null&&rawId!==undefined&&rawId!==''){const id=Number(rawId);if(Number.isFinite(id)){if(id===0)return{state:'none',label:'None'};if(id>0)return{state:'has',label:`Faction #${id}`};}}return{state:'unknown',label:'Unknown'};}
   function filterRows(rows,filters={}){const search=text(filters.search).toLowerCase(),minEnd=parseThreshold(filters.minEnd),minMan=parseThreshold(filters.minMan),minInt=parseThreshold(filters.minInt),onlineStatus=text(filters.onlineStatus).toLowerCase(),organization=text(filters.organization).toLowerCase(),presence=text(filters.organizationPresence).toLowerCase()||'any';return (Array.isArray(rows)?rows:[]).filter(row=>{if(search&&!`${text(row.name).toLowerCase()} ${text(row.userId)}`.includes(search))return false;if(minEnd!==null&&(!Number.isFinite(Number(row.end))||row.end===null||row.end===undefined||row.end===''||Number(row.end)<minEnd))return false;if(minMan!==null&&(!Number.isFinite(Number(row.man))||row.man===null||row.man===undefined||row.man===''||Number(row.man)<minMan))return false;if(minInt!==null&&(!Number.isFinite(Number(row.int))||row.int===null||row.int===undefined||row.int===''||Number(row.int)<minInt))return false;if(onlineStatus&&text(row.onlineStatus).toLowerCase()!==onlineStatus)return false;const org=organizationInfo(row);if(organization&&(org.state!=='has'||!org.label.toLowerCase().includes(organization)))return false;if(presence==='has'&&org.state!=='has')return false;if(presence==='none'&&org.state!=='none')return false;return true;});}
-  function sortValue(row,key,now){if(key==='player')return text(row.name).toLowerCase()||null;if(key==='end'||key==='man'||key==='int'){const raw=row[key];if(raw===null||raw===undefined||raw==='')return null;const value=Number(raw);return Number.isFinite(value)?value:null;}if(key==='lastActive'){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return ts;const status=text(row.onlineStatus).toLowerCase();if(status==='online')return now+2;if(status==='idle')return now+1;if(status==='offline')return 0;return null;}return null;}
+  function sortValue(row,key,now){if(key==='player')return text(row.name).toLowerCase()||null;if(['level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit'].includes(key)){const raw=row[key];if(raw===null||raw===undefined||raw==='')return null;const value=Number(raw);return Number.isFinite(value)?value:null;}if(key==='lastActive'){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return ts;const status=text(row.onlineStatus).toLowerCase();if(status==='online')return now+2;if(status==='idle')return now+1;if(status==='offline')return 0;return null;}return null;}
   function sortTieBreak(a,b){const byName=text(a.name).localeCompare(text(b.name),undefined,{sensitivity:'base'});if(byName)return byName;return text(a.userId).localeCompare(text(b.userId),undefined,{numeric:true});}
   function sortRows(rows,sortState=DEFAULT_SORT,now=Date.now()){const key=SORT_KEYS.has(text(sortState?.key))?text(sortState.key):DEFAULT_SORT.key;const direction=sortState?.direction==='desc'?'desc':'asc';const sign=direction==='asc'?1:-1;return [...(Array.isArray(rows)?rows:[])].sort((a,b)=>{const av=sortValue(a,key,now),bv=sortValue(b,key,now),am=av===null||av===undefined,bm=bv===null||bv===undefined;if(am!==bm)return am?1:-1;if(am&&bm)return sortTieBreak(a,b);const cmp=key==='player'?String(av).localeCompare(String(bv)):Number(av)-Number(bv);return cmp?cmp*sign:sortTieBreak(a,b);});}
   function toggleSort(current,key){const nextKey=SORT_KEYS.has(text(key))?text(key):DEFAULT_SORT.key;if(text(current?.key)===nextKey)return{key:nextKey,direction:current?.direction==='asc'?'desc':'asc'};return{key:nextKey,direction:nextKey==='player'?'asc':'desc'};}
@@ -4833,6 +5250,20 @@
   function isFactionRoute(value){return FACTION_ROUTES.includes(text(value));}
   function routeMeta(route){const [title,description]=META[text(route)]||META['faction-overview'];return{title,description};}
   function opportunityWeights(config={}){return{...DEFAULT_OPPORTUNITY_WEIGHTS,...(config.opportunityWeights||{})};}
+  function profileSearchFilters(profile={}){
+    const saved=FactionCore.normalizeFactionSearchFilters(profile?.searchFilters||{});
+    const out={...DEFAULT_SEARCH_FILTERS,...saved};
+    for(const [field,key] of [['end','minEnd'],['man','minMan'],['int','minInt']]){
+      if(text(out[key]))continue;
+      const req=(Array.isArray(profile?.criteria)?profile.criteria:[]).find(item=>text(item.field).toLowerCase()===field&&['gte','gt'].includes(text(item.operator).toLowerCase())&&Number.isFinite(Number(item.value))&&Number(item.value)>0);
+      if(req)out[key]=String(req.value);
+    }
+    return out;
+  }
+  function activeResultsProfile(config={},profiles=[]){
+    const id=text(config.activeResultsProfileId);
+    return id?(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile).find(profile=>profile.profileId===id)||null:null;
+  }
 
   function dbGetAll(db,store){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>resolve([]);}catch{resolve([]);}});}
   function dbGet(db,store,key){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>resolve(null);}catch{resolve(null);}});}
@@ -4878,7 +5309,8 @@
     const db=app._test.state.db;
     const[factionRecords,players,candidateLocals,config,profiles]=await Promise.all([dbGetAll(db,'factionRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getProfiles(app)]);
     const candidateMap=new Map(candidateLocals.map(candidate=>[text(candidate?.userId??candidate?.id),candidate]));
-    return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};return{...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus)};});
+    const activeProfile=activeResultsProfile(config,profiles);
+    return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};const selectedEvaluation=activeProfile?(row.profileEvaluations||[]).find(item=>text(item.profileId)===activeProfile.profileId):null;const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),candidateLocal:candidate,eligibilityScore:selectedEvaluation?.matchScore??null};const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'faction',useEligibility:Boolean(activeProfile)});return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness,activeRecruitmentProfileId:activeProfile?.profileId||'',activeRecruitmentProfileName:activeProfile?.name||''};});
   }
 
   async function buildOpportunityRows(app,rows,now=Date.now()){
@@ -4982,9 +5414,9 @@
 
   function recruitPlayer(row,override=false){
     if(row.doNotContact&&!override)throw new Error('This player is marked Do Not Contact. Use the deliberate override control if contact is still required.');
-    if(override&&typeof globalThis.confirm==='function'&&!globalThis.confirm('This player is marked Do Not Contact. Override it for this recruitment chat only?'))return false;
+    if(override){if(typeof globalThis.confirm!=='function')throw new Error('Do Not Contact override confirmation is unavailable. Recruitment stopped.');if(!globalThis.confirm('This player is marked Do Not Contact. Override it for this recruitment chat only?'))return false;}
     if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');
-    return runtime.app.recruitCandidate?.('faction',row.userId,row.name);
+    return runtime.app.recruitCandidate?.('faction',row.userId,row.name,{overrideDnc:override,dncConfirmed:override});
   }
 
   function renderDiscover(rows=[]){
@@ -5020,9 +5452,12 @@
 
   function bindContentControls(currentPage){
     const page=text(currentPage||runtime.app?._test?.state?.page);
-    document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.searchFilters={search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
-    document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});
+    document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters={search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
+    document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
+    document.getElementById('ra-faction-profile-apply')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);const profiles=await getProfiles(runtime.app);const profile=profileId?profiles.find(item=>text(item.profileId)===profileId):null;if(profileId&&!profile)throw new Error('Faction specialist profile was not found.');await saveConfig(runtime.app,{activeResultsProfileId:profileId});runtime.resultPage=0;runtime.searchFilters=profile?profileSearchFilters(profile):{...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-faction-profile-clear')?.addEventListener('click',async()=>{try{await saveConfig(runtime.app,{activeResultsProfileId:''});runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.getElementById('ra-faction-profile-save-search')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);if(!profileId)throw new Error('Choose a Faction specialist profile first.');const profiles=await getProfiles(runtime.app);const profile=profiles.find(item=>text(item.profileId)===profileId);if(!profile)throw new Error('Faction specialist profile was not found.');await saveProfile(runtime.app,{...profile,searchFilters:runtime.searchFilters});await saveConfig(runtime.app,{activeResultsProfileId:profileId});await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
+    document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('faction-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('faction',link.dataset.playerCard);};});
     document.querySelectorAll('[data-go-page]').forEach(button=>{const route=text(button.dataset.goPage);if(isFactionRoute(route))button.onclick=event=>{event?.preventDefault?.();navigate(route,true).catch(reportError);};});
     document.querySelectorAll('[data-faction-stage-select]').forEach(select=>select.onchange=async()=>{try{await changeFactionStage(select.dataset.factionStageSelect,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);await renderPage(page,{persist:false});}});
     document.querySelectorAll('[data-faction-profile-pin]').forEach(select=>select.onchange=async()=>{try{await setProfilePin(select.dataset.factionProfilePin,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);}});
@@ -5084,7 +5519,7 @@
       html=FactionUI.renderToday(FactionUI.buildTodayModel(rows,{now:Date.now(),stageThresholds:config.stageThresholds||{},opportunities:Object.fromEntries(opportunities.map(item=>[item.userId,item.opportunity.score]))}));
     }
     else if(page==='faction-discover')html=renderDiscover(rows);
-    else if(page==='faction-candidates'){const filtered=filterRows(rows,runtime.searchFilters);const sorted=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length});}
+    else if(page==='faction-candidates'){const [config,profiles]=await Promise.all([getConfig(app),getProfiles(app)]);const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:text(config.activeResultsProfileId),pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}});}
     else if(page==='faction-pipeline')html=FactionUI.renderPipeline(FactionUI.buildPipelineModel(rows));
     else if(page==='faction-requirements')html=FactionUI.renderRequirementsPage({config,profiles,rows});
     else if(page==='faction-campaigns')html=WorkflowUI.renderCampaignsPage({campaigns,rows,profiles});
@@ -5127,7 +5562,7 @@
     uninstall,
     renderPage,
     syncNavigation,
-    _test:{IMPLEMENTED_ROUTES,buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,getCampaigns,getSessions,readCriteria,ensureFactionCandidate,changeFactionStage,setProfilePin,opportunityWeights,filterRows,sortRows,toggleSort,organizationInfo}
+    _test:{IMPLEMENTED_ROUTES,buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,getCampaigns,getSessions,readCriteria,ensureFactionCandidate,changeFactionStage,setProfilePin,opportunityWeights,profileSearchFilters,activeResultsProfile,filterRows,sortRows,toggleSort,organizationInfo,RESULTS_PAGE_SIZE}
   });
 });
 
@@ -5148,6 +5583,7 @@
     V46Navigation: root && root.RA_V46Navigation,
     V46CompanyCore: root && root.RA_V46CompanyCore,
     V46CompanyStorage: root && root.RA_V46CompanyStorage,
+    V46CompanyWorkflow: root && root.RA_V46CompanyWorkflow,
     V46CompanyPlatform: root && root.RA_V46CompanyPlatform,
     V47FactionCore: root && root.RA_V47FactionCore,
     V47FactionStorage: root && root.RA_V47FactionStorage,
@@ -5173,6 +5609,7 @@
     deps.V46Navigation = require('./v46-navigation');
     deps.V46CompanyCore = require('./v46-company-core');
     deps.V46CompanyStorage = require('./v46-company-storage');
+    deps.V46CompanyWorkflow = require('./v46-company-workflow');
     deps.V46CompanyPlatform = require('./v46-company-platform');
     deps.V47FactionCore = require('./v47-faction-core');
     deps.V47FactionStorage = require('./v47-faction-storage');
@@ -5189,8 +5626,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (D) {
   'use strict';
 
-  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform} = D;
-  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform].every(Boolean)) {
+  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform} = D;
+  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform].every(Boolean)) {
     throw new Error('Recruitment Agency v4.5 core modules are required.');
   }
 
@@ -5219,7 +5656,7 @@
     launcherEnabled:true, includeInactive:false, activePage:'company-candidates', activeDomain:'company', navigation:{expandedGroups:['company-recruitment']}, optionalModules:{...DEFAULT_OPTIONAL_MODULES}, apiKey:'', ownCompanyName:'',
     recruitment:Runtime.normalizeRecruitmentSettings({companyThreadId:'15907925',factionThreadId:'15909136',trainingThreadId:'',recentImportDays:30,maxPagesPerFeed:20,candidateActiveAgeDays:30,explicitTrainBuyersOnly:true,companyType:'',companyRecruitmentMessage:Messaging.DEFAULT_COMPANY_RECRUITMENT_MESSAGE,factionName:'',factionRecruitmentMessage:Messaging.DEFAULT_FACTION_RECRUITMENT_MESSAGE}),
     scout:{rate:75,workers:3,budget:900,historyGapMs:0,maxCandidates:60,scoring:ScoutCore.DEFAULT_SCORING},
-    candidates:{view:'table',visibleColumns:[...DEFAULT_VISIBLE_COLUMNS],filters:{search:'',stage:'',source:'',lookingFor:'',currentCompany:'',minMatch:'',minFit:'',activeOnly:false,moreOpen:false,minMan:'',minInt:'',minEnd:'',minActivity30:''}},
+    candidates:{view:'table',resultsLayout:'expanded',playerCard:{openOnName:true,allowPopout:true,rememberPanel:true,autoOpenRow:false,pinned:false},visibleColumns:[...DEFAULT_VISIBLE_COLUMNS],filters:{search:'',stage:'',source:'',lookingFor:'',currentCompany:'',minMatch:'',minFit:'',activeOnly:false,moreOpen:false,minMan:'',minInt:'',minEnd:'',minActivity30:''}},
     match:{activeProfileId:''},
     global:{enabled:true,endpoint:'',lookupCacheMs:30*60*1000,maxRetryAttempts:5}
   });
@@ -5230,7 +5667,7 @@
     sync:{running:false,cancelled:false,feed:'',pages:0},
     fill:{running:false,cancelled:false,done:0,total:0,errors:[]},
     scout:{running:false,paused:false,cancelled:false,done:0,total:0,calls:0,currentId:null,status:'Idle'},
-    help:{pinned:false,anchor:null}, contextCandidateId:'', drawerCandidateId:'', messageCandidateId:'',
+    help:{pinned:false,anchor:null}, contextCandidateId:'', drawerCandidateId:'', messageCandidateId:'', playerCard:{domain:'company',userId:'',pinned:false,popout:false},
     resizeTimer:null, logRefreshTimer:null
   };
 
@@ -5284,7 +5721,7 @@
   const repositories=V46Storage.createRepositories(idb);
   const companyRepositories=V46CompanyStorage.createRepositories(idb,V46CompanyCore);
   const factionRepositories=V47FactionStorage.createRepositories(idb,V47FactionCore);
-  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name)=>recruitCandidate(domain,userId,name),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),_test:{state,repositories,companyRepositories,factionRepositories}};
+  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name,options)=>recruitCandidate(domain,userId,name,options),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),discoverWorkstatProspects:(options={})=>discoverWorkstatProspects(options),listMatchProfiles:async()=> (await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile),getActiveMatchProfile:()=>getActiveMatchProfile(),setActiveMatchProfile:async profileId=>{const id=text(profileId);if(!id){await saveSettings({match:{...state.settings.match,activeProfileId:''}});return null;}const row=await idb.get('matchProfiles',id);if(!row)throw new Error('Match Profile was not found.');await saveSettings({match:{...state.settings.match,activeProfileId:id}});return MatchCore.normalizeProfile(row);},saveCompanySearchProfile:async(profileId,filters={})=>{const id=text(profileId);const row=id?await idb.get('matchProfiles',id):null;if(!row)throw new Error('Match Profile was not found.');const profile=MatchCore.normalizeProfile(row);profile.searchFilters={...profile.searchFilters,company:MatchCore.normalizeCompanySearchFilters(filters)};const saved=await saveMatchProfile(profile);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});return saved;},openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
 
   function mergeSettings(raw={}) {
     const base=defaultSettings();
@@ -5300,7 +5737,7 @@
       navigation:{...base.navigation,...navigationSettings,expandedGroups:V46Navigation.normalizeExpandedGroups(Object.hasOwn(navigationSettings,'expandedGroups')?navigationSettings.expandedGroups:base.navigation.expandedGroups)},
       recruitment:Runtime.normalizeRecruitmentSettings({...base.recruitment,...(raw.recruitment||{})}),
       scout:{...base.scout,...scout,rate:clampRate(scout.rate),workers:Math.max(1,Math.min(8,number(scout.workers,3))),budget:Math.max(1,number(scout.budget,900)),maxCandidates:Math.max(1,number(scout.maxCandidates,60)),scoring:ScoutCore.normalizeScoring(scout.scoring||base.scout.scoring)},
-      candidates:{...base.candidates,...candidateSettings,visibleColumns:Array.isArray(candidateSettings.visibleColumns)&&candidateSettings.visibleColumns.length?[...new Set(['player',...candidateSettings.visibleColumns])]:[...DEFAULT_VISIBLE_COLUMNS],filters:{...base.candidates.filters,...(candidateSettings.filters||{})}},
+      candidates:{...base.candidates,...candidateSettings,resultsLayout:candidateSettings.resultsLayout==='compact'?'compact':'expanded',playerCard:{...base.candidates.playerCard,...(candidateSettings.playerCard||{})},visibleColumns:Array.isArray(candidateSettings.visibleColumns)&&candidateSettings.visibleColumns.length?[...new Set(['player',...candidateSettings.visibleColumns])]:[...DEFAULT_VISIBLE_COLUMNS],filters:{...base.candidates.filters,...(candidateSettings.filters||{})}},
       match:{...base.match,...(raw.match||{})}, global:{...base.global,...(raw.global||{})}
     };
   }
@@ -5321,15 +5758,24 @@
     return /^\d+$/.test(fromButton)?fromButton:'';
   }
   function visibleElement(element){if(!element)return false;const style=globalThis.getComputedStyle?.(element);if(style&&(style.display==='none'||style.visibility==='hidden'))return false;const rect=element.getBoundingClientRect?.();return !rect||(rect.width>0&&rect.height>0);}
-  function findPrivateChatButton(userId){return document.querySelector(`[id="button2-profile-${userId}"]`)||document.querySelector('a.profile-button.profile-button-initiateChat')||document.querySelector('a[aria-label="Start chat"]');}
+  function findPrivateChatButton(userId){const id=text(userId);if(currentProfileUserId()!==id)return null;return document.querySelector(`[id="button2-profile-${id}"]`)||document.querySelector('a.profile-button.profile-button-initiateChat')||document.querySelector('a[aria-label="Start chat"]');}
+  function privateChatContainerUserId(container){
+    if(!container)return '';
+    for(const attr of ['data-user-id','data-user']){const value=text(container.getAttribute?.(attr));if(/^\d+$/.test(value))return value;}
+    const link=container.querySelector?.('a[href*="profiles.php"][href*="XID="]');
+    const href=text(link?.getAttribute?.('href'));const match=href.match(/[?&]XID=(\d+)/i);
+    return match?match[1]:'';
+  }
   function privateChatInputs(userId){
+    const target=text(userId);if(!/^\d+$/.test(target))return[];
     const selectors=['textarea','div[contenteditable="true"]','input[type="text"]','[role="textbox"]'];
     return [...document.querySelectorAll(selectors.join(','))].filter(visibleElement).map(element=>{
-      let score=0;const container=element.closest('[class*="chat" i],[class*="conversation" i],[class*="message" i],[class*="pm" i],[data-user-id],[data-user]');
-      if(container)score+=5;if(text(container?.getAttribute?.('data-user-id'))===userId||text(container?.getAttribute?.('data-user'))===userId)score+=8;
+      const container=element.closest('[class*="chat" i],[class*="conversation" i],[class*="message" i],[class*="pm" i],[data-user-id],[data-user]');
+      if(privateChatContainerUserId(container)!==target)return null;
+      let score=10;
       if(element.matches('textarea,[contenteditable="true"],[role="textbox"]'))score+=2;
       return{element,score};
-    }).sort((a,b)=>b.score-a.score).map(item=>item.element);
+    }).filter(Boolean).sort((a,b)=>b.score-a.score).map(item=>item.element);
   }
   function findPrivateChatInput(userId){return privateChatInputs(text(userId))[0]||null;}
   function setPrivateChatInputValue(input,value){
@@ -5347,6 +5793,11 @@
   async function restorePendingPrivateChatDraft(timeoutMs=6500){
     const userId=currentProfileUserId();if(!userId)return false;
     const plan=Messaging.consumePrivateChatDraft(userId);if(!plan)return false;
+    if(['company','faction'].includes(text(plan.domain).toLowerCase())){
+      const domain=text(plan.domain).toLowerCase();
+      const current=await idb.get(domain==='faction'?'factionRecruitment':'companyRecruitment',userId);
+      if(current?.doNotContact===true&&plan.dncOverrideConfirmed!==true)throw new Error('Do Not Contact is currently set for this recruitment domain. The queued private-chat draft was discarded.');
+    }
     const started=Date.now();let clicked=false;
     try{
       while(Date.now()-started<timeoutMs){
@@ -5358,10 +5809,12 @@
       throw new Error('Torn private chat did not become ready. The draft was kept for another attempt.');
     }catch(error){Messaging.queuePrivateChatDraft(plan);throw error;}
   }
-  async function recruitCandidate(domain,userId,name=''){
+  async function recruitCandidate(domain,userId,name='',options={}){
     const targetId=text(userId),kind=text(domain).toLowerCase(),playerName=text(name)||`User ${targetId}`;
     if(!/^\d+$/.test(targetId))throw new Error('A valid Torn player ID is required.');
     if(!['company','faction'].includes(kind))throw new Error('Recruitment domain must be Company or Faction.');
+    const latestRecruitment=await idb.get(kind==='faction'?'factionRecruitment':'companyRecruitment',targetId);
+    if(latestRecruitment?.doNotContact===true&&!(options?.overrideDnc===true&&options?.dncConfirmed===true))throw new Error('Do Not Contact is currently set for this recruitment domain. Use the explicit confirmed override control if contact is still required.');
     const recruitment=state.settings.recruitment||{};
     if(kind==='company'){if(!text(state.settings.ownCompanyName))throw new Error('Set your Company Name in Recruitment settings first.');if(!text(recruitment.companyType))throw new Error('Set your Company Type in Recruitment settings first.');}
     if(kind==='faction'&&!text(recruitment.factionName))throw new Error('Set your Faction Name in Recruitment settings first.');
@@ -5369,10 +5822,10 @@
     try{
       const response=await tornRequest(kind==='company'?`user/${targetId}/job`:`user/${targetId}/faction`);
       const eligibility=kind==='company'?Messaging.companyRecruitmentEligibility(response):Messaging.factionRecruitmentEligibility(response);
-      if(!eligibility.eligible){try{targetWindow?.close?.();}catch{}const label=kind==='company'?'company':'faction';throw new Error(`${playerName} already belongs to ${eligibility.currentName||('a '+label)}. Recruitment stopped.`);}
+      if(!eligibility.eligible){try{targetWindow?.close?.();}catch{}const label=kind==='company'?'company':'faction';if(eligibility.known===false)throw new Error(`Could not verify ${playerName}'s ${label} affiliation. Recruitment stopped.`);throw new Error(`${playerName} already belongs to ${eligibility.currentName||('a '+label)}. Recruitment stopped.`);}
       const template=kind==='company'?recruitment.companyRecruitmentMessage:recruitment.factionRecruitmentMessage;
       const values=kind==='company'?{userId:targetId,name:playerName,company_name:state.settings.ownCompanyName,company_type:recruitment.companyType}:{userId:targetId,name:playerName,faction_name:recruitment.factionName};
-      const plan=Messaging.recruitmentChatPlan(kind,template,values);
+      const plan={...Messaging.recruitmentChatPlan(kind,template,values),dncOverrideConfirmed:options?.overrideDnc===true&&options?.dncConfirmed===true};
       Messaging.queuePrivateChatDraft(plan);
       if(targetWindow)targetWindow.location.href=plan.profileUrl;else globalThis.open?.(plan.profileUrl,'_blank','noopener');
       toast(`${playerName} is available. Torn private chat is being prepared; you still press Send.`);
@@ -5382,9 +5835,9 @@
   }
 
   function extractStats(data){const p=data?.personalstats||data?.personal_stats||data?.personalStats||{};return p&&typeof p==='object'?p:{};}
-  function extractProfile(data,userId){const p=data?.profile?.profile||data?.profile||data?.basic?.basic||data?.basic||data||{};const faction=p.faction||{};const last=p.last_action||p.lastAction||{};const status=p.status||{};return{id:Number(p.id||p.player_id||userId),name:text(p.name||p.username||`User ${userId}`),level:number(p.level),age:number(p.age),factionId:number(faction.id||p.faction_id),factionName:text(faction.name||p.faction_name),status:text(status.state||status.description||p.online_status||last.status||'Unknown'),lastActionTs:number(last.timestamp||last.time||p.last_action_timestamp)};}
+  function extractProfile(data,userId){const p=data?.profile?.profile||data?.profile||data?.basic?.basic||data?.basic||data||{};const faction=p.faction||{};const last=p.last_action||p.lastAction||{};const status=p.status||{};return{id:Number(p.id||p.player_id||userId),name:text(p.name||p.username||`User ${userId}`),level:finite(p.level),age:finite(p.age),factionId:finite(faction.id??p.faction_id),factionName:text(faction.name||p.faction_name),status:text(status.state||status.description||p.online_status||last.status||'Unknown'),lastActionTs:finite(last.timestamp??last.time??p.last_action_timestamp)};}
   function scoutFit(snapshot){if(!snapshot)return null;if(snapshot.official&&snapshot.w30)return ScoutCore.scoreFit(snapshot.w30,state.settings.scout.scoring).score;if(snapshot.provisionalSource&&snapshot.provisionalDays)return ScoutCore.provisionalFit(snapshot.provisionalSource,snapshot.provisionalDays,state.settings.scout.scoring).score;return finite(snapshot.currentFit??snapshot.originalFit);}
-  async function scoutPlayer(userId,force=false){const id=Number(userId);if(!id)throw new Error('Invalid player ID.');const cached=await idb.get('scoutLatest',id);if(!force&&cached&&Date.now()-Number(cached.capturedAt||0)<12*60*60*1000)return cached;state.scout.currentId=id;state.scout.status=`Scouting ${id}: current totals`;refreshScoutRuntimeUi();const currentData=await tornRequest(`user/${id}`,{selections:'profile,personalstats',stat:SCOUT_STAT_LIST},{scout:true});const current=extractStats(currentData);const profile=extractProfile(currentData,id);const now=Math.floor(Date.now()/1000);let past7=null,past30=null,w7=null,w30=null;if(profile.age>=7){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 7-day history`;refreshScoutRuntimeUi();past7=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-7*86400},{scout:true}));w7=ScoutCore.deltaStats(current,past7);}if(profile.age>=30){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 30-day history`;refreshScoutRuntimeUi();past30=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-30*86400},{scout:true}));w30=ScoutCore.deltaStats(current,past30);}const official=profile.age>=30&&!!w30;let provisionalSource=null,provisionalDays=0;if(!official){if(profile.age>0&&profile.age<30){provisionalSource=ScoutCore.metricsFromTotals(current);provisionalDays=Math.max(1,Math.min(29,profile.age));}else if(w7){provisionalSource=w7;provisionalDays=7;}}const fitObj=official?ScoutCore.scoreFit(w30,state.settings.scout.scoring):null;const provisionalObj=!official&&provisionalSource?ScoutCore.provisionalFit(provisionalSource,provisionalDays,state.settings.scout.scoring):null;const trend= w7&&w30?ScoutCore.computeTrend(w7,w30,state.settings.scout.scoring):{percent:null,components:{}};const capturedAt=Date.now();const snapshot={snapshotId:`${id}:${capturedAt}`,userId:id,capturedAt,source:'scout',profile,currentRaw:current,past7Raw:past7,past30Raw:past30,w7,w30,official,provisionalSource,provisionalDays,provisionalConfidence:provisionalObj?.confidence||null,originalFit:fitObj?.score??provisionalObj?.score??null,currentFit:fitObj?.score??provisionalObj?.score??null,originalFitType:official?'official':(provisionalObj?'provisional':'unmeasured'),trend:trend.percent,trendComponents:trend.components,formula:ScoutCore.normalizeScoring(state.settings.scout.scoring),extra:{networth:number(current.networth),activeStreak:number(current.activestreak),bestActiveStreak:number(current.bestactivestreak),statEnhancers30:w30?.statEnhancers??provisionalSource?.statEnhancers??0}};await idb.put('scoutLatest',snapshot);await idb.put('scoutHistory',snapshot);await repositories.players.ensure(String(id),{name:profile.name,level:profile.level,factionId:profile.factionId,factionName:profile.factionName,networth:snapshot.extra?.networth,fit:snapshot.currentFit??snapshot.originalFit,fitType:snapshot.official?'official':(snapshot.provisionalSource?'provisional':'unmeasured'),lastActive:profile.lastActionTs?Number(profile.lastActionTs)*1000:null,lastScoutAt:capturedAt,activity30:(snapshot.w30||snapshot.provisionalSource||{}).activityHours,xanax30:(snapshot.w30||snapshot.provisionalSource||{}).xanax,refills30:(snapshot.w30||snapshot.provisionalSource||{}).refills,attacks30:(snapshot.w30||snapshot.provisionalSource||{}).attacks,rwHits30:(snapshot.w30||snapshot.provisionalSource||{}).rwHits,scoutStatus:ResultsCore.classifyScoutStatus(snapshot)},'scout',capturedAt);await enqueueGlobalObservation(snapshot).catch(()=>{});return snapshot;}
+  async function scoutPlayer(userId,force=false){const id=Number(userId);if(!id)throw new Error('Invalid player ID.');const cached=await idb.get('scoutLatest',id);if(!force&&cached&&Date.now()-Number(cached.capturedAt||0)<12*60*60*1000)return cached;state.scout.currentId=id;state.scout.status=`Scouting ${id}: current totals`;refreshScoutRuntimeUi();const currentData=await tornRequest(`user/${id}`,{selections:'profile,personalstats',stat:SCOUT_STAT_LIST},{scout:true});const current=extractStats(currentData);const profile=extractProfile(currentData,id);const now=Math.floor(Date.now()/1000);let past7=null,past30=null,w7=null,w30=null;if(profile.age>=7){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 7-day history`;refreshScoutRuntimeUi();past7=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-7*86400},{scout:true}));w7=ScoutCore.deltaStats(current,past7);}if(profile.age>=30){if(state.settings.scout.historyGapMs)await sleep(state.settings.scout.historyGapMs);state.scout.status=`Scouting ${id}: 30-day history`;refreshScoutRuntimeUi();past30=extractStats(await tornRequest(`user/${id}`,{selections:'personalstats',stat:SCOUT_STAT_LIST,timestamp:now-30*86400},{scout:true}));w30=ScoutCore.deltaStats(current,past30);}const official=profile.age>=30&&!!w30;let provisionalSource=null,provisionalDays=0;if(!official){if(profile.age>0&&profile.age<30){provisionalSource=ScoutCore.metricsFromTotals(current);provisionalDays=Math.max(1,Math.min(29,profile.age));}else if(w7){provisionalSource=w7;provisionalDays=7;}}const fitObj=official?ScoutCore.scoreFit(w30,state.settings.scout.scoring):null;const provisionalObj=!official&&provisionalSource?ScoutCore.provisionalFit(provisionalSource,provisionalDays,state.settings.scout.scoring):null;const trend=w7&&w30?ScoutCore.computeTrend(w7,w30,state.settings.scout.scoring):{percent:null,components:{}};const capturedAt=Date.now();const snapshot={snapshotId:`${id}:${capturedAt}`,userId:id,capturedAt,source:'scout',profile,currentRaw:current,past7Raw:past7,past30Raw:past30,w7,w30,official,provisionalSource,provisionalDays,provisionalConfidence:provisionalObj?.confidence||null,originalFit:fitObj?.score??provisionalObj?.score??null,currentFit:fitObj?.score??provisionalObj?.score??null,originalFitType:official?'official':(provisionalObj?'provisional':'unmeasured'),trend:trend.percent,trendComponents:trend.components,formula:ScoutCore.normalizeScoring(state.settings.scout.scoring),extra:{networth:finite(current.networth),activeStreak:finite(current.activestreak),bestActiveStreak:finite(current.bestactivestreak),statEnhancers30:w30?.statEnhancers??provisionalSource?.statEnhancers??0}};await idb.put('scoutLatest',snapshot);await idb.put('scoutHistory',snapshot);const scoutShared={name:profile.name,lastScoutAt:capturedAt,lastObservedAt:capturedAt,scoutStatus:ResultsCore.classifyScoutStatus(snapshot)};const measuredFit=finite(snapshot.currentFit??snapshot.originalFit);if(measuredFit!==null){scoutShared.fit=measuredFit;scoutShared.fitType=snapshot.official?'official':(snapshot.provisionalSource?'provisional':'unmeasured');}for(const[key,value]of Object.entries({level:profile.level,age:profile.age,factionId:profile.factionId,factionName:profile.factionName||null,networth:snapshot.extra?.networth,activeStreak:snapshot.extra?.activeStreak,bestActiveStreak:snapshot.extra?.bestActiveStreak,lastActive:profile.lastActionTs?Number(profile.lastActionTs)*1000:null,activity30:(snapshot.w30||snapshot.provisionalSource||{}).activityHours,xanax30:(snapshot.w30||snapshot.provisionalSource||{}).xanax,refills30:(snapshot.w30||snapshot.provisionalSource||{}).refills,attacks30:(snapshot.w30||snapshot.provisionalSource||{}).attacks,rwHits30:(snapshot.w30||snapshot.provisionalSource||{}).rwHits}))if(value!==null&&value!==undefined&&value!=='')scoutShared[key]=value;await repositories.players.ensure(String(id),scoutShared,'scout',capturedAt);await enqueueGlobalObservation(snapshot).catch(()=>{});return snapshot;}
   async function runScout(ids,force=false){if(state.scout.running)throw new Error('Scout is already running.');const unique=[...new Set((ids||[]).map(Number).filter(Boolean))].slice(0,state.settings.scout.maxCandidates);if(!unique.length)throw new Error('No valid player IDs to Scout.');Object.assign(state.scout,{running:true,paused:false,cancelled:false,done:0,total:unique.length,calls:0,currentId:null,status:'Starting'});refreshScoutRuntimeUi();let cursor=0;const workers=Math.max(1,Math.min(state.settings.scout.workers,unique.length));const worker=async()=>{while(!state.scout.cancelled){const i=cursor++;if(i>=unique.length)break;const id=unique[i];try{await scoutPlayer(id,force);await logEvent('scout','Scout player completed',{playerId:id});}catch(error){if(!error.cancelled)await logEvent('error','Scout player failed',{playerId:id,error:text(error.message)});}finally{state.scout.done++;refreshScoutRuntimeUi();}}};try{await Promise.all(Array.from({length:workers},worker));}finally{state.scout.running=false;state.scout.paused=false;state.scout.currentId=null;state.scout.status=state.scout.cancelled?'Stopped':'Complete';refreshScoutRuntimeUi();if(state.page==='scout'||state.page==='company-candidates'||state.page==='company-pipeline')await route(state.page,false);}return true;}
   function pauseScout(){if(state.scout.running){state.scout.paused=!state.scout.paused;state.scout.status=state.scout.paused?'Paused':'Running';refreshScoutRuntimeUi();}}
   function cancelScout(){if(state.scout.running){state.scout.cancelled=true;state.scout.paused=false;state.scout.status='Cancelling';refreshScoutRuntimeUi();}}
@@ -5397,12 +5850,12 @@
   async function flushGlobalQueue(manual=false){if(!state.settings.global.enabled||!globalEndpoint())return{processed:0,pending:(await idb.getAll('globalSyncQueue')).length};const endpoint=globalEndpoint();let processed=0;const rows=(await idb.getAll('globalSyncQueue')).sort((a,b)=>a.createdAt-b.createdAt);for(const item of rows){if(!manual&&Number(item.nextRetryAt||0)>Date.now())continue;try{const raw=await globalJson(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(GlobalCore.buildObservePayload(item.observation,SCRIPT_VERSION))});const normalized=GlobalCore.normalizeServiceResponse(raw);if(GlobalCore.classifyRetry(normalized)==='done'||GlobalCore.classifyRetry(normalized)==='permanent')await idb.delete('globalSyncQueue',item.queueId);else throw new Error(normalized.code||'Global observation rejected');}catch(error){item.attempts=Number(item.attempts||0)+1;item.lastError=text(error.message).slice(0,160);item.nextRetryAt=Date.now()+Math.min(6*60*60*1000,60000*(2**Math.min(item.attempts,8)));await idb.put('globalSyncQueue',item);}processed++;}await logEvent('global','Global sync processed',{processed,pending:(await idb.getAll('globalSyncQueue')).length});return{processed,pending:(await idb.getAll('globalSyncQueue')).length};}
 
   async function ensureDefaultMatchProfile(){let profiles=await idb.getAll('matchProfiles');if(!profiles.length){const p=MatchCore.createDefaultProfile('Default Recruit');p.createdAt=new Date().toISOString();p.updatedAt=p.createdAt;await idb.put('matchProfiles',p);await saveSettings({match:{...state.settings.match,activeProfileId:p.profileId}});return p;}let active=profiles.find(p=>p.profileId===state.settings.match.activeProfileId)||profiles[0];if(active.profileId!==state.settings.match.activeProfileId)await saveSettings({match:{...state.settings.match,activeProfileId:active.profileId}});return MatchCore.normalizeProfile(active);}
-  async function getActiveMatchProfile(){const id=text(state.settings.match.activeProfileId);if(id){const row=await idb.get('matchProfiles',id);if(row)return MatchCore.normalizeProfile(row);}return ensureDefaultMatchProfile();}
+  async function getActiveMatchProfile(fallback=false){const id=text(state.settings.match.activeProfileId);if(id){const row=await idb.get('matchProfiles',id);if(row)return MatchCore.normalizeProfile(row);}return fallback?ensureDefaultMatchProfile():null;}
   async function saveMatchProfile(profile){const normalized=MatchCore.normalizeProfile(profile);const existing=normalized.profileId?await idb.get('matchProfiles',normalized.profileId):null;const now=new Date().toISOString();normalized.createdAt=existing?.createdAt||normalized.createdAt||now;normalized.updatedAt=now;await idb.put('matchProfiles',normalized);return normalized;}
 
   function latestSourceFor(candidate,sources){const id=text(candidate.latestForumSourceId);if(id)return sources.find(s=>s.sourceId===id)||null;return sources.filter(s=>String(s.userId)===String(candidate.userId)).sort((a,b)=>Number(b.postedAt||0)-Number(a.postedAt||0))[0]||null;}
   function matchAvailability(value){return value==='Available'?'immediate':value==='Unavailable'?'not_available':'';}
-  async function candidateViews(){const candidates=await idb.getAll('candidateLocal');const sources=await idb.getAll('forumSources');const scouts=await idb.getAll('scoutLatest');const scoutMap=new Map(scouts.map(s=>[String(s.userId),s]));const profile=await getActiveMatchProfile();const out=[];for(const raw of candidates){let candidate;try{candidate=Runtime.normalizeCandidateRecord(raw);}catch{continue;}if(!state.settings.includeInactive&&String(candidate.status||'active').toLowerCase()==='inactive')continue;const source=latestSourceFor(candidate,sources)||{};const scout=scoutMap.get(String(candidate.userId))||null;const base={userId:candidate.userId,name:candidate.name||source.authorName||`User ${candidate.userId}`,stats:candidate.stats||{},ee:candidate.ee??null,currentCompany:candidate.currentCompany||'',sourceType:source.sourceType||candidate.discoverySources?.[0]||'MANUAL',lastSeenPost:source.postedAt||candidate.lastSeenPost||null,scout,matchInputs:{fit:scoutFit(scout),activity30:(scout?.w30||scout?.provisionalSource||{}).activityHours,xanax30:(scout?.w30||scout?.provisionalSource||{}).xanax,refills30:(scout?.w30||scout?.provisionalSource||{}).refills,attacks30:(scout?.w30||scout?.provisionalSource||{}).attacks,rwHits30:(scout?.w30||scout?.provisionalSource||{}).rwHits}};const matchCandidate={...candidate,availability:matchAvailability(candidate.availability)};const match=MatchCore.evaluateMatch({row:base,candidate:matchCandidate,profile});const view=Candidates.composeCandidateView({candidate,source,result:{...base,matchScore:match.score,fit:scoutFit(scout),currentCompany:candidate.currentCompany||''},scout,match});view.candidate=candidate;view.source=source;view.scout=scout;view.match=match;view.postedAt=source.postedAt||null;view.activity30=(scout?.w30||scout?.provisionalSource||{}).activityHours??null;view.scoutStatus=ResultsCore.classifyScoutStatus(base);view.total=[view.man,view.int,view.end].reduce((s,x)=>s+(finite(x)||0),0);out.push(view);}return out;}
+  async function candidateViews(){const candidates=await idb.getAll('candidateLocal');const sources=await idb.getAll('forumSources');const scouts=await idb.getAll('scoutLatest');const scoutMap=new Map(scouts.map(s=>[String(s.userId),s]));const profile=await getActiveMatchProfile();const out=[];for(const raw of candidates){let candidate;try{candidate=Runtime.normalizeCandidateRecord(raw);}catch{continue;}if(!state.settings.includeInactive&&String(candidate.status||'active').toLowerCase()==='inactive')continue;const source=latestSourceFor(candidate,sources)||{};const scout=scoutMap.get(String(candidate.userId))||null;const base={userId:candidate.userId,name:candidate.name||source.authorName||`User ${candidate.userId}`,stats:candidate.stats||{},ee:candidate.ee??null,currentCompany:candidate.currentCompany||'',sourceType:source.sourceType||candidate.discoverySources?.[0]||'MANUAL',lastSeenPost:source.postedAt||candidate.lastSeenPost||null,scout,matchInputs:{fit:scoutFit(scout),activity30:(scout?.w30||scout?.provisionalSource||{}).activityHours,xanax30:(scout?.w30||scout?.provisionalSource||{}).xanax,refills30:(scout?.w30||scout?.provisionalSource||{}).refills,attacks30:(scout?.w30||scout?.provisionalSource||{}).attacks,rwHits30:(scout?.w30||scout?.provisionalSource||{}).rwHits}};const matchCandidate={...candidate,availability:matchAvailability(candidate.availability)};const match=MatchCore.evaluateMatch({row:base,candidate:matchCandidate,profile});const view=Candidates.composeCandidateView({candidate,source,result:{...base,matchScore:match.score,fit:scoutFit(scout),currentCompany:candidate.currentCompany||''},scout,match});view.candidate=candidate;view.source=source;view.scout=scout;view.match=match;view.postedAt=source.postedAt||null;view.activity30=(scout?.w30||scout?.provisionalSource||{}).activityHours??null;view.scoutStatus=ResultsCore.classifyScoutStatus(base);const workStats=[view.man,view.int,view.end].map(finite);view.total=workStats.every(value=>value!==null)?workStats.reduce((sum,value)=>sum+value,0):null;out.push(view);}return out;}
   function candidateSearchRow(view){return{userId:Number(view.userId),name:view.name,stats:{man:view.man,int:view.int,end:view.end,total:view.total},ee:view.ee,preferredCompany:view.desiredCompany,fit:view.fitScore,matchScore:view.matchScore,pipelineStage:view.pipelineStage,sourceType:view.sourceType,discoverySources:view.candidate?.discoverySources||[],lookingFor:view.lookingFor,currentCompany:view.currentCompany,status:view.candidate?.status||'active',lastSeenPost:view.postedAt,scout:view.scout};}
   function applyCandidateFilters(views){
     const f=state.settings.candidates.filters||{};
@@ -5426,10 +5879,10 @@
     return processed.map(row=>row.__view);
   };
 
-  async function migrateLegacyUsers(){const users=await idb.getAll('users');if(!users.length)return;let created=0,factionCreated=0;for(const row of users){const userId=text(row.userId);if(!/^\d+$/.test(userId))continue;const faction=row.sourceMode==='faction';const candidate=faction?null:await idb.get('candidateLocal',userId);const sourceType=faction?'FACTION FORUM':'COMPANY FORUM';const observedAt=Number(row.lastSeenPost||Date.now());const source=ForumCore.normalizeSource({sourceType,threadId:text(row.threadId),postId:text(row.postId||'legacy'),userId:Number(userId),postedAt:observedAt,postUrl:forumThreadUrl(row.threadId),text:text(row.rawText),parsed:ForumCore.parseForumIntent(row.rawText||'')});source.authorName=text(row.name);await idb.put('forumSources',source);const merged=ForumCore.mergeCandidateFromSource(candidate||{userId,pipelineStage:'Not Contacted'},source);merged.userId=userId;merged.name=candidate?.name||text(row.name)||`User ${userId}`;merged.stats=candidate?.stats||row.stats||{};merged.ee=candidate?.ee??row.ee??null;merged.status=candidate?.status||row.status||'active';merged.latestForumSourceId=source.sourceId;if(faction){await repositories.faction.ensure(userId,{pipelineStage:'Prospect',availability:merged.availability,discoverySources:merged.discoverySources,latestForumSourceId:source.sourceId},{sharedPatch:{name:merged.name,ee:merged.ee},source:'legacy-user-faction',observedAt});factionCreated++;continue;}await idb.put('candidateLocal',merged);await repositories.company.ensure(userId,merged,{sharedPatch:{name:merged.name,ee:merged.ee},source:'legacy-user-company',observedAt});if(!candidate)created++;}if(created||factionCreated)await logEvent('migration','Legacy forum candidates migrated',{created,factionCreated});}
+  async function migrateLegacyUsers(){const markerKey='v45-legacy-users-migration-v2';const marker=await idb.get('meta',markerKey);if(marker?.complete===true)return marker.counts||{created:0,factionCreated:0};const users=await idb.getAll('users');let created=0,factionCreated=0;for(const row of users){const userId=text(row.userId);if(!/^\d+$/.test(userId))continue;const faction=row.sourceMode==='faction';const candidate=faction?null:await idb.get('candidateLocal',userId);const sourceType=faction?'FACTION FORUM':'COMPANY FORUM';const historicalAt=Number(row.lastSeenPost||row.postedAt||row.postDate||0);const hasHistoricalAt=Number.isFinite(historicalAt)&&historicalAt>0;const observedAt=hasHistoricalAt?historicalAt:0;const source=ForumCore.normalizeSource({sourceType,threadId:text(row.threadId),postId:text(row.postId||'legacy'),userId:Number(userId),postedAt:observedAt,postUrl:forumThreadUrl(row.threadId),text:text(row.rawText),parsed:ForumCore.parseForumIntent(row.rawText||'')});source.authorName=text(row.name);await idb.put('forumSources',source);const merged=ForumCore.mergeCandidateFromSource(candidate||{userId,pipelineStage:'Not Contacted'},source);merged.userId=userId;merged.name=candidate?.name||text(row.name)||`User ${userId}`;merged.stats=candidate?.stats||row.stats||{};merged.ee=candidate?.ee??row.ee??null;merged.status=candidate?.status||row.status||'active';merged.latestForumSourceId=source.sourceId;if(faction){const existingFaction=await idb.get('factionRecruitment',userId);if(!existingFaction){await repositories.faction.ensure(userId,{pipelineStage:'Prospect',availability:merged.availability,discoverySources:merged.discoverySources,latestForumSourceId:source.sourceId},{source:'legacy-user-faction',observedAt,skipShared:true});factionCreated++;}continue;}await idb.put('candidateLocal',merged);const existingCompany=await idb.get('companyRecruitment',userId);if(!existingCompany)await repositories.company.ensure(userId,merged,{source:'legacy-user-company',observedAt,skipShared:true});if(!candidate)created++;}const counts={created,factionCreated};await idb.put('meta',{key:markerKey,complete:true,completedAt:Date.now(),counts});if(created||factionCreated)await logEvent('migration','Legacy forum candidates migrated',counts);return counts;}
 
   function recruitmentDomainForFeed(feed={}){const feedId=text(feed.feedId).toLowerCase();const sourceType=text(feed.sourceType).toUpperCase();return feedId==='faction'||sourceType==='FACTION FORUM'?'faction':'company';}
-  async function persistDiscoveredCandidate(feed,candidate,source){const userId=V46Domain.normalizeUserId(candidate?.userId);const observedAt=Number(source?.observedAt||source?.postedAt||Date.now());const domain=recruitmentDomainForFeed(feed);if(domain==='company'){const row={...candidate,userId};await idb.put('candidateLocal',row);await repositories.company.ensure(userId,row,{sharedPatch:{name:row.name},source:'company-discovery',observedAt});return row;}const existing=await idb.get('factionRecruitment',userId);const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),text(source?.sourceType)].filter(Boolean))];let availability=existing?.availability||'Unknown';if((!existing||availability==='Unknown')&&candidate?.availability)availability=candidate.availability;const patch={availability,recruiterNote:existing?.recruiterNote??candidate?.recruiterNote??'',discoverySources,latestForumSourceId:text(source?.sourceId||candidate?.latestForumSourceId||existing?.latestForumSourceId),updatedAt:candidate?.updatedAt||new Date(observedAt).toISOString()};if(existing?.pipelineStage)patch.pipelineStage=existing.pipelineStage;await repositories.faction.ensure(userId,patch,{sharedPatch:{name:candidate?.name,ee:candidate?.ee,man:candidate?.stats?.man??candidate?.man,int:candidate?.stats?.int??candidate?.int,end:candidate?.stats?.end??candidate?.end,total:candidate?.stats?.total??candidate?.total,lastActive:candidate?.lastActive},source:'faction-discovery',observedAt});return idb.get('factionRecruitment',userId);}
+  async function persistDiscoveredCandidate(feed,candidate,source){const userId=V46Domain.normalizeUserId(candidate?.userId);const observedAt=Number(source?.observedAt||source?.postedAt||Date.now());const domain=recruitmentDomainForFeed(feed);if(domain==='company'){const row={...candidate,userId};await idb.put('candidateLocal',row);await repositories.company.ensure(userId,row,{sharedPatch:{name:row.name,lastObservedAt:observedAt},source:'company-discovery',observedAt});return row;}const existing=await idb.get('factionRecruitment',userId);const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),text(source?.sourceType)].filter(Boolean))];let availability=existing?.availability||'Unknown';if((!existing||availability==='Unknown')&&candidate?.availability)availability=candidate.availability;const patch={availability,recruiterNote:existing?.recruiterNote??candidate?.recruiterNote??'',discoverySources,latestForumSourceId:text(source?.sourceId||candidate?.latestForumSourceId||existing?.latestForumSourceId),updatedAt:candidate?.updatedAt||new Date(observedAt).toISOString()};if(existing?.pipelineStage)patch.pipelineStage=existing.pipelineStage;await repositories.faction.ensure(userId,patch,{sharedPatch:{name:candidate?.name,ee:candidate?.ee,man:candidate?.stats?.man??candidate?.man,int:candidate?.stats?.int??candidate?.int,end:candidate?.stats?.end??candidate?.end,total:candidate?.stats?.total??candidate?.total,lastActive:candidate?.lastActive,lastObservedAt:observedAt},source:'faction-discovery',observedAt});return idb.get('factionRecruitment',userId);}
   async function fetchForumPage(feed,checkpoint,from,to){if(checkpoint?.next)return tornContinuation(checkpoint.next);return tornRequest(`forum/${feed.threadId}/posts`,{limit:PAGE_SIZE,sort:'DESC',from,to});}
   async function getDiscoveryCandidate(domain,userId){const id=String(userId);if(domain!=="faction")return await idb.get("candidateLocal",id)||await idb.get("candidateLocal",Number(userId));const[record,player]=await Promise.all([idb.get("factionRecruitment",id),idb.get("playerIntelligence",id)]);if(!record)return null;const stats={};for(const key of ["man","int","end","total"]){const value=finite(player?.[key]);if(value!==null)stats[key]=value;}return Object.keys(stats).length?{...record,stats}:record;}
   async function syncFeed(feed){let checkpoint=await idb.get('forumSyncState',feed.feedId);let counters=Discovery.initialCounters(checkpoint?.counters||{});const recentCutoff=Date.now()-state.settings.recruitment.recentImportDays*86400000;const from=Math.floor(recentCutoff/1000),to=Math.floor(Date.now()/1000);const maxPages=state.settings.recruitment.maxPagesPerFeed;const domain=recruitmentDomainForFeed(feed);for(let page=0;page<maxPages&&!state.sync.cancelled;page++){state.sync.feed=feed.feedId;state.sync.pages=page+1;refreshDiscoverRuntimeUi(counters,feed);const data=await fetchForumPage(feed,checkpoint,from,to);const posts=Array.isArray(data?.posts)?data.posts:[];if(!posts.length)break;const continuation=data?._metadata?.links?.next||'';const result=await Discovery.processDiscoveryPage({feed,posts,continuation,counters,recentCutoff,observedAt:Date.now(),persistSource:async source=>{if(!source.postUrl)source.postUrl=forumThreadUrl(feed.threadId);await idb.put('forumSources',source);},getCandidate:async userId=>getDiscoveryCandidate(domain,userId),persistCandidate:async(candidate,source)=>persistDiscoveredCandidate(feed,candidate,source),persistCounters:async next=>{counters=next;},persistCheckpoint:async cp=>{checkpoint=cp;await idb.put('forumSyncState',cp);}});counters=result.counters;await logEvent('forum','Forum page imported',{feedId:feed.feedId,pagesChecked:counters.pagesChecked,postsExamined:counters.postsExamined,candidatesCreated:counters.candidatesCreated,candidatesUpdated:counters.candidatesUpdated});if(!result.safeContinuation)break;}return counters;}
@@ -5461,7 +5914,7 @@
     const factionRaw=value.faction_id??value.factionId;
     const factionId=factionRaw===null||factionRaw===undefined||factionRaw===''?null:Number(factionRaw);
     return{
-      id:Number(userId),userId,name:text(value.name)||`User ${userId}`,level:finite(value.level),
+      id:Number(userId),userId,name:text(value.name)||`User ${userId}`,level:finite(value.level),age:finite(value.age),
       factionId:Number.isFinite(factionId)?factionId:null,
       onlineStatus:text(value.online??lastAction.status),
       lastActive:Number.isFinite(lastActionTs)&&lastActionTs>0?lastActionTs*1000:null
@@ -5475,11 +5928,13 @@
     const store=normalizedDomain==='faction'?'factionRecruitment':'companyRecruitment';
     const existing=await idb.get(store,candidate.userId);
     const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),'TORN API SEARCH'])];
-    const sharedPatch={name:candidate.name};
+    const sharedPatch={name:candidate.name,lastObservedAt:observedAt};
     if(candidate.level!==null)sharedPatch.level=candidate.level;
+    if(candidate.age!==null)sharedPatch.age=candidate.age;
     if(candidate.factionId!==null)sharedPatch.factionId=candidate.factionId;
     if(candidate.onlineStatus)sharedPatch.onlineStatus=candidate.onlineStatus;
     if(candidate.lastActive!==null)sharedPatch.lastActive=candidate.lastActive;
+    sharedPatch.lastObservedAt=observedAt;
     const patch={
       pipelineStage:existing?.pipelineStage||(normalizedDomain==='faction'?'Prospect':'Not Contacted'),
       availability:existing?.availability||'Unknown',
@@ -5488,6 +5943,80 @@
       updatedAt:observedAt
     };
     return repositories[normalizedDomain].ensure(candidate.userId,patch,{sharedPatch,source:'api-search',observedAt});
+  }
+
+  function normalizeWorkstatHofCandidate(raw={}){
+    const value=raw?.user||raw?.player||raw||{};
+    const userId=V46Domain.normalizeUserId(value.id??value.user_id??value.userId);
+    const level=finite(value.level);
+    const age=finite(value.age_in_days??value.age);
+    const total=finite(value.value??value.workstats??value.work_stats??value.total);
+    const factionRaw=value.faction_id??value.factionId;
+    const factionId=factionRaw===null||factionRaw===undefined||factionRaw===''?null:Number(factionRaw);
+    const lastRaw=finite(value.last_action??value.lastAction??value.last_action_timestamp);
+    const lastActive=lastRaw===null?null:(lastRaw>1e12?lastRaw:lastRaw*1000);
+    return{
+      id:Number(userId),userId,name:text(value.username??value.name)||`User ${userId}`,
+      level,age,total,
+      factionId:Number.isFinite(factionId)?factionId:null,
+      lastActive,
+      hofPosition:finite(value.position??value.rank),
+      hofRank:text(value.rank_name??value.rankName)
+    };
+  }
+
+  async function persistWorkstatHofCandidate(raw,observedAt=Date.now()){
+    const candidate=normalizeWorkstatHofCandidate(raw);
+    const existing=await idb.get('companyRecruitment',candidate.userId);
+    const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),'WORKSTAT LEADERBOARD'])];
+    const sharedPatch={name:candidate.name,lastObservedAt:observedAt};
+    if(candidate.level!==null)sharedPatch.level=candidate.level;
+    if(candidate.age!==null)sharedPatch.age=candidate.age;
+    if(candidate.total!==null)sharedPatch.total=candidate.total;
+    if(candidate.factionId!==null)sharedPatch.factionId=candidate.factionId;
+    if(candidate.lastActive!==null)sharedPatch.lastActive=candidate.lastActive;
+    const patch={
+      pipelineStage:existing?.pipelineStage||'Not Contacted',
+      availability:existing?.availability||'Unknown',
+      recruiterNote:existing?.recruiterNote||'',
+      discoverySources,
+      updatedAt:observedAt
+    };
+    return repositories.company.ensure(candidate.userId,patch,{sharedPatch,source:'workstat-leaderboard',observedAt});
+  }
+
+  async function discoverWorkstatProspects(options={},deps={}){
+    const request=deps.tornRequest||tornRequest;
+    const persist=deps.persistCandidate||persistWorkstatHofCandidate;
+    const injected=Object.keys(deps).length>0;
+    const limit=Math.max(1,Math.min(100,Math.floor(number(options.limit,100))));
+    const offset=Math.max(0,Math.floor(number(options.offset,0)));
+    const minTotal=Math.max(0,finite(options.minTotal)??0);
+    const minLevel=Math.max(0,finite(options.minLevel)??0);
+    const maxAgeDays=Math.max(0,finite(options.maxAgeDays)??0);
+    const maxLastActionDays=Math.max(0,finite(options.maxLastActionDays)??0);
+    const observedAt=Date.now();
+    const response=await request('torn/hof',{cat:'workstats',limit,offset});
+    const rows=Array.isArray(response?.hof)?response.hof:Array.isArray(response?.rankings)?response.rankings:Array.isArray(response?.entries)?response.entries:Array.isArray(response)?response:[];
+    let imported=0,skipped=0;
+    for(const raw of rows){
+      let candidate;
+      try{candidate=normalizeWorkstatHofCandidate(raw);}catch{skipped++;continue;}
+      if(minTotal>0&&(candidate.total===null||candidate.total<minTotal)){skipped++;continue;}
+      if(minLevel>0&&(candidate.level===null||candidate.level<minLevel)){skipped++;continue;}
+      if(maxAgeDays>0&&(candidate.age===null||candidate.age>maxAgeDays)){skipped++;continue;}
+      if(maxLastActionDays>0){
+        if(candidate.lastActive===null||observedAt-candidate.lastActive>maxLastActionDays*86400000){skipped++;continue;}
+      }
+      await persist(raw,observedAt);
+      imported++;
+    }
+    const result={source:'WORKSTAT LEADERBOARD',requested:rows.length,imported,skipped,limit,offset,nextOffset:offset+rows.length};
+    if(!injected){
+      await logEvent('discovery','Work-stat HOF prospect discovery completed',result);
+      toast(`HOF discovery: ${imported} prospect(s) imported from ${rows.length} result(s).`);
+    }
+    return result;
   }
 
   async function searchCandidates(domain,filters={},deps={}){
@@ -5524,12 +6053,12 @@
   }
   function cancelSync(){if(state.sync.running){state.sync.cancelled=true;toast('Cancelling forum sync after the current safe page.');}}
 
-  async function fillCompanies(){if(state.fill.running)throw new Error('Company fill is already running.');const views=await candidateViews();const plan=Discovery.fillCompaniesPlan(views.map(v=>({...v.candidate,currentCompany:v.currentCompany})));state.fill={running:true,cancelled:false,done:0,total:plan.length,errors:[]};refreshDiscoverRuntimeUi();try{for(const item of plan){if(state.fill.cancelled)break;try{const data=await tornRequest(`user/${item.userId}/job`);const job=data?.job||data?.user?.job||null;const candidate=await idb.get('candidateLocal',String(item.userId))||await idb.get('candidateLocal',Number(item.userId));if(candidate){const company=job&&String(job.type||'').toLowerCase()==='company'?job:null;candidate.currentCompany=company?.name||'';candidate.currentCompanyId=company?.id??null;candidate.currentCompanyRating=company?.rating??null;candidate.currentCompanyPosition=company?.position||'';candidate.companyCheckedAt=Date.now();candidate.updatedAt=new Date().toISOString();await idb.put('candidateLocal',candidate);await repositories.players.ensure(String(item.userId),{name:candidate.name,ee:candidate.ee,currentCompany:candidate.currentCompany,currentCompanyId:candidate.currentCompanyId,currentCompanyRating:candidate.currentCompanyRating,currentCompanyPosition:candidate.currentCompanyPosition,companyCheckedAt:candidate.companyCheckedAt},'company-enrichment',candidate.companyCheckedAt);}}catch(error){state.fill.errors.push({userId:item.userId,error:text(error.message)});}finally{state.fill.done++;refreshDiscoverRuntimeUi();}}await logEvent('company-fill','Fill Companies completed',{checked:state.fill.done,errors:state.fill.errors.length});toast(state.fill.cancelled?'Company fill stopped.':`Company fill complete: ${state.fill.done}/${state.fill.total}.`,state.fill.errors.length>0);}finally{state.fill.running=false;if(state.page==='company-discover'||state.page==='company-candidates')await route(state.page,false);}}
+  async function fillCompanies(){if(state.fill.running)throw new Error('Company fill is already running.');const views=await candidateViews();const plan=Discovery.fillCompaniesPlan(views.map(v=>({...v.candidate,currentCompany:v.currentCompany})));state.fill={running:true,cancelled:false,done:0,total:plan.length,errors:[]};refreshDiscoverRuntimeUi();try{for(const item of plan){if(state.fill.cancelled)break;try{const data=await tornRequest(`user/${item.userId}/job`);const eligibility=Messaging.companyRecruitmentEligibility(data);if(eligibility.known===false)throw new Error('Company affiliation data was missing from the Torn response.');const job=Object.prototype.hasOwnProperty.call(data||{},'job')?data.job:data?.user?.job;const candidate=await idb.get('candidateLocal',String(item.userId))||await idb.get('candidateLocal',Number(item.userId));if(candidate){const company=!eligibility.eligible&&job&&String(job.type||'').toLowerCase()==='company'?job:null;candidate.currentCompany=company?.name||'';candidate.currentCompanyId=company?.id??null;candidate.currentCompanyRating=company?.rating??null;candidate.currentCompanyPosition=company?.position||'';candidate.companyCheckedAt=Date.now();candidate.updatedAt=new Date().toISOString();await idb.put('candidateLocal',candidate);await repositories.players.ensure(String(item.userId),{name:candidate.name,ee:candidate.ee,currentCompany:candidate.currentCompany,currentCompanyId:candidate.currentCompanyId,currentCompanyRating:candidate.currentCompanyRating,currentCompanyPosition:candidate.currentCompanyPosition,companyCheckedAt:candidate.companyCheckedAt,lastObservedAt:candidate.companyCheckedAt},'company-enrichment',candidate.companyCheckedAt);}}catch(error){state.fill.errors.push({userId:item.userId,error:text(error.message)});}finally{state.fill.done++;refreshDiscoverRuntimeUi();}}await logEvent('company-fill','Fill Companies completed',{checked:state.fill.done,errors:state.fill.errors.length});toast(state.fill.cancelled?'Company fill stopped.':`Company fill complete: ${state.fill.done}/${state.fill.total}.`,state.fill.errors.length>0);}finally{state.fill.running=false;if(state.page==='company-discover'||state.page==='company-candidates')await route(state.page,false);}}
   function cancelFill(){if(state.fill.running){state.fill.cancelled=true;toast('Cancelling company lookup after current request.');}}
 
   function stageColor(stage){return state.settings.recruitment.stageColors?.[stage]||Runtime.STAGE_COLORS[stage]||'#64748b';}
   function availabilityColor(value){return state.settings.recruitment.availabilityColors?.[value]||Runtime.AVAILABILITY_COLORS[value]||'#64748b';}
-  function lastActiveText(view){const ts=finite(view.lastActive);if(ts===null)return '—';const seconds=Math.max(0,Math.floor(Date.now()/1000-ts));if(seconds<60)return `${seconds}s`;if(seconds<3600)return `${Math.floor(seconds/60)}m`;if(seconds<86400)return `${Math.floor(seconds/3600)}h`;return `${Math.floor(seconds/86400)}d`;}
+  function lastActiveText(view){const raw=finite(view.lastActive);if(raw===null)return '—';const ts=raw>1e12?raw/1000:raw;const seconds=Math.max(0,Math.floor(Date.now()/1000-ts));if(seconds<60)return `${seconds}s`;if(seconds<3600)return `${Math.floor(seconds/60)}m`;if(seconds<86400)return `${Math.floor(seconds/3600)}h`;return `${Math.floor(seconds/86400)}d`;}
   function scoreText(value){return finite(value)===null?'—':Number(value).toFixed(1);}
   function pill(label,color){return `<span class="ra-pill" style="--pill:${esc(color)}">${esc(label||'Unknown')}</span>`;}
   function helpButton(key){const item=Runtime.HELP_REGISTRY[key];return item?`<button type="button" class="ra-help" data-help-key="${esc(key)}" aria-label="About ${esc(item.title)}">i</button>`:'';}
@@ -5538,31 +6067,32 @@
   function icon(id){return({overview:'⌂',discover:'⌕',candidates:'◎',pipeline:'▦',scout:'◈','smart-match':'◇','global-intelligence':'◉',settings:'⚙',data:'▤',logs:'≡'})[id]||'•';}
 
   function injectStyles(){if(document.getElementById('ra-v45-css'))return;const style=document.createElement('style');style.id='ra-v45-css';style.textContent=`
-:root{--ra-bg:#0b0b0d;--ra-panel:#121216;--ra-panel2:#1a1a20;--ra-line:#303038;--ra-line-strong:#454550;--ra-text:#f0f0f3;--ra-muted:#a3a3ad;--ra-accent:#b94a4a;--ra-accent2:#d86a6a;--ra-danger:#e25d63;--ra-warn:#d6a64d;--ra-pad:14px;--ra-font:12px}
-:root[data-ra-theme="light"]{--ra-bg:#f3f3f5;--ra-panel:#fff;--ra-panel2:#f7f7f9;--ra-line:#d0d0d7;--ra-line-strong:#ababB5;--ra-text:#17171b;--ra-muted:#656570;--ra-accent:#9e3737;--ra-accent2:#b94a4a;--ra-danger:#b4232a;--ra-warn:#8c5b13}
+:root{--ra-bg:#08070b;--ra-panel:#100d16;--ra-panel2:#181320;--ra-line:#312440;--ra-line-strong:#5a3b73;--ra-text:#f6f1fb;--ra-muted:#aaa0b8;--ra-accent:#9b4dff;--ra-accent2:#d06cff;--ra-brand-deep:#5b21b6;--ra-danger:#e25d63;--ra-warn:#d6a64d;--ra-pad:14px;--ra-font:12px}
+:root[data-ra-theme="light"]{--ra-bg:#f6f3fa;--ra-panel:#fff;--ra-panel2:#f7f3fb;--ra-line:#d8cce4;--ra-line-strong:#b49acb;--ra-text:#1d1722;--ra-muted:#6f6479;--ra-accent:#7c3aed;--ra-accent2:#9333ea;--ra-danger:#b4232a;--ra-warn:#8c5b13}
 :root[data-ra-density="compact"]{--ra-pad:8px}:root[data-ra-text="small"]{--ra-font:11px}:root[data-ra-text="large"]{--ra-font:14px}
 #ra-app,#ra-launch,#ra-context,#ra-help-popover,#ra-toastbox{font:var(--ra-font)/1.4 Arial,sans-serif;color:var(--ra-text);box-sizing:border-box}#ra-app *{box-sizing:border-box}
-#ra-launch{position:fixed;right:12px;bottom:72px;z-index:2147483645;width:48px;height:48px;border-radius:12px;border:1px solid var(--ra-line-strong);background:linear-gradient(145deg,#1b1b20,#101013);color:var(--ra-accent2);font-weight:900;cursor:pointer;display:none;box-shadow:0 10px 30px #0008,inset 0 1px 0 #ffffff0b}
+#ra-launch{position:fixed;right:12px;bottom:72px;z-index:2147483645;width:48px;height:48px;border-radius:12px;border:1px solid var(--ra-line-strong);background:radial-gradient(circle at 35% 20%,#9b4dff30,transparent 45%),linear-gradient(145deg,#1b1425,#0d0a12);color:var(--ra-accent2);font-weight:900;cursor:pointer;display:none;box-shadow:0 10px 30px #0008,0 0 22px #9b4dff18,inset 0 1px 0 #ffffff0b}
 #ra-app{position:fixed;left:6vw;top:5vh;width:88vw;height:86vh;z-index:2147483401;background:var(--ra-bg);border:1px solid var(--ra-line-strong);border-radius:14px;box-shadow:0 24px 72px #000c,0 0 0 1px #ffffff05;display:none;resize:both;overflow:hidden;min-width:560px;min-height:420px;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px)}
-.ra-titlebar{height:50px;padding:0 12px 0 16px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,#17171c,#111115);border-bottom:1px solid var(--ra-line);cursor:move}.ra-title-brand{display:flex;align-items:center;gap:10px;min-width:0}.ra-title-mark{width:24px;height:24px;display:grid;place-items:center;border:1px solid #743333;border-radius:7px;color:var(--ra-accent2);font-size:13px;box-shadow:inset 0 0 12px #b94a4a18}.ra-title-copy{display:grid;line-height:1.05}.ra-title-copy small{font-size:8px;letter-spacing:.16em;color:var(--ra-muted);font-weight:800}.ra-title-copy strong{font-size:12px;letter-spacing:.05em;color:var(--ra-text)}.ra-version{font-size:9px;color:var(--ra-muted);font-weight:600;margin-left:4px}.ra-title-actions,.ra-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ra-shell{display:grid;grid-template-columns:196px minmax(0,1fr);height:calc(100% - 50px);position:relative}.ra-shell.is-collapsed{grid-template-columns:58px minmax(0,1fr)}
-.ra-sidebar{background:linear-gradient(180deg,#141419,#101014);border-right:1px solid var(--ra-line);overflow:auto;padding:10px}.ra-sidebar-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.ra-brand{font-weight:900;font-size:10px;letter-spacing:.08em;color:var(--ra-muted)}.is-collapsed .ra-brand,.is-collapsed .ra-group-label,.is-collapsed .ra-nav-text,.is-collapsed .ra-domain-switch span{display:none}.ra-domain-switch{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:#09090b;border:1px solid var(--ra-line);border-radius:9px;margin-bottom:12px}.ra-domain-switch button{border:0;border-radius:6px;padding:8px 6px;background:transparent;color:var(--ra-muted);font-size:10px;font-weight:800;cursor:pointer}.ra-domain-switch button.active{background:linear-gradient(180deg,#6e2d2d,#4e2020);color:#fff;box-shadow:inset 0 1px 0 #ffffff18}.is-collapsed .ra-domain-switch{grid-template-columns:1fr;padding:3px}.is-collapsed .ra-domain-switch button:not(.active){display:none}.ra-group-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;border:0;border-radius:6px;padding:7px 8px;background:transparent;color:var(--ra-muted);cursor:pointer;text-align:left}.ra-group-toggle:hover,.ra-group-toggle:focus-visible{background:var(--ra-panel2);outline:none}.ra-group-toggle.has-active{color:var(--ra-accent2)}.ra-group-label{font-size:9px;font-weight:900;letter-spacing:.08em;color:inherit;margin:0}.ra-group-chevron{font-size:11px;font-weight:900;line-height:1}.ra-nav{display:grid;gap:3px}.ra-nav[hidden]{display:none}.ra-nav button{display:flex;align-items:center;gap:8px;border:0;border-radius:7px;padding:9px 8px;background:transparent;color:var(--ra-text);cursor:pointer;text-align:left}.ra-nav button:hover,.ra-nav button.active{background:#ffffff08}.ra-nav button.active{box-shadow:inset 3px 0 0 var(--ra-accent);color:#fff}.ra-nav-icon{width:18px;color:var(--ra-accent2);font-weight:900;text-align:center}
+.ra-titlebar{height:50px;padding:0 12px 0 16px;display:grid;grid-template-columns:minmax(210px,auto) minmax(150px,220px) 1fr auto;gap:12px;align-items:center;background:radial-gradient(circle at 22% 0%,#7c3aed24,transparent 36%),linear-gradient(180deg,#17121f,#0e0b13);border-bottom:1px solid var(--ra-line);cursor:move}.ra-title-brand{display:flex;align-items:center;gap:10px;min-width:0}.ra-title-mark{width:24px;height:24px;display:grid;place-items:center;border:1px solid #7c3aed;border-radius:7px;color:var(--ra-accent2);font-size:13px;box-shadow:inset 0 0 12px #9b4dff24,0 0 16px #9b4dff20}.ra-title-copy{display:grid;line-height:1.05}.ra-title-copy small{font-size:8px;letter-spacing:.16em;color:var(--ra-muted);font-weight:800}.ra-title-copy strong{font-size:12px;letter-spacing:.05em;color:var(--ra-text)}.ra-version{font-size:9px;color:var(--ra-muted);font-weight:600;margin-left:4px}.ra-title-actions,.ra-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ra-title-spacer{min-width:0}.ra-workspace-select{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px;align-items:center;cursor:default}.ra-workspace-select>span{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ra-muted);font-weight:900}.ra-workspace-toggle{width:100%;min-width:118px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border-radius:8px;border:1px solid var(--ra-line-strong);background:linear-gradient(180deg,#1d1527,#120e19);color:var(--ra-text);font-weight:800;outline:none;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff0a}.ra-workspace-toggle:focus-visible{border-color:var(--ra-accent);box-shadow:0 0 0 2px #9b4dff25}.ra-workspace-menu{position:absolute;left:34px;top:calc(100% + 6px);z-index:30;min-width:150px;padding:5px;border:1px solid var(--ra-line-strong);border-radius:9px;background:linear-gradient(180deg,#1a1323,#0d0a12);box-shadow:0 14px 36px #000b,0 0 22px #9b4dff18}.ra-workspace-menu[hidden]{display:none}.ra-workspace-menu button{width:100%;display:flex;align-items:center;gap:8px;padding:8px 9px;border:0;border-radius:6px;background:transparent;color:var(--ra-text);text-align:left;font-weight:800;cursor:pointer}.ra-workspace-menu button:hover,.ra-workspace-menu button:focus-visible,.ra-workspace-menu button.active{background:#9b4dff22;color:#f4dcff;outline:none}.ra-workspace-caret{color:var(--ra-accent2);font-size:10px}.ra-shell{display:grid;grid-template-columns:196px minmax(0,1fr);height:calc(100% - 50px);position:relative}.ra-shell.is-collapsed{grid-template-columns:58px minmax(0,1fr)}
+.ra-sidebar{background:radial-gradient(circle at 0 0,#7c3aed17,transparent 32%),linear-gradient(180deg,#130f19,#0c0a0f);border-right:1px solid var(--ra-line);overflow:auto;padding:10px}.ra-sidebar-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.ra-brand{font-weight:900;font-size:10px;letter-spacing:.08em;color:var(--ra-muted)}.is-collapsed .ra-brand,.is-collapsed .ra-group-label,.is-collapsed .ra-nav-text,.is-collapsed .ra-domain-switch span{display:none}.ra-group-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;border:0;border-radius:6px;padding:7px 8px;background:transparent;color:var(--ra-muted);cursor:pointer;text-align:left}.ra-group-toggle:hover,.ra-group-toggle:focus-visible{background:var(--ra-panel2);outline:none}.ra-group-toggle.has-active{color:var(--ra-accent2)}.ra-group-label{font-size:9px;font-weight:900;letter-spacing:.08em;color:inherit;margin:0}.ra-group-chevron{font-size:11px;font-weight:900;line-height:1}.ra-nav{display:grid;gap:3px}.ra-nav[hidden]{display:none}.ra-nav button{display:flex;align-items:center;gap:8px;border:0;border-radius:7px;padding:9px 8px;background:transparent;color:var(--ra-text);cursor:pointer;text-align:left}.ra-nav button:hover,.ra-nav button.active{background:#ffffff08}.ra-nav button.active{box-shadow:inset 3px 0 0 var(--ra-accent);color:#fff}.ra-nav-icon{width:18px;color:var(--ra-accent2);font-weight:900;text-align:center}
 .ra-main{min-width:0;display:flex;flex-direction:column}.ra-pagehead{padding:12px 15px;background:var(--ra-panel);border-bottom:1px solid var(--ra-line);display:flex;justify-content:space-between;align-items:center;gap:8px}.ra-pagehead h2{margin:0;font-size:17px}.ra-pagehead p{margin:2px 0 0;color:var(--ra-muted)}.ra-content{overflow:auto;flex:1;padding:var(--ra-pad)}
-.ra-panel,.ra-kpi{border:1px solid var(--ra-line);border-radius:10px;background:linear-gradient(180deg,#15151a,#111115);padding:14px;box-shadow:inset 0 1px 0 #ffffff05}.ra-panel{margin-bottom:12px}.ra-search-panel{border-color:#3c3034}.ra-results-panel{padding:0;overflow:hidden}.ra-results-panel>.ra-panel-head{padding:14px 14px 0}.ra-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}.ra-panel-head h3{margin:0;font-size:14px;letter-spacing:.02em}.ra-panel-head p{margin:3px 0 0;color:var(--ra-muted);font-size:10px}.ra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ra-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}.ra-kpi span{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900}.ra-kpi b{font-size:20px}.ra-formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ra-core-search-grid{grid-template-columns:repeat(4,minmax(120px,1fr));margin-bottom:10px}.ra-field label{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900;margin-bottom:4px;letter-spacing:.06em}.ra-field input,.ra-field select,.ra-field textarea{width:100%;padding:8px 9px;border-radius:7px;border:1px solid var(--ra-line);background:#0d0d11;color:var(--ra-text);outline:none}.ra-field input:focus,.ra-field select:focus,.ra-field textarea:focus{border-color:var(--ra-accent);box-shadow:0 0 0 2px #b94a4a20}.ra-field textarea{min-height:76px;resize:vertical}.ra-optional-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}.ra-optional-toggle{display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid var(--ra-line);border-radius:7px;background:var(--ra-panel2);color:var(--ra-text)}
+.ra-panel,.ra-kpi{border:1px solid var(--ra-line);border-radius:10px;background:linear-gradient(180deg,#15111d,#0f0c14);padding:14px;box-shadow:inset 0 1px 0 #ffffff05}.ra-panel{margin-bottom:12px}.ra-search-panel{border-color:#49345f}.ra-results-panel{padding:0;overflow:hidden}.ra-results-panel>.ra-panel-head{padding:14px 14px 0}.ra-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}.ra-panel-head h3{margin:0;font-size:14px;letter-spacing:.02em}.ra-panel-head p{margin:3px 0 0;color:var(--ra-muted);font-size:10px}.ra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ra-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}.ra-kpi span{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900}.ra-kpi b{font-size:20px}.ra-formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ra-core-search-grid{grid-template-columns:repeat(4,minmax(120px,1fr));margin-bottom:10px}.ra-field label{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900;margin-bottom:4px;letter-spacing:.06em}.ra-field input,.ra-field select,.ra-field textarea{width:100%;padding:8px 9px;border-radius:7px;border:1px solid var(--ra-line);background:#0d0d11;color:var(--ra-text);outline:none}.ra-field input:focus,.ra-field select:focus,.ra-field textarea:focus{border-color:var(--ra-accent);box-shadow:0 0 0 2px #9b4dff22}.ra-field textarea{min-height:76px;resize:vertical}.ra-optional-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}.ra-optional-toggle{display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid var(--ra-line);border-radius:7px;background:var(--ra-panel2);color:var(--ra-text)}
 .ra-btn{border:1px solid var(--ra-line);border-radius:7px;background:var(--ra-panel2);color:var(--ra-text);padding:6px 9px;cursor:pointer;font-weight:700;text-decoration:none}.ra-btn:hover{border-color:var(--ra-accent)}.ra-primary{border-color:var(--ra-accent);background:color-mix(in srgb,var(--ra-accent) 20%,var(--ra-panel2))}.ra-danger{border-color:var(--ra-danger);color:var(--ra-danger)}.ra-help{display:inline-grid;place-items:center;width:20px;height:20px;padding:0;border:1px solid var(--ra-line);border-radius:50%;background:var(--ra-panel2);color:var(--ra-muted);cursor:pointer;flex:0 0 auto}.ra-muted{color:var(--ra-muted)}.ra-note{font-size:10px;color:var(--ra-muted)}
 .ra-pill{display:inline-block;border:1px solid color-mix(in srgb,var(--pill) 70%,var(--ra-line));background:color-mix(in srgb,var(--pill) 16%,transparent);border-radius:999px;padding:2px 6px;white-space:nowrap}.ra-table-wrap{overflow:auto;border:1px solid var(--ra-line);border-radius:8px}.ra-table{border-collapse:collapse;width:100%;min-width:900px}.ra-table th,.ra-table td{padding:7px;border-bottom:1px solid var(--ra-line);white-space:nowrap;text-align:left}.ra-table th{position:sticky;top:0;background:var(--ra-panel2);z-index:2}.ra-sort-button{all:unset;display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:inherit;font:inherit;font-weight:800}.ra-sort-button:hover,.ra-sort-button:focus-visible{color:var(--ra-accent2)}.ra-sort-button:focus-visible{outline:2px solid var(--ra-accent);outline-offset:2px;border-radius:3px}.ra-online-live,.ra-online-idle,.ra-online-offline{display:inline-flex;align-items:center;gap:5px;font-weight:800}.ra-online-live:before,.ra-online-idle:before,.ra-online-offline:before{content:"";width:7px;height:7px;border-radius:50%}.ra-online-live:before{background:#45c486;box-shadow:0 0 0 3px #45c4861f}.ra-online-idle:before{background:#d7a84b}.ra-online-offline:before{background:#777781}.ra-table tr{background:color-mix(in srgb,var(--row-tint,transparent) 7%,transparent)}.ra-link{color:var(--ra-accent2);text-decoration:none}.ra-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}.ra-card{border:1px solid var(--ra-line);border-radius:9px;background:var(--ra-panel2);padding:10px}.ra-card h4{margin:0}.ra-card-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin:8px 0}.ra-card-grid span{color:var(--ra-muted)}.ra-card-grid b{display:block;color:var(--ra-text)}
 .ra-hover{position:fixed;z-index:2147483646;width:min(390px,calc(100vw - 12px));max-height:calc(100vh - 12px);overflow:auto;background:var(--ra-panel);border:1px solid var(--ra-line);border-radius:9px;box-shadow:0 12px 32px #000a;padding:10px}.ra-hover[hidden]{display:none}.ra-hover-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:7px}.ra-hover-grid span{color:var(--ra-muted)}.ra-hover-grid b{display:block;color:var(--ra-text)}
-.ra-pipeline{display:grid;grid-template-columns:repeat(6,minmax(230px,1fr));gap:8px;overflow:auto;padding-bottom:4px}.ra-stage{min-height:220px;border:1px solid var(--ra-line);border-top:3px solid var(--stage);border-radius:8px;background:var(--ra-panel);padding:7px}.ra-stage-head{display:flex;justify-content:space-between;gap:6px;margin-bottom:7px}.ra-stage-card{border:1px solid var(--ra-line);border-radius:7px;padding:8px;background:var(--ra-panel2);margin:6px 0;cursor:grab}.ra-stage-card.subdued{opacity:.68}.ra-stage-drop{min-height:120px}.ra-drawer{position:absolute;right:0;top:0;bottom:0;width:min(460px,94%);z-index:12;background:var(--ra-panel);border-left:1px solid var(--ra-line);box-shadow:-12px 0 30px #0007;overflow:auto;padding:12px}.ra-drawer[hidden]{display:none}.ra-drawer-head{display:flex;justify-content:space-between;align-items:center;position:sticky;top:-12px;background:var(--ra-panel);padding:10px 0;z-index:2}.ra-detail-section{border-top:1px solid var(--ra-line);padding-top:8px;margin-top:8px}.ra-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px}.ra-detail-grid span{color:var(--ra-muted)}.ra-detail-grid b{display:block;color:var(--ra-text)}
+.ra-pipeline{display:grid;grid-template-columns:repeat(6,minmax(230px,1fr));gap:8px;overflow:auto;padding-bottom:4px}.ra-stage{min-height:220px;border:1px solid var(--ra-line);border-top:3px solid var(--stage);border-radius:8px;background:var(--ra-panel);padding:7px}.ra-stage-head{display:flex;justify-content:space-between;gap:6px;margin-bottom:7px}.ra-stage-card{border:1px solid var(--ra-line);border-radius:7px;padding:8px;background:var(--ra-panel2);margin:6px 0;cursor:grab}.ra-stage-card.subdued{opacity:.68}.ra-stage-drop{min-height:120px}.ra-drawer{position:absolute;right:0;top:0;bottom:0;width:min(460px,94%);z-index:12;background:linear-gradient(180deg,#15101d,#0e0b13);border-left:1px solid var(--ra-line-strong);box-shadow:-12px 0 30px #0009,0 0 24px #9b4dff12;overflow:auto;padding:12px}.ra-drawer.is-popout{position:fixed;right:18px;top:72px;bottom:auto;height:min(76vh,720px);width:min(430px,calc(100vw - 24px));border:1px solid var(--ra-line-strong);border-radius:12px;box-shadow:0 24px 80px #000c,0 0 34px #9b4dff20}.ra-player-card-title{display:flex;align-items:center;gap:8px}.ra-player-card-score{margin-left:auto;border:1px solid #6d43a2;border-radius:999px;padding:3px 8px;color:#e5c4ff;background:#9b4dff16;font-weight:900}.ra-player-card-domain{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--ra-accent2)}.ra-player-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}.ra-drawer[hidden]{display:none}.ra-drawer-head{display:flex;justify-content:space-between;align-items:center;position:sticky;top:-12px;background:var(--ra-panel);padding:10px 0;z-index:2}.ra-detail-section{border-top:1px solid var(--ra-line);padding-top:8px;margin-top:8px}.ra-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px}.ra-detail-grid span{color:var(--ra-muted)}.ra-detail-grid b{display:block;color:var(--ra-text)}
 #ra-context{position:fixed;z-index:2147483647;min-width:220px;background:var(--ra-panel);border:1px solid var(--ra-line);border-radius:8px;box-shadow:0 12px 30px #000a;padding:5px}#ra-context[hidden]{display:none}.ra-menu-item{display:block;width:100%;padding:7px;border:0;background:transparent;color:var(--ra-text);text-align:left;border-radius:5px;cursor:pointer}.ra-menu-item:hover,.ra-menu-item:focus{background:var(--ra-panel2)}.ra-menu-sep{border-top:1px solid var(--ra-line);margin:4px 0}.ra-submenu{padding-left:12px}.ra-submenu[hidden]{display:none}
 .ra-modal{position:absolute;inset:0;z-index:15;background:#0009;display:grid;place-items:center;padding:18px}.ra-modal[hidden]{display:none}.ra-modal-card{width:min(620px,96%);max-height:92%;overflow:auto;background:var(--ra-panel);border:1px solid var(--ra-line);border-radius:10px;padding:12px}.ra-modal-card h3{margin-top:0}.ra-log{font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:280px;overflow:auto;background:#050806;border:1px solid var(--ra-line);border-radius:7px;padding:8px}.ra-progress{height:8px;background:var(--ra-line);border-radius:99px;overflow:hidden}.ra-progress>div{height:100%;background:var(--ra-accent);width:0}.ra-source-card{border:1px solid var(--ra-line);border-radius:8px;padding:9px;background:var(--ra-panel2)}.ra-source-card b{display:block}.ra-source-card small{color:var(--ra-muted)}
 .ra-settings details{border:1px solid var(--ra-line);border-radius:8px;background:var(--ra-panel);margin:7px 0;padding:8px}.ra-settings summary{font-weight:900;cursor:pointer}.ra-settings-body{padding-top:8px}.ra-color-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.ra-color-row{display:flex;align-items:center;gap:6px}.ra-color-row input[type=color]{width:38px;height:28px;padding:1px}.ra-danger-zone{border-color:var(--ra-danger)!important}.ra-nuke{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ra-danger);background:color-mix(in srgb,var(--ra-danger) 16%,var(--ra-panel2));color:var(--ra-danger);font-weight:900;border-radius:8px;padding:9px 12px;cursor:pointer}.ra-biohazard{width:24px;height:24px}.ra-help-popover{position:fixed;z-index:2147483647;max-width:min(340px,calc(100vw - 16px));padding:10px;border:1px solid var(--ra-accent);border-radius:8px;background:var(--ra-panel);box-shadow:0 10px 30px #0009}.ra-help-popover[hidden]{display:none}.ra-toastbox{position:fixed;right:12px;top:12px;z-index:2147483647;display:grid;gap:6px}.ra-toast{max-width:360px;border:1px solid var(--ra-line);border-left:3px solid var(--ra-accent);background:var(--ra-panel);padding:9px;border-radius:7px;box-shadow:0 8px 24px #0008}.ra-toast.bad{border-left-color:var(--ra-danger)}
-@media(max-width:1200px){.ra-pipeline{grid-template-columns:repeat(3,minmax(230px,1fr))}}@media(max-width:900px){#ra-app{left:3vw;top:4vh;width:94vw;height:90vh}.ra-shell{grid-template-columns:58px minmax(0,1fr)}.ra-brand,.ra-group-label,.ra-nav-text{display:none}.ra-kpis{grid-template-columns:repeat(2,1fr)}.ra-color-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:640px){#ra-app{left:4px;top:44px;width:calc(100vw - 8px);height:calc(100vh - 52px);min-width:0;min-height:0}.ra-shell{grid-template-columns:minmax(0,1fr)}.ra-sidebar{position:absolute;left:0;top:0;bottom:0;width:230px;z-index:10;transform:translateX(-105%);transition:transform .15s}.ra-shell.sidebar-open .ra-sidebar{transform:translateX(0)}.ra-brand,.ra-group-label,.ra-nav-text{display:initial}.ra-grid,.ra-formgrid,.ra-kpis,.ra-detail-grid,.ra-color-grid{grid-template-columns:1fr}.ra-pipeline{display:block}.ra-stage{display:none}.ra-stage.mobile-active{display:block}.ra-drawer{width:100%}.ra-pagehead{align-items:flex-start}}
+@media(max-width:1200px){.ra-pipeline{grid-template-columns:repeat(3,minmax(230px,1fr))}}@media(max-width:900px){#ra-app{left:3vw;top:4vh;width:94vw;height:90vh}.ra-shell{grid-template-columns:58px minmax(0,1fr)}.ra-brand,.ra-group-label,.ra-nav-text{display:none}.ra-kpis{grid-template-columns:repeat(2,1fr)}.ra-color-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:640px){#ra-app{left:4px;top:44px;width:calc(100vw - 8px);height:calc(100vh - 52px);min-width:0;min-height:0}.ra-titlebar{grid-template-columns:minmax(0,1fr) minmax(104px,128px) auto;gap:6px;padding:0 7px;height:50px}.ra-title-spacer{display:none}.ra-title-mark,.ra-title-copy small,.ra-workspace-select>span{display:none}.ra-title-copy strong{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ra-workspace-select{display:block;min-width:0}.ra-workspace-toggle{min-width:0;width:100%;padding:6px 7px;font-size:10px}.ra-workspace-menu{left:0;right:0;min-width:0}.ra-title-actions{flex-wrap:nowrap;gap:3px}.ra-title-actions .ra-btn{padding:5px 7px}.ra-shell{grid-template-columns:minmax(0,1fr)}.ra-sidebar{position:absolute;left:0;top:0;bottom:0;width:230px;z-index:10;transform:translateX(-105%);transition:transform .15s}.ra-shell.sidebar-open .ra-sidebar{transform:translateX(0)}.ra-brand,.ra-group-label,.ra-nav-text{display:initial}.ra-grid,.ra-formgrid,.ra-kpis,.ra-detail-grid,.ra-color-grid{grid-template-columns:1fr}.ra-pipeline{display:block}.ra-stage{display:none}.ra-stage.mobile-active{display:block}.ra-drawer{width:100%}.ra-pagehead{align-items:flex-start}}
 `;document.head.appendChild(style);}
 
   function applyTheme(){const root=document.documentElement;root.dataset.raTheme=state.settings.theme;root.dataset.raDensity=state.settings.density;root.dataset.raText=state.settings.textSize;}
   function toast(message,bad=false){const box=document.getElementById('ra-toastbox');if(!box)return;const item=document.createElement('div');item.className=`ra-toast${bad?' bad':''}`;item.textContent=message;box.appendChild(item);setTimeout(()=>item.remove(),3800);}
   function activeDomain(){if(String(state.page||'').startsWith('faction-'))return 'faction';if(String(state.page||'').startsWith('company-'))return 'company';return state.settings.activeDomain==='faction'?'faction':'company';}
-  function navHtml(){const domain=activeDomain();const expanded=new Set(state.settings.navigation?.expandedGroups||[]);const groups=V46Navigation.visibleGroups(state.settings);const domainId=`${domain}-recruitment`;const visible=groups.filter(group=>group.id===domainId||group.id==='intelligence'||group.id==='application');const domainSwitch=`<div class="ra-domain-switch" role="group" aria-label="Recruitment type"><button type="button" data-domain="company" class="${domain==='company'?'active':''}" aria-pressed="${domain==='company'}"><span>Company</span></button><button type="button" data-domain="faction" class="${domain==='faction'?'active':''}" aria-pressed="${domain==='faction'}"><span>Faction</span></button></div>`;const sections=visible.map(group=>{const core=group.id===domainId;if(core)return `<div class="ra-nav-section"><div class="ra-group-label" style="padding:6px 8px">${esc(group.label)}</div><div class="ra-nav">${group.pages.map(page=>`<button type="button" data-page="${esc(page.id)}"><span class="ra-nav-icon">${esc(icon(page.id))}</span><span class="ra-nav-text">${esc(page.label)}</span></button>`).join('')}</div></div>`;const open=expanded.has(group.id);const hasActive=group.pages.some(page=>page.id===state.page);return `<div class="ra-nav-section"><button type="button" class="ra-group-toggle${hasActive?' has-active':''}" data-nav-toggle="${esc(group.id)}" aria-expanded="${open?'true':'false'}"><span class="ra-group-label">${esc(group.label)}</span><span class="ra-group-chevron" aria-hidden="true">${open?'▾':'▸'}</span></button><div class="ra-nav" data-nav-group="${esc(group.id)}" ${open?'':'hidden'}>${group.pages.map(page=>`<button type="button" data-page="${esc(page.id)}"><span class="ra-nav-icon">${esc(icon(page.id))}</span><span class="ra-nav-text">${esc(page.label)}</span></button>`).join('')}</div></div>`;}).join('');return domainSwitch+sections;}
-  function rebuildNav(){const target=document.getElementById('ra-nav');if(target)target.innerHTML=navHtml();document.querySelector('.ra-shell')?.classList.toggle('is-collapsed',!!state.settings.sidebarCollapsed);target?.querySelectorAll('[data-domain]').forEach(button=>button.onclick=async()=>{const domain=button.dataset.domain==='faction'?'faction':'company';await saveSettings({activeDomain:domain,activePage:`${domain}-candidates`});await route(`${domain}-candidates`,false);});target?.querySelectorAll('[data-nav-toggle]').forEach(button=>button.onclick=async()=>{const expanded=V46Navigation.toggleExpandedGroup(state.settings.navigation.expandedGroups,button.dataset.navToggle);await saveSettings({navigation:{...state.settings.navigation,expandedGroups:expanded}});rebuildNav();});target?.querySelectorAll('[data-page]').forEach(btn=>btn.onclick=()=>route(btn.dataset.page).catch(e=>toast(e.message,true)));V46CompanyPlatform.syncNavigation?.();V47FactionPlatform.syncNavigation?.();target?.querySelector(`[data-page="${state.page}"]`)?.classList.add('active');}
+  function workspaceSelectHtml(domain=activeDomain()){const selected=domain==='faction'?'faction':'company',label=selected==='faction'?'Faction':'Company';return `<div class="ra-workspace-select"><span>Mode</span><button type="button" class="ra-workspace-toggle" id="ra-workspace-toggle" aria-haspopup="menu" aria-expanded="false"><span id="ra-workspace-label">${label}</span><span class="ra-workspace-caret" aria-hidden="true">▾</span></button><div class="ra-workspace-menu" id="ra-workspace-menu" role="menu" hidden><button type="button" role="menuitem" data-workspace-domain="company" class="${selected==='company'?'active':''}">Company</button><button type="button" role="menuitem" data-workspace-domain="faction" class="${selected==='faction'?'active':''}">Faction</button></div></div>`;}
+  function navHtml(){const domain=activeDomain();const expanded=new Set(state.settings.navigation?.expandedGroups||[]);const groups=V46Navigation.visibleGroups(state.settings);const domainId=`${domain}-recruitment`;const visible=groups.filter(group=>group.id===domainId||group.id==='intelligence'||group.id==='application');const sections=visible.map(group=>{const core=group.id===domainId;if(core)return `<div class="ra-nav-section"><div class="ra-group-label" style="padding:6px 8px">${esc(group.label)}</div><div class="ra-nav">${group.pages.map(page=>`<button type="button" data-page="${esc(page.id)}"><span class="ra-nav-icon">${esc(icon(page.id))}</span><span class="ra-nav-text">${esc(page.label)}</span></button>`).join('')}</div></div>`;const open=expanded.has(group.id);const hasActive=group.pages.some(page=>page.id===state.page);return `<div class="ra-nav-section"><button type="button" class="ra-group-toggle${hasActive?' has-active':''}" data-nav-toggle="${esc(group.id)}" aria-expanded="${open?'true':'false'}"><span class="ra-group-label">${esc(group.label)}</span><span class="ra-group-chevron" aria-hidden="true">${open?'▾':'▸'}</span></button><div class="ra-nav" data-nav-group="${esc(group.id)}" ${open?'':'hidden'}>${group.pages.map(page=>`<button type="button" data-page="${esc(page.id)}"><span class="ra-nav-icon">${esc(icon(page.id))}</span><span class="ra-nav-text">${esc(page.label)}</span></button>`).join('')}</div></div>`;}).join('');return sections;}
+  function rebuildNav(){const target=document.getElementById('ra-nav');if(target)target.innerHTML=navHtml();document.querySelector('.ra-shell')?.classList.toggle('is-collapsed',!!state.settings.sidebarCollapsed);const workspaceLabel=document.getElementById('ra-workspace-label');if(workspaceLabel)workspaceLabel.textContent=activeDomain()==='faction'?'Faction':'Company';document.querySelectorAll('[data-workspace-domain]').forEach(button=>button.classList.toggle('active',button.dataset.workspaceDomain===activeDomain()));target?.querySelectorAll('[data-nav-toggle]').forEach(button=>button.onclick=async()=>{const expanded=V46Navigation.toggleExpandedGroup(state.settings.navigation.expandedGroups,button.dataset.navToggle);await saveSettings({navigation:{...state.settings.navigation,expandedGroups:expanded}});rebuildNav();});target?.querySelectorAll('[data-page]').forEach(btn=>btn.onclick=()=>route(btn.dataset.page).catch(e=>toast(e.message,true)));V46CompanyPlatform.syncNavigation?.();V47FactionPlatform.syncNavigation?.();target?.querySelector(`[data-page="${state.page}"]`)?.classList.add('active');}
 
   function pageMeta(page){return({'company-overview':['Company Overview','Company recruitment status and work needing attention.'],'company-today':['Company Today','Prioritized Company recruitment work for today.'],'company-discover':['Company Discover','Sync Company recruitment sources and enrich Company candidates.'],'company-candidates':['Company Candidates','Search, filter and manage Company recruitment candidates.'],'company-pipeline':['Company Pipeline','Move Company candidates through explicit recruitment stages.'],'company-vacancies':['Company Vacancies','Define and manage Company hiring needs.'],'company-campaigns':['Company Campaigns','Organize Company recruitment campaigns.'],'company-followups':['Company Follow-ups','Track Company candidate follow-ups.'],'company-timeline':['Company Timeline','Review Company recruitment history.'],'company-stage-aging':['Company Stage Aging','Review candidates aging in their current Company stage.'],'company-contact-outcomes':['Company Contact Outcomes','Track Company recruitment contact outcomes.'],'company-recruitment-sessions':['Company Recruitment Sessions','Work focused Company recruitment queues.'],'company-talent-pool':['Company Talent Pool','Maintain reusable Company talent prospects.'],'company-reactivation':['Company Reactivation','Restart Company recruitment cycles without duplicating identity.'],'company-opportunity':['Company Opportunity Queue','Review explainable Company recruitment opportunities.'],'company-compare':['Company Compare','Compare Company candidates side by side.'],scout:['Scout','Collect official Torn player intelligence through the shared scheduler.'],'smart-match':['Smart Match','Build local vacancy profiles and explain candidate Match scores.'],'global-intelligence':['Global Intelligence','Review the sanitized shared intelligence service.'],settings:['Settings','Application, recruitment, Scout, candidate and privacy configuration.'],data:['Data','Local IndexedDB counts, export and reset controls.'],logs:['Logs','Sanitized Recruitment Agency diagnostic events.']})[page]||['Company Overview','Recruitment Agency'];}
 
@@ -5580,14 +6110,14 @@
   async function renderScout(){const history=(await idb.getAll('scoutHistory')).sort((a,b)=>b.capturedAt-a.capturedAt).slice(0,20);return `${panel('Scout','Official Torn player intelligence',`<div class="ra-formgrid"><div class="ra-field"><label>Player IDs / profile URLs</label><textarea id="ra-scout-ids" placeholder="3877028, profile URLs, etc."></textarea></div><div><div class="ra-detail-grid"><span>Queue<b>${state.scout.done}/${state.scout.total}</b></span><span>API calls<b>${state.scout.calls}</b></span><span>Current candidate<b>${state.scout.currentId||'—'}</b></span><span>Status<b id="ra-scout-status">${esc(state.scout.status)}</b></span></div><div class="ra-progress" style="margin-top:8px"><div id="ra-scout-progress" style="width:${state.scout.total?Math.min(100,state.scout.done/state.scout.total*100):0}%"></div></div></div></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-run-scout">Scout</button><button class="ra-btn" id="ra-pause-scout" ${state.scout.running?'':'disabled'}>${state.scout.paused?'Resume':'Pause'}</button><button class="ra-btn ra-danger" id="ra-cancel-scout" ${state.scout.running?'':'disabled'}>Cancel</button></div>`) }${panel('Scout History','Most recent local snapshots',`<div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Captured</th><th>Fit</th><th>Type</th><th>Trend</th></tr></thead><tbody>${history.map(s=>`<tr><td>${esc(s.profile?.name||s.userId)}</td><td>${new Date(s.capturedAt).toLocaleString()}</td><td>${scoreText(scoutFit(s))}</td><td>${esc(s.originalFitType||'—')}</td><td>${finite(s.trend)===null?'—':`${Number(s.trend)>=0?'+':''}${Number(s.trend).toFixed(1)}%`}</td></tr>`).join('')||'<tr><td colspan="5">No Scout history.</td></tr>'}</tbody></table></div>`)}`;}
 
   function criterionControl(key,c){const label={man:'MAN',int:'INT',end:'END',ee:'EE',fit:'Fit',activity30:'Activity 30d',xanax30:'Xanax 30d',refills30:'Refills 30d',attacks30:'Attacks 30d',rwHits30:'RW Hits 30d',company:'Company',role:'Role',salary:'Salary',availability:'Availability'}[key]||key;let value='';if(['company','role'].includes(key))value=`<input data-match-value="${key}" value="${esc(c.value||'')}">`;else if(key==='availability')value=`<select data-match-value="availability"><option value="">Any</option>${MatchCore.AVAILABILITY_VALUES.map(v=>`<option value="${esc(v)}" ${c.value===v?'selected':''}>${esc(v.replaceAll('_',' '))}</option>`).join('')}</select>`;else if(key==='salary')value=`<input data-match-max="salary" type="number" value="${esc(c.max||0)}">`;else value=`<input data-match-target="${key}" type="number" value="${esc(c.target||0)}">`;return `<div class="ra-formgrid" style="grid-template-columns:1.2fr 1fr 80px;align-items:end;margin:5px 0"><label><input type="checkbox" data-match-enabled="${esc(key)}" ${c.enabled?'checked':''}> ${esc(label)}</label><div class="ra-field"><label>Target / Value</label>${value}</div><div class="ra-field"><label>Weight</label><input data-match-weight="${esc(key)}" type="number" value="${esc(c.weight||0)}"></div></div>`;}
-  async function renderSmartMatch(){const profiles=(await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile);const active=await getActiveMatchProfile();const criteria=MatchCore.CRITERIA_KEYS.map(key=>criterionControl(key,active.criteria[key])).join('');return `${panel('Smart Match','Local-only matching · zero Torn API calls',`<div class="ra-actions"><select id="ra-match-profile-select" class="ra-btn">${profiles.map(p=>`<option value="${esc(p.profileId)}" ${p.profileId===active.profileId?'selected':''}>${esc(p.name)}</option>`).join('')}</select><button class="ra-btn" id="ra-match-new">Create</button><button class="ra-btn" id="ra-match-duplicate">Duplicate</button><button class="ra-btn ra-danger" id="ra-match-delete">Delete</button></div><div class="ra-field" style="margin-top:8px"><label>Profile name</label><input id="ra-match-name" value="${esc(active.name)}"></div><div style="margin-top:8px">${criteria}</div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-match-save">Save Profile</button></div>`) }${panel('Known / Unknown','How Match handles incomplete candidate data',`<div class="ra-muted">Enabled criteria with unknown candidate values are excluded from the denominator. Smart Match recalculation is local and never calls Torn.</div>`)}`;}
+  async function renderSmartMatch(){const profiles=(await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile);const active=await getActiveMatchProfile(true);const criteria=MatchCore.CRITERIA_KEYS.map(key=>criterionControl(key,active.criteria[key])).join('');return `${panel('Smart Match','Local-only matching · zero Torn API calls',`<div class="ra-actions"><select id="ra-match-profile-select" class="ra-btn">${profiles.map(p=>`<option value="${esc(p.profileId)}" ${p.profileId===active.profileId?'selected':''}>${esc(p.name)}</option>`).join('')}</select><button class="ra-btn" id="ra-match-new">Create</button><button class="ra-btn" id="ra-match-duplicate">Duplicate</button><button class="ra-btn ra-danger" id="ra-match-delete">Delete</button></div><div class="ra-field" style="margin-top:8px"><label>Profile name</label><input id="ra-match-name" value="${esc(active.name)}"></div><div style="margin-top:8px">${criteria}</div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-match-save">Save Profile</button></div>`) }${panel('Known / Unknown','How Match handles incomplete candidate data',`<div class="ra-muted">Enabled criteria with unknown candidate values are excluded from the denominator. Smart Match recalculation is local and never calls Torn.</div>`)}`;}
 
   async function renderGlobal(){const pending=(await idb.getAll('globalSyncQueue')).length;return `${panel('Global Intelligence','Sanitized shared public-player observations',`<div class="ra-detail-grid"><span>Enabled<b>${state.settings.global.enabled?'Yes':'No'}</b></span><span>Endpoint<b>${globalEndpoint()?'Configured':'Not configured'}</b></span><span>Pending queue<b>${pending}</b></span><span>Schema<b>${GlobalCore.GLOBAL_SCHEMA_VERSION}</b></span></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" id="ra-global-test">Test Service</button><button class="ra-btn" id="ra-global-retry">Retry Sync</button></div>`) }${panel('Privacy','Exactly what can leave the browser',`<div class="ra-muted">Shared fields: ${esc(GlobalCore.GLOBAL_FIELDS.join(', '))}.</div><p class="ra-muted">Forum text, source URLs/history, pipeline stage, notes, salary, availability overrides, Match/Profile data, recruitment messages and workflow state remain local.</p>`)}`;}
 
   function settingsSection(title,id,body,help=''){return `<details data-settings-section="${esc(id)}"><summary>${esc(title)} ${help?helpButton(help):''}</summary><div class="ra-settings-body">${body}</div></details>`;}
   function colorSettings(){const stages=Runtime.PIPELINE_STAGES.map(s=>`<label class="ra-color-row"><input type="color" data-stage-color="${esc(s)}" value="${esc(stageColor(s))}"> ${esc(s)}</label>`).join('');const availability=Runtime.AVAILABILITY_VALUES.map(v=>`<label class="ra-color-row"><input type="color" data-availability-color="${esc(v)}" value="${esc(availabilityColor(v))}"> ${esc(v)}</label>`).join('');return `<div class="ra-color-grid">${stages}${availability}</div><div class="ra-actions"><button class="ra-btn" id="ra-reset-colors">Reset Colours</button></div>`;}
   function optionalModuleSettingsHtml(){return `<div class="ra-note" style="margin-bottom:8px">Search & Results stays available. Enable only the extra workspaces you actually use.</div><div class="ra-optional-grid">${OPTIONAL_MODULES.map(([key,label])=>`<label class="ra-optional-toggle"><input type="checkbox" data-optional-module="${esc(key)}" ${state.settings.optionalModules?.[key]===true?'checked':''}><span>${esc(label)}</span></label>`).join('')}</div>`;}
-  async function renderSettings(){const r=state.settings.recruitment;return `<div class="ra-settings">${settingsSection('General','general',`<div class="ra-formgrid"><div class="ra-field"><label>Theme</label><select id="ra-setting-theme"><option value="dark">Dark</option><option value="light">Light</option></select></div><div class="ra-field"><label>Density</label><select id="ra-setting-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div class="ra-field"><label>Interface text size</label><select id="ra-setting-text"><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option></select></div><div class="ra-field"><label>Interface mode</label><select id="ra-setting-complexity"><option value="simple">Simple</option><option value="advanced">Advanced</option></select></div><div class="ra-field"><label>Launcher</label><select id="ra-setting-launcher"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Sidebar</label><select id="ra-setting-sidebar"><option value="false">Expanded</option><option value="true">Collapsed</option></select></div><div class="ra-field"><label>Include inactive candidates</label><select id="ra-setting-inactive"><option value="false">No</option><option value="true">Yes</option></select></div></div>`)}${settingsSection('Optional Features','optional-features',optionalModuleSettingsHtml())}${settingsSection('Recruitment','recruitment',`<div class="ra-formgrid"><div class="ra-field"><label>Company thread</label><input id="ra-setting-company-thread" value="${esc(r.companyThreadId)}"></div><div class="ra-field"><label>Faction thread</label><input id="ra-setting-faction-thread" value="${esc(r.factionThreadId)}"></div><div class="ra-field"><label>Training thread</label><input id="ra-setting-training-thread" value="${esc(r.trainingThreadId)}"></div><div class="ra-field"><label>Recent import window (days)</label><input id="ra-setting-import-days" type="number" min="1" value="${r.recentImportDays}"></div><div class="ra-field"><label>Max pages / feed</label><input id="ra-setting-max-pages" type="number" min="1" value="${r.maxPagesPerFeed}"></div><div class="ra-field"><label>Candidate active age (days)</label><input id="ra-setting-active-age" type="number" min="1" value="${r.candidateActiveAgeDays}"></div><div class="ra-field"><label>Train buyers</label><select id="ra-setting-train-explicit"><option value="true">Explicit only</option><option value="false">All parsed train interest</option></select></div><div class="ra-field" style="grid-column:1/-1"><b>Company recruitment</b><div class="ra-note">Recruit performs a fresh Torn check before preparing private chat.</div></div><div class="ra-field"><label>Company name</label><input id="ra-setting-own-company" value="${esc(state.settings.ownCompanyName)}" placeholder="Bad Decisions"></div><div class="ra-field"><label>Company type</label><input id="ra-setting-company-type" value="${esc(r.companyType)}" placeholder="Adult Novelties"></div><div class="ra-field" style="grid-column:1/-1"><label>Company recruitment private-chat message</label><textarea id="ra-setting-company-message" style="min-height:150px">${esc(r.companyRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {company_name} {company_type}</div></div><div class="ra-field" style="grid-column:1/-1"><b>Faction recruitment</b></div><div class="ra-field"><label>Faction name</label><input id="ra-setting-faction-name" value="${esc(r.factionName)}" placeholder="Silent Ledger"></div><div class="ra-field" style="grid-column:1/-1"><label>Faction recruitment private-chat message</label><textarea id="ra-setting-faction-message" style="min-height:150px">${esc(r.factionRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {faction_name}</div></div><input type="hidden" id="ra-setting-default-message" value="${esc(r.defaultMessage)}"></div>${colorSettings()}`,'defaultMessage')}${settingsSection('Scout','scout',`<div class="ra-formgrid"><div class="ra-field"><label>API calls/min (max 75)</label><input id="ra-setting-rate" type="number" min="10" max="75" value="${state.settings.scout.rate}"></div><div class="ra-field"><label>Workers</label><input id="ra-setting-workers" type="number" min="1" max="8" value="${state.settings.scout.workers}"></div><div class="ra-field"><label>Request budget</label><input id="ra-setting-budget" type="number" min="1" value="${state.settings.scout.budget}"></div><div class="ra-field"><label>History gap ms</label><input id="ra-setting-history-gap" type="number" min="0" value="${state.settings.scout.historyGapMs}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-set-key">Set / Change API Key</button><button class="ra-btn" id="ra-cache-diagnostic">Diagnostics</button></div>`)}${settingsSection('Candidates','candidates',`<div class="ra-formgrid"><div class="ra-field"><label>Default view</label><select id="ra-setting-candidate-view"><option value="table">Table</option><option value="cards">Cards</option></select></div><div class="ra-field"><label>Compactness</label><select id="ra-setting-candidate-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div></div><div class="ra-actions"><button class="ra-btn" id="ra-reset-layout">Reset Layout</button></div>`)}${settingsSection('Smart Match','smart-match',`<div class="ra-muted">Smart Match profiles are edited on the Smart Match page.</div><div class="ra-actions"><button class="ra-btn" data-go-page="smart-match">Open Smart Match</button></div>`)}${settingsSection('Global Intelligence','global',`<div class="ra-formgrid"><div class="ra-field"><label>Enabled</label><select id="ra-setting-global-enabled"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Endpoint</label><input id="ra-setting-global-endpoint" value="${esc(state.settings.global.endpoint)}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-setting-global-test">Test</button><button class="ra-btn" id="ra-setting-global-retry">Retry</button></div>`)}${settingsSection('Data & Reset','data',`<div class="ra-actions"><button class="ra-btn" id="ra-reset-layout-2">Reset Layout</button><button class="ra-btn" id="ra-clear-scout">Clear Scout Cache</button><button class="ra-btn" id="ra-clear-recruitment">Clear Local Candidate / Forum Data</button></div>`,'data')}<details class="ra-danger-zone" data-settings-section="danger"><summary>Danger Zone</summary><div class="ra-settings-body"><p class="ra-muted">Hard local reset deletes Recruitment Agency browser-local data only. Torn account data and unrelated userscripts are untouched.</p><button type="button" id="ra-nuke" class="ra-nuke">${biohazardSvg()}<span>NUKE IT ALL!</span></button></div></details><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-save-settings">Save Settings</button></div></div>`;}
+  async function renderSettings(){const r=state.settings.recruitment;return `<div class="ra-settings">${settingsSection('General','general',`<div class="ra-formgrid"><div class="ra-field"><label>Theme</label><select id="ra-setting-theme"><option value="dark">Dark</option><option value="light">Light</option></select></div><div class="ra-field"><label>Density</label><select id="ra-setting-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div class="ra-field"><label>Interface text size</label><select id="ra-setting-text"><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option></select></div><div class="ra-field"><label>Interface mode</label><select id="ra-setting-complexity"><option value="simple">Simple</option><option value="advanced">Advanced</option></select></div><div class="ra-field"><label>Launcher</label><select id="ra-setting-launcher"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Sidebar</label><select id="ra-setting-sidebar"><option value="false">Expanded</option><option value="true">Collapsed</option></select></div><div class="ra-field"><label>Include inactive candidates</label><select id="ra-setting-inactive"><option value="false">No</option><option value="true">Yes</option></select></div></div>`)}${settingsSection('Optional Features','optional-features',optionalModuleSettingsHtml())}${settingsSection('Recruitment','recruitment',`<div class="ra-formgrid"><div class="ra-field"><label>Company thread</label><input id="ra-setting-company-thread" value="${esc(r.companyThreadId)}"></div><div class="ra-field"><label>Faction thread</label><input id="ra-setting-faction-thread" value="${esc(r.factionThreadId)}"></div><div class="ra-field"><label>Training thread</label><input id="ra-setting-training-thread" value="${esc(r.trainingThreadId)}"></div><div class="ra-field"><label>Recent import window (days)</label><input id="ra-setting-import-days" type="number" min="1" value="${r.recentImportDays}"></div><div class="ra-field"><label>Max pages / feed</label><input id="ra-setting-max-pages" type="number" min="1" value="${r.maxPagesPerFeed}"></div><div class="ra-field"><label>Candidate active age (days)</label><input id="ra-setting-active-age" type="number" min="1" value="${r.candidateActiveAgeDays}"></div><div class="ra-field"><label>Train buyers</label><select id="ra-setting-train-explicit"><option value="true">Explicit only</option><option value="false">All parsed train interest</option></select></div><div class="ra-field" style="grid-column:1/-1"><b>Company recruitment</b><div class="ra-note">Recruit performs a fresh Torn check before preparing private chat.</div></div><div class="ra-field"><label>Company name</label><input id="ra-setting-own-company" value="${esc(state.settings.ownCompanyName)}" placeholder="Bad Decisions"></div><div class="ra-field"><label>Company type</label><input id="ra-setting-company-type" value="${esc(r.companyType)}" placeholder="Adult Novelties"></div><div class="ra-field" style="grid-column:1/-1"><label>Company recruitment private-chat message</label><textarea id="ra-setting-company-message" style="min-height:150px">${esc(r.companyRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {company_name} {company_type}</div></div><div class="ra-field" style="grid-column:1/-1"><b>Faction recruitment</b></div><div class="ra-field"><label>Faction name</label><input id="ra-setting-faction-name" value="${esc(r.factionName)}" placeholder="Silent Ledger"></div><div class="ra-field" style="grid-column:1/-1"><label>Faction recruitment private-chat message</label><textarea id="ra-setting-faction-message" style="min-height:150px">${esc(r.factionRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {faction_name}</div></div><input type="hidden" id="ra-setting-default-message" value="${esc(r.defaultMessage)}"></div>${colorSettings()}`,'defaultMessage')}${settingsSection('Scout','scout',`<div class="ra-formgrid"><div class="ra-field"><label>API calls/min (max 75)</label><input id="ra-setting-rate" type="number" min="10" max="75" value="${state.settings.scout.rate}"></div><div class="ra-field"><label>Workers</label><input id="ra-setting-workers" type="number" min="1" max="8" value="${state.settings.scout.workers}"></div><div class="ra-field"><label>Request budget</label><input id="ra-setting-budget" type="number" min="1" value="${state.settings.scout.budget}"></div><div class="ra-field"><label>History gap ms</label><input id="ra-setting-history-gap" type="number" min="0" value="${state.settings.scout.historyGapMs}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-set-key">Set / Change API Key</button><button class="ra-btn" id="ra-cache-diagnostic">Diagnostics</button></div>`)}${settingsSection('Candidates','candidates',`<div class="ra-formgrid"><div class="ra-field"><label>Default view</label><select id="ra-setting-candidate-view"><option value="table">Table</option><option value="cards">Cards</option></select></div><div class="ra-field"><label>Results layout</label><select id="ra-setting-results-layout"><option value="expanded">Expanded table</option><option value="compact">Compact table · details in Player Card</option></select></div><div class="ra-field"><label>Compactness</label><select id="ra-setting-candidate-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div class="ra-field"><label>Player name click</label><select id="ra-setting-player-card-name"><option value="true">Open Player Card</option><option value="false">Do nothing</option></select></div><div class="ra-field"><label>Player Card pop-out</label><select id="ra-setting-player-card-popout"><option value="true">Allowed</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Remember open Player Card</label><select id="ra-setting-player-card-remember"><option value="true">Yes</option><option value="false">No</option></select></div></div><div class="ra-note" style="margin:8px 0">Compact results keep the table minimal; the hidden intelligence remains available in the context-sensitive Player Card. Company and Faction never share private workflow state.</div><div class="ra-actions"><button class="ra-btn" id="ra-reset-layout">Reset Layout</button></div>`)}${settingsSection('Smart Match','smart-match',`<div class="ra-muted">Smart Match profiles are edited on the Smart Match page.</div><div class="ra-actions"><button class="ra-btn" data-go-page="smart-match">Open Smart Match</button></div>`)}${settingsSection('Global Intelligence','global',`<div class="ra-formgrid"><div class="ra-field"><label>Enabled</label><select id="ra-setting-global-enabled"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Endpoint</label><input id="ra-setting-global-endpoint" value="${esc(state.settings.global.endpoint)}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-setting-global-test">Test</button><button class="ra-btn" id="ra-setting-global-retry">Retry</button></div>`)}${settingsSection('Data & Reset','data',`<div class="ra-actions"><button class="ra-btn" id="ra-reset-layout-2">Reset Layout</button><button class="ra-btn" id="ra-clear-scout">Clear Scout Cache</button><button class="ra-btn" id="ra-clear-recruitment">Clear Local Candidate / Forum Data</button></div>`,'data')}<details class="ra-danger-zone" data-settings-section="danger"><summary>Danger Zone</summary><div class="ra-settings-body"><p class="ra-muted">Hard local reset deletes Recruitment Agency browser-local data only. Torn account data and unrelated userscripts are untouched.</p><button type="button" id="ra-nuke" class="ra-nuke">${biohazardSvg()}<span>NUKE IT ALL!</span></button></div></details><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-save-settings">Save Settings</button></div></div>`;}
 
   async function renderData(){const candidates=await idb.getAll('candidateLocal'),sources=await idb.getAll('forumSources'),logs=await idb.getAll('appLogs');return `${panel('Local Data','IndexedDB store summary',`<div class="ra-detail-grid"><span>DB version<b>${DB_VERSION}</b></span><span>Candidates<b>${candidates.length}</b></span><span>Forum sources<b>${sources.length}</b></span><span>Logs<b>${logs.length}</b></span></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" id="ra-export-csv">Export Candidate CSV</button><button class="ra-btn" id="ra-data-clear-candidates">Clear Candidate / Forum Data</button></div>`,'data')}`;}
   async function renderLogs(){const logs=(await idb.getAll('appLogs')).sort((a,b)=>b.at-a.at).slice(0,200);return `${panel('Application Logs','Sanitized events only',`<div class="ra-actions"><button class="ra-btn" id="ra-refresh-logs">Refresh</button><button class="ra-btn" id="ra-clear-logs">Clear Logs</button></div><div class="ra-log" style="margin-top:8px">${logs.map(x=>`[${new Date(x.at).toLocaleString()}] ${esc(String(x.type).toUpperCase())} ${esc(x.message)}`).join('\n')||'No log entries.'}</div>`,'logs')}`;}
@@ -5598,9 +6128,11 @@
   function defaultDomainRoute(){return `${state.settings.activeDomain==='faction'?'faction':'company'}-candidates`;}
   async function route(page,persist=true){
     const requested=String(page||'').trim().toLowerCase();
+    const previousPage=state.page;
     if(!V46Navigation.ROUTES.includes(requested)||(requested!=='settings'&&!visibleRouteSet().has(requested))||(requested==='logs'&&state.settings.complexity!=='advanced'))return false;
     if(requested===state.page&&persist){document.querySelector('.ra-shell')?.classList.remove('sidebar-open');return true;}
     state.page=requested;
+    if(requested!==previousPage&&state.settings.candidates?.playerCard?.rememberPanel===false){const drawer=document.getElementById('ra-drawer');if(drawer)drawer.hidden=true;state.drawerCandidateId='';state.playerCard={...state.playerCard,userId:'',pinned:false};}
     if(persist)await saveSettings({activePage:state.page});
     if(V46CompanyPlatform._test.IMPLEMENTED_ROUTES.has(state.page)){
       rebuildNav();
@@ -5628,7 +6160,7 @@
     if(state.page==='logs')startLogRefresh();else stopLogRefresh();
   }
 
-  async function saveCandidate(candidate){candidate.userId=String(candidate.userId);candidate.updatedAt=new Date().toISOString();await idb.put('candidateLocal',candidate);await repositories.company.ensure(candidate.userId,candidate,{sharedPatch:{name:candidate.name},source:'company-workflow',observedAt:Date.now()});return candidate;}
+  async function saveCandidate(candidate){candidate.userId=String(candidate.userId);candidate.updatedAt=new Date().toISOString();await idb.put('candidateLocal',candidate);await repositories.company.ensure(candidate.userId,candidate,{source:'company-workflow',observedAt:Date.now(),skipShared:true});return candidate;}
   async function changeCandidateStage(id,stage){const candidate=await idb.get('candidateLocal',String(id))||await idb.get('candidateLocal',Number(id));if(!candidate)return;await saveCandidate(Candidates.changeStage(candidate,stage));await logEvent('candidate','Pipeline stage changed',{playerId:Number(id),stage:ForumCore.normalizeStage(stage)});}
   async function changeCandidateAvailability(id,value){const candidate=await idb.get('candidateLocal',String(id))||await idb.get('candidateLocal',Number(id));if(!candidate)return;await saveCandidate(Candidates.changeAvailability(candidate,value));}
   async function deleteCompanyCandidateData(id){const userId=V46Domain.normalizeUserId(id);await idb.delete('candidateLocal',userId);await idb.delete('candidateLocal',Number(userId));await idb.delete('companyRecruitment',userId);for(const row of await idb.getAll('users'))if(text(row.userId)===userId&&text(row.sourceMode).toLowerCase()!=='faction')await idb.delete('users',row.recordId);for(const source of await idb.getAll('forumSources'))if(text(source.userId)===userId&&text(source.sourceType).toUpperCase()!=='FACTION FORUM')await idb.delete('forumSources',source.sourceId);return true;}
@@ -5638,6 +6170,112 @@
   async function openContextMenu(id,x,y){const views=await candidateViews();const view=views.find(v=>String(v.userId)===String(id));if(!view)return;state.contextCandidateId=String(id);const menu=document.getElementById('ra-context');menu.innerHTML=contextMenuHtml(view);menu.hidden=false;const width=240,height=Math.min(500,menu.scrollHeight||400);menu.style.left=`${Math.max(4,Math.min(x,innerWidth-width-4))}px`;menu.style.top=`${Math.max(4,Math.min(y,innerHeight-height-4))}px`;menu.querySelectorAll('[data-submenu]').forEach(b=>b.onclick=()=>{const box=menu.querySelector(`[data-submenu-box="${b.dataset.submenu}"]`);if(box)box.hidden=!box.hidden;});menu.querySelectorAll('[data-menu-action]').forEach(b=>b.onclick=()=>handleMenuAction(b.dataset.menuAction,view));menu.querySelector('.ra-menu-item:not([disabled])')?.focus();}
   function closeContextMenu(){const menu=document.getElementById('ra-context');if(menu)menu.hidden=true;state.contextCandidateId='';}
   async function handleMenuAction(action,view){closeContextMenu();if(action==='message')return openMessageModal(view.userId);if(action==='details')return openDrawer(view.userId);if(action==='profile')return window.open(profileUrl(view.userId),'_blank','noopener');if(action==='forum'&&view.forumUrl)return window.open(view.forumUrl,'_blank','noopener');if(action==='scout')return runScout([Number(view.userId)],true).catch(e=>toast(e.message,true));if(action==='edit')return openEditCandidateModal(view.userId);if(action==='delete')return deleteCandidate(view.userId);if(action.startsWith('stage:')){await changeCandidateStage(view.userId,action.slice(6));return route(state.page,false);}if(action.startsWith('availability:')){await changeCandidateAvailability(view.userId,action.slice(13));return route(state.page,false);}}
+
+  function contactStateFromStage(stage,outcomes=[]){if(Array.isArray(outcomes)&&outcomes.length)return 'Contacted';const value=text(stage).toLowerCase();return ['contacted','replied','hired','joined','invite ready','evaluating'].includes(value)?'Contacted':'Not yet';}
+  async function setCompanyWatchlist(userId,enabled){
+    const id=V46Domain.normalizeUserId(userId);
+    const existing=await idb.get('companyRecruitment',id);
+    if(!existing)throw new Error('Company candidate was not found.');
+    const reason=enabled?(text(existing.talentPoolReason)||'Watched from Player Card'):'';
+    const next=V46CompanyWorkflow.setTalentPool(existing,enabled,reason,Date.now());
+    await idb.put('companyRecruitment',next);
+    return next;
+  }
+  function matchProfileRequirements(profile={}){
+    const criteria=profile?.criteria||{},requirements={};
+    for(const [key,target] of [['man','minMan'],['int','minInt'],['end','minEnd']]){
+      const criterion=criteria[key];
+      const value=criterion?.enabled===true?finite(criterion.target):null;
+      if(value!==null&&value>0)requirements[target]=value;
+    }
+    return requirements;
+  }
+  async function openPlayerCard(domain,id,options={}){
+    if(state.settings.candidates?.playerCard?.openOnName===false&&!options.force)return false;
+    const normalizedDomain=text(domain).toLowerCase()==='faction'?'faction':'company';
+    const userId=V46Domain.normalizeUserId(id);
+    if(state.playerCard.pinned&&state.playerCard.userId&&state.playerCard.userId!==userId&&!options.force)return false;
+    const [player,domainRecord,candidate,activeMatchProfile,factionConfig,factionProfiles]=await Promise.all([
+      idb.get('playerIntelligence',userId),
+      idb.get(normalizedDomain==='faction'?'factionRecruitment':'companyRecruitment',userId),
+      idb.get('candidateLocal',userId),
+      normalizedDomain==='company'?getActiveMatchProfile():Promise.resolve(null),
+      normalizedDomain==='faction'?factionRepositories.config.get():Promise.resolve(null),
+      normalizedDomain==='faction'?factionRepositories.profiles.list():Promise.resolve([])
+    ]);
+    const shared=player||{};
+    const local=candidate||{};
+    const record=domainRecord||{};
+    const drawer=document.getElementById('ra-drawer');
+    if(!drawer)return false;
+    const name=text(shared.name)||text(local.name)||`User ${userId}`;
+    const level=finite(shared.level);
+    const age=finite(shared.age);
+    const networth=finite(shared.networth);
+    const xanax30=finite(shared.xanax30);
+    const attacks30=finite(shared.attacks30);
+    const rwHits30=finite(shared.rwHits30);
+    const man=shared.man??local.stats?.man??local.man??null;
+    const intStat=shared.int??local.stats?.int??local.int??null;
+    const end=shared.end??local.stats?.end??local.end??null;
+    const activity30=shared.activity30??null;
+    const streak=shared.activestreak??shared.activeStreak??null;
+    const scoutFit=shared.fit??null;
+    const lastActive=shared.lastActive??null;
+    const sources=[...new Set([...(Array.isArray(record.discoverySources)?record.discoverySources:[]),...(Array.isArray(local.discoverySources)?local.discoverySources:[]),text(local.sourceType)].filter(Boolean))];
+    const stage=text(record.pipelineStage)||(normalizedDomain==='faction'?'Prospect':'Not Contacted');
+    const company=text(shared.currentCompany)||'—';
+    const faction=text(shared.currentFaction||shared.factionName)||((shared.factionId??null)!==null?`Faction #${shared.factionId}`:'—');
+    const orgLabel=normalizedDomain==='company'?'Current Company':'Current Faction';
+    const orgValue=normalizedDomain==='company'?company:faction;
+    const statusLabel=normalizedDomain==='company'?'Company Status':'Faction Status';
+    const fitLabel='Scout Fit';
+    const lastText=finite(lastActive)===null?'—':lastActiveText({lastActive});
+    const intelligenceRow={
+      userId,name,level,age,man,int:intStat,end,networth,xanax30,attacks30,rwHits30,activity30,activeStreak:streak,fit:scoutFit,lastActive,
+      currentCompany:shared.currentCompany,currentFaction:shared.currentFaction||shared.factionName,
+      pipelineStage:stage,candidateLocal:local,playerRecord:shared,player:shared,
+      companyRecord:normalizedDomain==='company'?record:undefined,
+      factionRecord:normalizedDomain==='faction'?record:undefined
+    };
+    const activeFactionProfileId=normalizedDomain==='faction'?text(factionConfig?.activeResultsProfileId):'';
+    const activeFactionProfile=activeFactionProfileId?(factionProfiles||[]).find(profile=>text(profile.profileId)===activeFactionProfileId):null;
+    if(activeFactionProfile){
+      const profileEvaluation=V47FactionCore.evaluateSpecialistProfile(activeFactionProfile,shared,Array.isArray(record.waivers)?record.waivers:[]);
+      intelligenceRow.eligibilityScore=profileEvaluation.matchScore;
+    }
+    const recruitmentIntelligence=ResultsCore.recruitmentFit(intelligenceRow,{domain:normalizedDomain,useEligibility:normalizedDomain==='faction'?Boolean(activeFactionProfile):false,requirements:normalizedDomain==='company'?matchProfileRequirements(activeMatchProfile||{}):{}});
+    const recruitmentFit=recruitmentIntelligence.score;
+    const recruitmentConfidence=recruitmentIntelligence.confidence;
+    const provenance=recruitmentIntelligence.provenance;
+    const displayedObservedAt=shared.lastObservedAt??null;
+    const factionIntelHtml=normalizedDomain==='faction'?`<div class="ra-detail-section"><b>Faction Intelligence</b><div class="ra-detail-grid"><span>Net Worth<b>${formatNumber(networth)}</b></span><span>Xanax 30d<b>${formatNumber(xanax30)}</b></span><span>Attacks 30d<b>${formatNumber(attacks30)}</b></span><span>RW Hits 30d<b>${formatNumber(rwHits30)}</b></span></div></div>`:'';
+    const fitBreakdownHtml=recruitmentIntelligence.components.map(component=>`<div class="ra-detail-grid"><span>${esc(component.label)}<b>${component.known?`${Math.round(component.factor*100)}% · ${component.points.toFixed(1)} pts`:'Unknown'}</b></span><span>Why<b>${esc(component.reason||'—')}</b></span></div>`).join('');
+    state.playerCard={domain:normalizedDomain,userId,pinned:state.playerCard.pinned,popout:state.playerCard.popout};
+    state.drawerCandidateId=userId;
+    drawer.classList.toggle('is-popout',state.playerCard.popout);
+    drawer.innerHTML=`<div class="ra-drawer-head"><div class="ra-player-card-title"><div><div class="ra-player-card-domain">${esc(normalizedDomain)} player card</div><b>${esc(name)}</b><div class="ra-muted">Player ID ${esc(userId)} · ${esc(provenance.state)}</div></div>${finite(recruitmentFit)!==null?`<span class="ra-player-card-score" title="Explainable Recruitment Fit · ${esc(recruitmentConfidence)} confidence">${Number(recruitmentFit).toFixed(1)} · ${esc(recruitmentConfidence)}</span>`:''}</div><button class="ra-btn" id="ra-close-drawer">×</button></div><div class="ra-detail-section"><b>Player</b><div class="ra-detail-grid"><span>Level<b>${level===null?'—':formatNumber(level)}</b></span><span>Age<b>${formatNumber(age)}</b></span><span>Last Action<b>${esc(lastText)}</b></span><span>MAN<b>${formatNumber(man)}</b></span><span>INT<b>${formatNumber(intStat)}</b></span><span>END<b>${formatNumber(end)}</b></span><span>30d Activity<b>${formatNumber(activity30,1)}</b></span><span>Activity Streak<b>${formatNumber(streak)}</b></span><span>${fitLabel}<b>${scoreText(scoutFit)}</b></span></div></div><div class="ra-detail-section"><b>${statusLabel}</b><div class="ra-detail-grid"><span>${orgLabel}<b>${esc(orgValue)}</b></span><span>Recruitment Stage<b>${esc(stage)}</b></span><span>Contacted<b>${esc(contactStateFromStage(stage,record.outcomes))}</b></span><span>Availability<b>${esc(record.availability||'Unknown')}</b></span></div></div>${factionIntelHtml}<div class="ra-detail-section"><b>Recruitment Fit</b><div class="ra-detail-grid"><span>Score<b>${finite(recruitmentFit)===null?'—':Number(recruitmentFit).toFixed(1)}</b></span><span>Confidence<b>${esc(recruitmentConfidence)}</b></span><span>Profile<b>${normalizedDomain==='company'?esc(activeMatchProfile?.name||'No profile'):esc(activeFactionProfile?.name||'Faction default')}</b></span><span>Prospect State<b>${esc(provenance.state)}</b></span><span>Freshness<b>${esc(provenance.freshness)}</b></span></div>${fitBreakdownHtml}</div><div class="ra-detail-section"><b>Provenance</b><div class="ra-detail-grid"><span>Sources<b>${esc((provenance.sources||[]).join(' · ')||sources.join(' · ')||'Unknown')}</b></span><span>First Discovered<b>${provenance.firstDiscoveredAt?esc(dateOrDash(provenance.firstDiscoveredAt)):'—'}</b></span><span>Last Observed<b>${displayedObservedAt?esc(dateOrDash(displayedObservedAt)):'—'}</b></span><span>Last Enriched<b>${provenance.lastEnrichedAt?esc(dateOrDash(provenance.lastEnrichedAt)):'—'}</b></span></div><div class="ra-note">Player Card reads existing browser-local intelligence. Opening it does not make a Torn API request. Scout Fit remains a separate activity metric.</div></div><div class="ra-player-card-actions"><button class="ra-btn ${record.doNotContact===true?'ra-danger':'ra-primary'}" id="ra-card-recruit" ${record.doNotContact===true?'disabled title="Do Not Contact is set for this recruitment domain"':''}>${record.doNotContact===true?'Do Not Contact':'Recruit'}</button>${normalizedDomain==='company'?`<button class="ra-btn" id="ra-card-watch">${record.talentPool===true?'Unwatch':'Watch'}</button>`:''}<button class="ra-btn" id="ra-card-refresh">Refresh Intelligence</button><button class="ra-btn" id="ra-card-profile">Open Profile</button><button class="ra-btn" id="ra-card-popout">${state.playerCard.popout?'Dock':'Pop Out'}</button><button class="ra-btn" id="ra-card-pin">${state.playerCard.pinned?'Unpin':'Pin'}</button></div>`;
+    drawer.hidden=false;
+    const close=()=>{drawer.hidden=true;state.drawerCandidateId='';if(!state.playerCard.pinned)state.playerCard.userId='';};
+    document.getElementById('ra-close-drawer').onclick=close;
+    const recruitButton=document.getElementById('ra-card-recruit');if(record.doNotContact!==true)recruitButton.onclick=async()=>{try{const latest=await idb.get(normalizedDomain==='faction'?'factionRecruitment':'companyRecruitment',userId);if(latest?.doNotContact===true)throw new Error('Do Not Contact is set for this recruitment domain.');await recruitCandidate(normalizedDomain,userId,name);}catch(error){toast(error.message,true);}};
+    const watchButton=document.getElementById('ra-card-watch');
+    if(watchButton)watchButton.onclick=async()=>{
+      try{const next=await setCompanyWatchlist(userId,record.talentPool!==true);record.talentPool=next.talentPool;await openPlayerCard('company',userId,{force:true});}
+      catch(error){toast(error.message,true);}
+    };
+    const refreshButton=document.getElementById('ra-card-refresh');
+    refreshButton.onclick=async()=>{
+      try{refreshButton.disabled=true;refreshButton.textContent='Refreshing…';await runScout([Number(userId)],true);await openPlayerCard(normalizedDomain,userId,{force:true});}
+      catch(error){toast(error.message,true);}
+      finally{if(refreshButton?.isConnected){refreshButton.disabled=false;refreshButton.textContent='Refresh Intelligence';}}
+    };
+    document.getElementById('ra-card-profile').onclick=()=>window.open(profileUrl(userId),'_blank','noopener');
+    const popoutButton=document.getElementById('ra-card-popout');if(state.settings.candidates?.playerCard?.allowPopout===false){popoutButton.disabled=true;popoutButton.title='Enable Player Card pop-out in Settings';}else popoutButton.onclick=()=>{state.playerCard.popout=!state.playerCard.popout;openPlayerCard(normalizedDomain,userId,{force:true}).catch(error=>toast(error.message,true));};
+    document.getElementById('ra-card-pin').onclick=()=>{state.playerCard.pinned=!state.playerCard.pinned;openPlayerCard(normalizedDomain,userId,{force:true}).catch(error=>toast(error.message,true));};
+    return true;
+  }
+  function dateOrDash(value){const n=Number(value);if(Number.isFinite(n)&&n>0)return new Date(n).toLocaleString();const parsed=Date.parse(value);return Number.isFinite(parsed)?new Date(parsed).toLocaleString():'—';}
 
   async function openDrawer(id){const views=await candidateViews();const v=views.find(x=>String(x.userId)===String(id));if(!v)return;state.drawerCandidateId=String(id);const drawer=document.getElementById('ra-drawer');drawer.innerHTML=`<div class="ra-drawer-head"><div><b>${esc(v.name)}</b><div class="ra-muted">${esc(v.userId)}</div></div><button class="ra-btn" id="ra-close-drawer">×</button></div><div class="ra-detail-section"><b>Identity</b><div class="ra-detail-grid"><span>Player<b>${esc(v.name)}</b></span><span>ID<b>${esc(v.userId)}</b></span><span>Current company<b>${esc(v.currentCompany||'—')}</b></span><span>Last active<b>${lastActiveText(v)}</b></span></div></div><div class="ra-detail-section"><b>Recruitment</b><div class="ra-detail-grid"><span>Stage<b>${pill(v.pipelineStage,stageColor(v.pipelineStage))}</b></span><span>Availability<b>${pill(v.availability,availabilityColor(v.availability))}</b></span><span>Salary<b>${money(v.expectedSalary)}</b></span><span>Source<b>${esc(v.sourceType||'MANUAL')}</b></span></div><div class="ra-note">${esc(v.recruiterNote||'No recruiter note.')}</div></div><div class="ra-detail-section"><b>Intelligence</b><div class="ra-detail-grid"><span>Match<b>${scoreText(v.matchScore)}</b></span><span>Fit<b>${scoreText(v.fitScore)}</b></span><span>EE<b>${formatNumber(v.ee)}</b></span><span>MAN / INT / END<b>${formatNumber(v.man)} / ${formatNumber(v.int)} / ${formatNumber(v.end)}</b></span></div></div><div class="ra-detail-section"><b>Looking For</b><div>${esc(v.lookingFor)}</div></div><div class="ra-detail-section"><b>Forum Source</b><div>${v.forumUrl?`<a class="ra-link" target="_blank" rel="noopener" href="${esc(v.forumUrl)}">Open latest source</a>`:'No forum source URL.'}</div></div><div class="ra-actions" style="margin-top:10px"><button class="ra-btn ra-primary" id="ra-drawer-message">Message Player</button><button class="ra-btn" id="ra-drawer-profile">Open Torn Profile</button><button class="ra-btn" id="ra-drawer-scout">Scout Player</button><button class="ra-btn" id="ra-drawer-edit">Edit Candidate</button></div>`;drawer.hidden=false;document.getElementById('ra-close-drawer').onclick=()=>{drawer.hidden=true;state.drawerCandidateId='';};document.getElementById('ra-drawer-message').onclick=()=>openMessageModal(v.userId);document.getElementById('ra-drawer-profile').onclick=()=>window.open(profileUrl(v.userId),'_blank','noopener');document.getElementById('ra-drawer-scout').onclick=()=>runScout([Number(v.userId)],true).catch(e=>toast(e.message,true));document.getElementById('ra-drawer-edit').onclick=()=>openEditCandidateModal(v.userId);}
 
@@ -5649,7 +6287,8 @@
   function closeModal(){const modal=document.getElementById('ra-modal');if(modal){modal.hidden=true;modal.innerHTML='';}state.messageCandidateId='';}
 
   function candidateCsvRow(v){return[v.userId,v.name,v.pipelineStage,v.matchScore??'',v.fitScore??'',v.lookingFor,v.sourceType,v.currentCompany,v.availability,v.man??'',v.int??'',v.end??'',v.ee??''];}
-  async function exportCsv(){const rows=await candidateViews();const header=['Player ID','Name','Stage','Match','Fit','Looking For','Source','Current Company','Availability','MAN','INT','END','EE'];const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;const csv=[header,...rows.map(candidateCsvRow)].map(row=>row.map(quote).join(',')).join('\n');try{await navigator.clipboard.writeText(csv);toast(`Copied ${rows.length} candidate(s) as CSV.`);}catch{const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='recruitment-candidates.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}
+  function csvCell(value){let safe=String(value??'');if(/^\s*[=+\-@]/u.test(safe))safe=`'${safe}`;return `"${safe.replaceAll('"','""')}"`;}
+  async function exportCsv(){const rows=await candidateViews();const header=['Player ID','Name','Stage','Match','Fit','Looking For','Source','Current Company','Availability','MAN','INT','END','EE'];const csv=[header,...rows.map(candidateCsvRow)].map(row=>row.map(csvCell).join(',')).join('\n');try{await navigator.clipboard.writeText(csv);toast(`Copied ${rows.length} candidate(s) as CSV.`);}catch{const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='recruitment-candidates.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}
 
   async function hardReset(){if(!confirm('NUKE IT ALL will permanently delete Recruitment Agency browser-local candidates, forum imports, Scout cache/history, Global cache/queue, Match Profiles, logs, messages/settings and layout. Torn account data and unrelated userscripts are not touched. Continue?'))return;const typed=text(prompt('Type NUKE to confirm the hard local reset:','')).toUpperCase();if(typed!=='NUKE'){toast('Hard reset cancelled.',true);return;}for(const store of STORE_NAMES)await idb.clear(store);state.settings=mergeSettings({});state.page='company-candidates';applyTheme();rebuildNav();closeModal();document.getElementById('ra-drawer').hidden=true;await route('company-candidates',false);toast('Recruitment Agency local data was reset.');}
   async function clearRecruitmentData(){for(const store of ['users','candidateLocal','companyRecruitment','factionRecruitment','companyVacancies','companyCampaigns','companyRecruitmentConfig','companyRecruitmentSessions','factionSpecialistProfiles','factionCampaigns','factionRecruitmentConfig','factionRecruitmentSessions','forumSources','forumSyncState'])await idb.clear(store);return true;}
@@ -5671,18 +6310,18 @@
     return verdict;
   }
 
-  async function saveSettingsPage(){const optionalModules={...DEFAULT_OPTIONAL_MODULES};document.querySelectorAll('[data-optional-module]').forEach(el=>{optionalModules[el.dataset.optionalModule]=el.checked===true;});const stageColors={...state.settings.recruitment.stageColors};document.querySelectorAll('[data-stage-color]').forEach(el=>stageColors[el.dataset.stageColor]=el.value);const availabilityColors={...state.settings.recruitment.availabilityColors};document.querySelectorAll('[data-availability-color]').forEach(el=>availabilityColors[el.dataset.availabilityColor]=el.value);const recruitment=Runtime.normalizeRecruitmentSettings({...state.settings.recruitment,companyThreadId:text(document.getElementById('ra-setting-company-thread')?.value),factionThreadId:text(document.getElementById('ra-setting-faction-thread')?.value),trainingThreadId:text(document.getElementById('ra-setting-training-thread')?.value),recentImportDays:number(document.getElementById('ra-setting-import-days')?.value,30),maxPagesPerFeed:number(document.getElementById('ra-setting-max-pages')?.value,20),candidateActiveAgeDays:number(document.getElementById('ra-setting-active-age')?.value,30),explicitTrainBuyersOnly:document.getElementById('ra-setting-train-explicit')?.value!=='false',defaultMessage:document.getElementById('ra-setting-default-message')?.value,companyType:text(document.getElementById('ra-setting-company-type')?.value),companyRecruitmentMessage:document.getElementById('ra-setting-company-message')?.value,factionName:text(document.getElementById('ra-setting-faction-name')?.value),factionRecruitmentMessage:document.getElementById('ra-setting-faction-message')?.value,stageColors,availabilityColors});await saveSettings({theme:document.getElementById('ra-setting-theme')?.value||state.settings.theme,density:document.getElementById('ra-setting-density')?.value||state.settings.density,textSize:document.getElementById('ra-setting-text')?.value||state.settings.textSize,complexity:document.getElementById('ra-setting-complexity')?.value||state.settings.complexity,launcherEnabled:document.getElementById('ra-setting-launcher')?.value!=='false',sidebarCollapsed:document.getElementById('ra-setting-sidebar')?.value==='true',includeInactive:document.getElementById('ra-setting-inactive')?.value==='true',ownCompanyName:text(document.getElementById('ra-setting-own-company')?.value),optionalModules,recruitment,scout:{...state.settings.scout,rate:clampRate(document.getElementById('ra-setting-rate')?.value),workers:number(document.getElementById('ra-setting-workers')?.value,3),budget:number(document.getElementById('ra-setting-budget')?.value,900),historyGapMs:number(document.getElementById('ra-setting-history-gap')?.value,0)},candidates:{...state.settings.candidates,view:document.getElementById('ra-setting-candidate-view')?.value||state.settings.candidates.view},global:{...state.settings.global,enabled:document.getElementById('ra-setting-global-enabled')?.value!=='false',endpoint:text(document.getElementById('ra-setting-global-endpoint')?.value)}});applyTheme();syncLauncherVisibility();await route('settings',false);toast('Settings saved.');await logEvent('settings','Settings saved',{complexity:state.settings.complexity,theme:state.settings.theme});}
+  async function saveSettingsPage(){const optionalModules={...DEFAULT_OPTIONAL_MODULES};document.querySelectorAll('[data-optional-module]').forEach(el=>{optionalModules[el.dataset.optionalModule]=el.checked===true;});const stageColors={...state.settings.recruitment.stageColors};document.querySelectorAll('[data-stage-color]').forEach(el=>stageColors[el.dataset.stageColor]=el.value);const availabilityColors={...state.settings.recruitment.availabilityColors};document.querySelectorAll('[data-availability-color]').forEach(el=>availabilityColors[el.dataset.availabilityColor]=el.value);const recruitment=Runtime.normalizeRecruitmentSettings({...state.settings.recruitment,companyThreadId:text(document.getElementById('ra-setting-company-thread')?.value),factionThreadId:text(document.getElementById('ra-setting-faction-thread')?.value),trainingThreadId:text(document.getElementById('ra-setting-training-thread')?.value),recentImportDays:number(document.getElementById('ra-setting-import-days')?.value,30),maxPagesPerFeed:number(document.getElementById('ra-setting-max-pages')?.value,20),candidateActiveAgeDays:number(document.getElementById('ra-setting-active-age')?.value,30),explicitTrainBuyersOnly:document.getElementById('ra-setting-train-explicit')?.value!=='false',defaultMessage:document.getElementById('ra-setting-default-message')?.value,companyType:text(document.getElementById('ra-setting-company-type')?.value),companyRecruitmentMessage:document.getElementById('ra-setting-company-message')?.value,factionName:text(document.getElementById('ra-setting-faction-name')?.value),factionRecruitmentMessage:document.getElementById('ra-setting-faction-message')?.value,stageColors,availabilityColors});await saveSettings({theme:document.getElementById('ra-setting-theme')?.value||state.settings.theme,density:document.getElementById('ra-setting-density')?.value||state.settings.density,textSize:document.getElementById('ra-setting-text')?.value||state.settings.textSize,complexity:document.getElementById('ra-setting-complexity')?.value||state.settings.complexity,launcherEnabled:document.getElementById('ra-setting-launcher')?.value!=='false',sidebarCollapsed:document.getElementById('ra-setting-sidebar')?.value==='true',includeInactive:document.getElementById('ra-setting-inactive')?.value==='true',ownCompanyName:text(document.getElementById('ra-setting-own-company')?.value),optionalModules,recruitment,scout:{...state.settings.scout,rate:clampRate(document.getElementById('ra-setting-rate')?.value),workers:number(document.getElementById('ra-setting-workers')?.value,3),budget:number(document.getElementById('ra-setting-budget')?.value,900),historyGapMs:number(document.getElementById('ra-setting-history-gap')?.value,0)},candidates:{...state.settings.candidates,view:document.getElementById('ra-setting-candidate-view')?.value||state.settings.candidates.view,resultsLayout:document.getElementById('ra-setting-results-layout')?.value==='compact'?'compact':'expanded',playerCard:{...state.settings.candidates.playerCard,openOnName:document.getElementById('ra-setting-player-card-name')?.value!=='false',allowPopout:document.getElementById('ra-setting-player-card-popout')?.value!=='false',rememberPanel:document.getElementById('ra-setting-player-card-remember')?.value!=='false'}},global:{...state.settings.global,enabled:document.getElementById('ra-setting-global-enabled')?.value!=='false',endpoint:text(document.getElementById('ra-setting-global-endpoint')?.value)}});applyTheme();syncLauncherVisibility();await route('settings',false);toast('Settings saved.');await logEvent('settings','Settings saved',{complexity:state.settings.complexity,theme:state.settings.theme});}
 
   function bindPageControls(){
     document.getElementById('ra-sync')?.addEventListener('click',()=>syncForums().catch(e=>toast(e.message,true)));document.getElementById('ra-add-candidate')?.addEventListener('click',openAddCandidateModal);document.getElementById('ra-fill-companies')?.addEventListener('click',()=>fillCompanies().catch(e=>toast(e.message,true)));document.getElementById('ra-cancel-work')?.addEventListener('click',()=>{cancelSync();cancelFill();});document.getElementById('ra-discover-menu')?.addEventListener('click',()=>{const x=document.getElementById('ra-discover-more');if(x)x.hidden=!x.hidden;});document.querySelectorAll('[data-open-thread]').forEach(b=>b.onclick=()=>{const feed=Discovery.feedDefinitions(state.settings.recruitment).find(f=>f.feedId===b.dataset.openThread);if(feed?.threadId)window.open(forumThreadUrl(feed.threadId),'_blank','noopener');});document.getElementById('ra-reset-forum')?.addEventListener('click',async()=>{if(!confirm('Reset local forum import sources and checkpoints? Candidate recruiter data is preserved.'))return;await idb.clear('forumSources');await idb.clear('forumSyncState');toast('Forum import reset.');await route('company-discover',false);});document.getElementById('ra-refresh-discover')?.addEventListener('click',()=>route('company-discover',false));
     ['ra-filter-search','ra-filter-stage','ra-filter-source','ra-filter-looking','ra-filter-company','ra-filter-match','ra-filter-fit','ra-filter-active','ra-filter-man','ra-filter-int','ra-filter-end','ra-filter-activity'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>persistFilters().catch(e=>toast(e.message,true))));document.getElementById('ra-more-filters')?.addEventListener('click',async()=>{const f={...readFiltersFromUi(),moreOpen:!state.settings.candidates.filters.moreOpen};await saveSettings({candidates:{...state.settings.candidates,filters:f}});await route('company-candidates',false);});document.getElementById('ra-clear-candidate-filters')?.addEventListener('click',async()=>{await saveSettings({candidates:{...state.settings.candidates,filters:{...defaultSettings().candidates.filters}}});await route('company-candidates',false);});document.getElementById('ra-toggle-view')?.addEventListener('click',async()=>{await saveSettings({candidates:{...state.settings.candidates,view:state.settings.candidates.view==='table'?'cards':'table'}});await route('company-candidates',false);});document.getElementById('ra-columns')?.addEventListener('click',()=>{const x=document.getElementById('ra-column-picker');if(x)x.hidden=!x.hidden;});document.querySelectorAll('[data-column]').forEach(el=>el.onchange=async()=>{let cols=[...state.settings.candidates.visibleColumns];if(el.checked)cols=[...new Set([...cols,el.dataset.column])];else cols=cols.filter(x=>x!==el.dataset.column);if(!cols.includes('player'))cols.unshift('player');await saveSettings({candidates:{...state.settings.candidates,visibleColumns:cols}});await route('company-candidates',false);});document.querySelectorAll('.ra-inline-stage').forEach(el=>el.onchange=async()=>{await changeCandidateStage(el.dataset.stageId,el.value);toast('Stage updated.');});
     document.getElementById('ra-mobile-stage-select')?.addEventListener('change',async e=>{await saveSettings({candidates:{...state.settings.candidates,mobilePipelineStage:e.target.value}});await route('company-pipeline',false);});
     document.getElementById('ra-run-scout')?.addEventListener('click',()=>{const ids=ScoutCore.parseIds(document.getElementById('ra-scout-ids')?.value||'',state.settings.scout.maxCandidates);runScout(ids,true).catch(e=>toast(e.message,true));});document.getElementById('ra-pause-scout')?.addEventListener('click',pauseScout);document.getElementById('ra-cancel-scout')?.addEventListener('click',cancelScout);
-    document.getElementById('ra-match-profile-select')?.addEventListener('change',async e=>{await saveSettings({match:{...state.settings.match,activeProfileId:e.target.value}});await route('smart-match',false);});document.getElementById('ra-match-new')?.addEventListener('click',async()=>{const p=await saveMatchProfile(MatchCore.createDefaultProfile('New Match Profile'));await saveSettings({match:{...state.settings.match,activeProfileId:p.profileId}});await route('smart-match',false);});document.getElementById('ra-match-duplicate')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile();const p=MatchCore.normalizeProfile({...active,profileId:'',name:`${active.name} Copy`,createdAt:'',updatedAt:''});const saved=await saveMatchProfile(p);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});await route('smart-match',false);});document.getElementById('ra-match-delete')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile();if(!confirm(`Delete Match Profile "${active.name}"?`))return;await idb.delete('matchProfiles',active.profileId);await saveSettings({match:{...state.settings.match,activeProfileId:''}});await ensureDefaultMatchProfile();await route('smart-match',false);});document.getElementById('ra-match-save')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile();const criteria={};for(const key of MatchCore.CRITERIA_KEYS){const old=active.criteria[key];const enabled=!!document.querySelector(`[data-match-enabled="${key}"]`)?.checked;const weight=number(document.querySelector(`[data-match-weight="${key}"]`)?.value,old.weight);if(['company','role','availability'].includes(key))criteria[key]={enabled,weight,value:text(document.querySelector(`[data-match-value="${key}"]`)?.value)};else if(key==='salary')criteria[key]={enabled,weight,max:number(document.querySelector('[data-match-max="salary"]')?.value,old.max)};else criteria[key]={enabled,weight,target:number(document.querySelector(`[data-match-target="${key}"]`)?.value,old.target)};}const saved=await saveMatchProfile({profileId:active.profileId,name:text(document.getElementById('ra-match-name')?.value)||active.name,criteria,createdAt:active.createdAt});await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});toast('Match Profile saved.');await route('smart-match',false);});
+    document.getElementById('ra-match-profile-select')?.addEventListener('change',async e=>{await saveSettings({match:{...state.settings.match,activeProfileId:e.target.value}});await route('smart-match',false);});document.getElementById('ra-match-new')?.addEventListener('click',async()=>{const p=await saveMatchProfile(MatchCore.createDefaultProfile('New Match Profile'));await saveSettings({match:{...state.settings.match,activeProfileId:p.profileId}});await route('smart-match',false);});document.getElementById('ra-match-duplicate')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);const p=MatchCore.normalizeProfile({...active,profileId:'',name:`${active.name} Copy`,createdAt:'',updatedAt:''});const saved=await saveMatchProfile(p);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});await route('smart-match',false);});document.getElementById('ra-match-delete')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);if(!confirm(`Delete Match Profile "${active.name}"?`))return;await idb.delete('matchProfiles',active.profileId);await saveSettings({match:{...state.settings.match,activeProfileId:''}});await ensureDefaultMatchProfile();await route('smart-match',false);});document.getElementById('ra-match-save')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);const criteria={};for(const key of MatchCore.CRITERIA_KEYS){const old=active.criteria[key];const enabled=!!document.querySelector(`[data-match-enabled="${key}"]`)?.checked;const weight=number(document.querySelector(`[data-match-weight="${key}"]`)?.value,old.weight);if(['company','role','availability'].includes(key))criteria[key]={enabled,weight,value:text(document.querySelector(`[data-match-value="${key}"]`)?.value)};else if(key==='salary')criteria[key]={enabled,weight,max:number(document.querySelector('[data-match-max="salary"]')?.value,old.max)};else criteria[key]={enabled,weight,target:number(document.querySelector(`[data-match-target="${key}"]`)?.value,old.target)};}const saved=await saveMatchProfile({profileId:active.profileId,name:text(document.getElementById('ra-match-name')?.value)||active.name,criteria,createdAt:active.createdAt});await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});toast('Match Profile saved.');await route('smart-match',false);});
     document.getElementById('ra-global-test')?.addEventListener('click',()=>testGlobalService().then(()=>toast('Global service connected.')).catch(e=>toast(e.message,true)));document.getElementById('ra-global-retry')?.addEventListener('click',()=>flushGlobalQueue(true).then(r=>toast(`Global sync processed ${r.processed}; ${r.pending} pending.`)).catch(e=>toast(e.message,true)));
     document.getElementById('ra-save-settings')?.addEventListener('click',()=>saveSettingsPage().catch(e=>toast(e.message,true)));document.getElementById('ra-set-key')?.addEventListener('click',()=>ensureApiKey(true).then(()=>toast('API key saved.')).catch(e=>toast(e.message,true)));document.getElementById('ra-cache-diagnostic')?.addEventListener('click',()=>runCacheDiagnostic().catch(e=>toast(e.message,true)));document.getElementById('ra-reset-colors')?.addEventListener('click',async()=>{await saveSettings({recruitment:{...state.settings.recruitment,stageColors:{...Runtime.STAGE_COLORS},availabilityColors:{...Runtime.AVAILABILITY_COLORS}}});await route('settings',false);});document.getElementById('ra-reset-layout')?.addEventListener('click',resetLayout);document.getElementById('ra-reset-layout-2')?.addEventListener('click',resetLayout);document.getElementById('ra-clear-scout')?.addEventListener('click',async()=>{if(!confirm('Clear local Scout cache and history?'))return;await idb.clear('scoutLatest');await idb.clear('scoutHistory');toast('Scout cache cleared.');});document.getElementById('ra-clear-recruitment')?.addEventListener('click',clearRecruitment);document.getElementById('ra-nuke')?.addEventListener('click',()=>hardReset().catch(e=>toast(e.message,true)));document.querySelectorAll('[data-go-page]').forEach(b=>b.onclick=()=>route(b.dataset.goPage));document.getElementById('ra-setting-global-test')?.addEventListener('click',()=>testGlobalService().then(()=>toast('Global service connected.')).catch(e=>toast(e.message,true)));document.getElementById('ra-setting-global-retry')?.addEventListener('click',()=>flushGlobalQueue(true).then(()=>toast('Global queue retried.')).catch(e=>toast(e.message,true)));
     document.getElementById('ra-export-csv')?.addEventListener('click',exportCsv);document.getElementById('ra-data-clear-candidates')?.addEventListener('click',clearRecruitment);document.getElementById('ra-refresh-logs')?.addEventListener('click',()=>route('logs',false));document.getElementById('ra-clear-logs')?.addEventListener('click',async()=>{if(!confirm('Clear local application logs?'))return;await idb.clear('appLogs');await route('logs',false);});
-    const setVal=(id,value)=>{const el=document.getElementById(id);if(el)el.value=String(value);};setVal('ra-setting-theme',state.settings.theme);setVal('ra-setting-density',state.settings.density);setVal('ra-setting-text',state.settings.textSize);setVal('ra-setting-complexity',state.settings.complexity);setVal('ra-setting-launcher',state.settings.launcherEnabled);setVal('ra-setting-sidebar',state.settings.sidebarCollapsed);setVal('ra-setting-inactive',state.settings.includeInactive);setVal('ra-setting-train-explicit',state.settings.recruitment.explicitTrainBuyersOnly);setVal('ra-setting-candidate-view',state.settings.candidates.view);setVal('ra-setting-candidate-density',state.settings.density);setVal('ra-setting-global-enabled',state.settings.global.enabled);
+    const setVal=(id,value)=>{const el=document.getElementById(id);if(el)el.value=String(value);};setVal('ra-setting-theme',state.settings.theme);setVal('ra-setting-density',state.settings.density);setVal('ra-setting-text',state.settings.textSize);setVal('ra-setting-complexity',state.settings.complexity);setVal('ra-setting-launcher',state.settings.launcherEnabled);setVal('ra-setting-sidebar',state.settings.sidebarCollapsed);setVal('ra-setting-inactive',state.settings.includeInactive);setVal('ra-setting-train-explicit',state.settings.recruitment.explicitTrainBuyersOnly);setVal('ra-setting-candidate-view',state.settings.candidates.view);setVal('ra-setting-results-layout',state.settings.candidates.resultsLayout);setVal('ra-setting-candidate-density',state.settings.density);setVal('ra-setting-player-card-name',state.settings.candidates.playerCard.openOnName);setVal('ra-setting-player-card-popout',state.settings.candidates.playerCard.allowPopout);setVal('ra-setting-player-card-remember',state.settings.candidates.playerCard.rememberPanel);setVal('ra-setting-global-enabled',state.settings.global.enabled);
   }
 
   let hoverOpenTimer=null,hoverCloseTimer=null;
@@ -5714,14 +6353,14 @@
 
   async function saveGeometry(){const app=document.getElementById('ra-app');if(!app)return;const r=app.getBoundingClientRect();const meta=await getMeta();meta.ui=meta.ui||{};meta.ui.windowGeometry=meta.ui.windowGeometry||{};meta.ui.windowGeometry.main={x:r.left,y:r.top,width:r.width,height:r.height};await idb.put('meta',meta);}
   async function restoreGeometry(){const app=document.getElementById('ra-app');const meta=await getMeta();const g=meta.ui?.windowGeometry?.main;if(!app||!g)return;const minW=Math.min(560,innerWidth-8),minH=Math.min(420,innerHeight-8);app.style.left=`${Math.max(4,Math.min(number(g.x,20),innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(number(g.y,50),innerHeight-48))}px`;app.style.width=`${Math.max(minW,Math.min(number(g.width,900),innerWidth-8))}px`;app.style.height=`${Math.max(minH,Math.min(number(g.height,650),innerHeight-8))}px`;}
-  function bindWindow(){const app=document.getElementById('ra-app'),handle=document.getElementById('ra-titlebar');let dragging=false,dx=0,dy=0;handle.onpointerdown=e=>{if(e.target.closest('button'))return;dragging=true;const r=app.getBoundingClientRect();dx=e.clientX-r.left;dy=e.clientY-r.top;state.topZ++;app.style.zIndex=state.topZ;handle.setPointerCapture?.(e.pointerId);e.preventDefault();};handle.onpointermove=e=>{if(!dragging)return;app.style.left=`${Math.max(4,Math.min(e.clientX-dx,innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(e.clientY-dy,innerHeight-48))}px`;};handle.onpointerup=e=>{if(!dragging)return;dragging=false;try{handle.releasePointerCapture(e.pointerId);}catch{}saveGeometry().catch(()=>{});};const ro=new ResizeObserver(()=>{clearTimeout(state.resizeTimer);state.resizeTimer=setTimeout(()=>saveGeometry().catch(()=>{}),250);});ro.observe(app);}
+  function bindWindow(){const app=document.getElementById('ra-app'),handle=document.getElementById('ra-titlebar');let dragging=false,dx=0,dy=0;handle.onpointerdown=e=>{if(e.target.closest('button,select,input,label'))return;dragging=true;const r=app.getBoundingClientRect();dx=e.clientX-r.left;dy=e.clientY-r.top;state.topZ++;app.style.zIndex=state.topZ;handle.setPointerCapture?.(e.pointerId);e.preventDefault();};handle.onpointermove=e=>{if(!dragging)return;app.style.left=`${Math.max(4,Math.min(e.clientX-dx,innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(e.clientY-dy,innerHeight-48))}px`;};handle.onpointerup=e=>{if(!dragging)return;dragging=false;try{handle.releasePointerCapture(e.pointerId);}catch{}saveGeometry().catch(()=>{});};const ro=new ResizeObserver(()=>{clearTimeout(state.resizeTimer);state.resizeTimer=setTimeout(()=>saveGeometry().catch(()=>{}),250);});ro.observe(app);}
   function openApp(){const app=document.getElementById('ra-app');if(!app)return;app.style.display='block';state.topZ++;app.style.zIndex=state.topZ;}
 
   function findInformationSection(){const nodes=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span')].filter(el=>/^information$/i.test(text(el.textContent)));for(const label of nodes){let section=label.parentElement;for(let depth=0;section&&depth<5;depth++,section=section.parentElement){const links=section.querySelectorAll("a,button,[role='button']");if(links.length>=2&&links.length<=30)return section;}}return null;}
   function ensureTornLauncher(){if(document.getElementById('ra-sidebar-launcher'))return true;const section=findInformationSection();if(!section)return false;const button=document.createElement('button');button.id='ra-sidebar-launcher';button.type='button';button.title='Recruitment Agency';button.setAttribute('aria-label','Recruitment Agency');button.style.cssText='border:0;background:transparent;color:#d86a6a;padding:2px 4px;cursor:pointer;';button.innerHTML='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="8" r="3" stroke="currentColor" stroke-width="2"/><path d="M3 19c.6-3.2 2.4-5 5-5s4.4 1.8 5 5M11 19c.5-2.7 2.2-4.5 5-4.5 2.5 0 4.2 1.6 5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';button.onclick=openApp;section.appendChild(button);syncLauncherVisibility();return true;}
   function syncLauncherVisibility(){const fallback=document.getElementById('ra-launch'),dock=document.getElementById('ra-sidebar-launcher');if(dock)dock.style.display=state.settings.launcherEnabled?'inline-flex':'none';if(fallback)fallback.style.display=state.settings.launcherEnabled&&!dock?'block':'none';}
 
-  function mount(){injectStyles();const fallback=document.createElement('button');fallback.id='ra-launch';fallback.textContent='RA';fallback.title='Recruitment Agency';fallback.onclick=openApp;document.body.appendChild(fallback);const app=document.createElement('div');app.id='ra-app';app.innerHTML=`<div class="ra-titlebar" id="ra-titlebar"><div class="ra-title-brand"><span class="ra-title-mark" aria-hidden="true">◆</span><div class="ra-title-copy"><small>VOIDSMITH INDUSTRIES</small><strong>RECRUITMENT AGENCY <span class="ra-version">v${SCRIPT_VERSION}</span></strong></div></div><div class="ra-title-actions"><button class="ra-btn" id="ra-settings-button" title="Settings" aria-label="Settings">⚙</button><button class="ra-btn" id="ra-mobile-menu" aria-label="Menu">☰</button><button class="ra-btn" id="ra-close" aria-label="Close">×</button></div></div><div class="ra-shell"><aside class="ra-sidebar"><div class="ra-sidebar-head"><span class="ra-brand">RECRUITMENT</span><button class="ra-btn" id="ra-collapse" aria-label="Collapse navigation">≡</button></div><div id="ra-nav"></div></aside><main class="ra-main"><header class="ra-pagehead"><div><h2 id="ra-page-title">Search & Results</h2><p id="ra-page-desc"></p></div><div id="ra-page-actions"></div></header><div class="ra-content" id="ra-content"></div><aside id="ra-drawer" class="ra-drawer" hidden></aside><div id="ra-modal" class="ra-modal" hidden></div></main></div>`;document.body.appendChild(app);const hover=document.createElement('div');hover.id='ra-hover';hover.className='ra-hover';hover.hidden=true;hover.setAttribute('role','dialog');hover.setAttribute('aria-label','Candidate intelligence');document.body.appendChild(hover);const context=document.createElement('div');context.id='ra-context';context.hidden=true;context.setAttribute('role','menu');document.body.appendChild(context);const help=document.createElement('div');help.id='ra-help-popover';help.className='ra-help-popover';help.hidden=true;help.setAttribute('role','dialog');document.body.appendChild(help);const toasts=document.createElement('div');toasts.id='ra-toastbox';toasts.className='ra-toastbox';document.body.appendChild(toasts);document.getElementById('ra-close').onclick=()=>app.style.display='none';document.getElementById('ra-settings-button').onclick=()=>route('settings');document.getElementById('ra-collapse').onclick=async()=>{await saveSettings({sidebarCollapsed:!state.settings.sidebarCollapsed});rebuildNav();};document.getElementById('ra-mobile-menu').onclick=()=>document.querySelector('.ra-shell')?.classList.toggle('sidebar-open');document.addEventListener('click',e=>{if(!e.target.closest('#ra-context'))closeContextMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeCandidateHover();closeHelp(true);closeModal();document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const drawer=document.getElementById('ra-drawer');if(drawer&&!drawer.hidden){drawer.hidden=true;state.drawerCandidateId='';}}});bindWindow();rebuildNav();restoreGeometry().catch(()=>{});}
+  function mount(){injectStyles();const fallback=document.createElement('button');fallback.id='ra-launch';fallback.textContent='RA';fallback.title='Recruitment Agency';fallback.onclick=openApp;document.body.appendChild(fallback);const app=document.createElement('div');app.id='ra-app';app.innerHTML=`<div class="ra-titlebar" id="ra-titlebar"><div class="ra-title-brand"><span class="ra-title-mark" aria-hidden="true">◆</span><div class="ra-title-copy"><small>VOIDSMITH INDUSTRIES</small><strong>RECRUITMENT AGENCY <span class="ra-version">v${SCRIPT_VERSION}</span></strong></div></div>${workspaceSelectHtml()}<div class="ra-title-spacer" aria-hidden="true"></div><div class="ra-title-actions"><button class="ra-btn" id="ra-settings-button" title="Settings" aria-label="Settings">⚙</button><button class="ra-btn" id="ra-mobile-menu" aria-label="Menu">☰</button><button class="ra-btn" id="ra-close" aria-label="Close">×</button></div></div><div class="ra-shell"><aside class="ra-sidebar"><div class="ra-sidebar-head"><span class="ra-brand">RECRUITMENT</span><button class="ra-btn" id="ra-collapse" aria-label="Collapse navigation">≡</button></div><div id="ra-nav"></div></aside><main class="ra-main"><header class="ra-pagehead"><div><h2 id="ra-page-title">Search & Results</h2><p id="ra-page-desc"></p></div><div id="ra-page-actions"></div></header><div class="ra-content" id="ra-content"></div><aside id="ra-drawer" class="ra-drawer" hidden></aside><div id="ra-modal" class="ra-modal" hidden></div></main></div>`;document.body.appendChild(app);const hover=document.createElement('div');hover.id='ra-hover';hover.className='ra-hover';hover.hidden=true;hover.setAttribute('role','dialog');hover.setAttribute('aria-label','Candidate intelligence');document.body.appendChild(hover);const context=document.createElement('div');context.id='ra-context';context.hidden=true;context.setAttribute('role','menu');document.body.appendChild(context);const help=document.createElement('div');help.id='ra-help-popover';help.className='ra-help-popover';help.hidden=true;help.setAttribute('role','dialog');document.body.appendChild(help);const toasts=document.createElement('div');toasts.id='ra-toastbox';toasts.className='ra-toastbox';document.body.appendChild(toasts);document.getElementById('ra-close').onclick=()=>app.style.display='none';document.getElementById('ra-settings-button').onclick=()=>route('settings');const workspaceToggle=document.getElementById('ra-workspace-toggle'),workspaceMenu=document.getElementById('ra-workspace-menu');workspaceToggle.onclick=()=>{const opening=workspaceMenu.hidden;workspaceMenu.hidden=!opening;workspaceToggle.setAttribute('aria-expanded',String(opening));};document.querySelectorAll('[data-workspace-domain]').forEach(button=>button.onclick=async()=>{const domain=button.dataset.workspaceDomain==='faction'?'faction':'company';workspaceMenu.hidden=true;workspaceToggle.setAttribute('aria-expanded','false');await saveSettings({activeDomain:domain,activePage:`${domain}-candidates`});const drawer=document.getElementById('ra-drawer');if(drawer){drawer.hidden=true;state.drawerCandidateId='';state.playerCard.userId='';}await route(`${domain}-candidates`,false);});document.getElementById('ra-collapse').onclick=async()=>{await saveSettings({sidebarCollapsed:!state.settings.sidebarCollapsed});rebuildNav();};document.getElementById('ra-mobile-menu').onclick=()=>document.querySelector('.ra-shell')?.classList.toggle('sidebar-open');document.addEventListener('click',e=>{if(!e.target.closest('#ra-context'))closeContextMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeCandidateHover();closeHelp(true);closeModal();document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const drawer=document.getElementById('ra-drawer');if(drawer&&!drawer.hidden){drawer.hidden=true;state.drawerCandidateId='';}}});bindWindow();rebuildNav();restoreGeometry().catch(()=>{});}
 
   async function start(options={}){
     if(state.mounted)return;
@@ -5745,7 +6384,7 @@
     return true;
   }
 
-  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
+  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,setCompanyWatchlist,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
 });
 
 /* userscript bootstrap */

@@ -62,30 +62,42 @@
   }
 
   function companyRecruitmentEligibility(response = {}) {
-    const job = response?.job ?? response?.user?.job ?? null;
-    const type = text(job?.type).toLowerCase();
-    if (job && type === 'company') {
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasTop=Object.prototype.hasOwnProperty.call(response,'job'),hasNested=Object.prototype.hasOwnProperty.call(user,'job');
+    if(!hasTop&&!hasNested)return {eligible:false,known:false,currentName:'',currentId:''};
+    const job=hasTop?response.job:user.job;
+    if(job===null)return {eligible:true,known:true,currentName:'',currentId:''};
+    if(!job||typeof job!=='object')return {eligible:false,known:false,currentName:'',currentId:''};
+    const type=text(job.type).toLowerCase();
+    if(!type)return {eligible:false,known:false,currentName:'',currentId:''};
+    if (type === 'company') {
       const currentId = text(job.id ?? job.company_id ?? job.companyId);
       return {
         eligible:false,
+        known:true,
         currentName:text(job.name ?? job.company_name ?? job.companyName) || (currentId ? `Company #${currentId}` : 'a company'),
         currentId
       };
     }
-    return {eligible:true,currentName:'',currentId:''};
+    return {eligible:true,known:true,currentName:'',currentId:''};
   }
 
   function factionRecruitmentEligibility(response = {}) {
-    const faction = response?.faction ?? response?.user?.faction ?? null;
-    if (faction && (faction.id != null || text(faction.name))) {
-      const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
-      return {
-        eligible:false,
-        currentName:text(faction.name ?? faction.faction_name ?? faction.factionName) || (currentId ? `Faction #${currentId}` : 'a faction'),
-        currentId
-      };
-    }
-    return {eligible:true,currentName:'',currentId:''};
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasTop=Object.prototype.hasOwnProperty.call(response,'faction'),hasNested=Object.prototype.hasOwnProperty.call(user,'faction');
+    if(!hasTop&&!hasNested)return {eligible:false,known:false,currentName:'',currentId:''};
+    const faction=hasTop?response.faction:user.faction;
+    if(faction===null)return {eligible:true,known:true,currentName:'',currentId:''};
+    if(!faction||typeof faction!=='object')return {eligible:false,known:false,currentName:'',currentId:''};
+    const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
+    const currentName=text(faction.name ?? faction.faction_name ?? faction.factionName);
+    if(!currentId&&!currentName)return {eligible:false,known:false,currentName:'',currentId:''};
+    return {
+      eligible:false,
+      known:true,
+      currentName:currentName || (currentId ? `Faction #${currentId}` : 'a faction'),
+      currentId
+    };
   }
 
   function profileUrl(userId) {
@@ -126,6 +138,7 @@
       profileUrl:text(plan.profileUrl) || profileUrl(userId),
       transport:'private-chat',
       autoSubmit:false,
+      dncOverrideConfirmed:plan?.dncOverrideConfirmed===true,
       queuedAt:Number(now) || Date.now(),
       expiresAt:(Number(now) || Date.now()) + PRIVATE_CHAT_DRAFT_TTL_MS
     };
