@@ -124,3 +124,14 @@ test('Faction Opportunity excludes unknown evidence instead of manufacturing bas
   assert.equal(result.intelligenceFreshness,'Unknown');
   assert.match(result.opportunity.explanation,/Match: Unknown \(excluded\)/);
 });
+
+
+test('Faction Opportunity renders excluded evidence as unknown, never zero',()=>{
+  const unknown=row({availability:'Unknown',fit:null,lastActive:null,baselineScore:null,pinnedSpecialistProfileId:'',suggestedProfileId:'',profileEvaluations:[],profileOptions:[],player:{userId:'101'},factionRecord:{userId:'101',pipelineStage:'Prospect',followUps:[],doNotContact:false}});
+  const model=ui().buildOpportunityRows([unknown],{weights,now:NOW});
+  const html=ui().renderOpportunityPage(model);
+  assert.match(html,/Match: —/);
+  assert.match(html,/Fit: —/);
+  assert.doesNotMatch(html,/Match: 0/);
+  assert.doesNotMatch(html,/Fit: 0/);
+});
