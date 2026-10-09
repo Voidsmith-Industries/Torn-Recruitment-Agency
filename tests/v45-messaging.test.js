@@ -49,7 +49,7 @@ test('undefined or empty affiliation payloads remain unverifiable',()=>{
 
 
 test('private-chat draft persists only explicit DNC override authority',()=>{
-  const storage=memoryStorage();
+  const data=new Map();const storage={getItem:key=>data.has(key)?data.get(key):null,setItem:(key,value)=>data.set(key,String(value)),removeItem:key=>data.delete(key)};
   const base=M.recruitmentChatPlan('company','Hello {name}',{userId:789,name:'Override'});
   M.queuePrivateChatDraft({...base,dncOverrideConfirmed:true},storage,1000);
   const approved=M.consumePrivateChatDraft('789',storage,1100);
