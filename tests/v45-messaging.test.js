@@ -36,3 +36,13 @@ test('recruitment affiliation checks fail closed when API omits the authoritativ
   assert.equal(M.companyRecruitmentEligibility({job:{type:'company',id:7,name:'Seven'}}).eligible,false);
   assert.equal(M.factionRecruitmentEligibility({faction:{id:8,name:'Eight'}}).eligible,false);
 });
+
+
+test('undefined or empty affiliation payloads remain unverifiable',()=>{
+  for(const response of [{job:undefined},{job:{}},{user:{job:undefined}},{user:{job:{}}}]){
+    assert.deepEqual(M.companyRecruitmentEligibility(response),{eligible:false,known:false,currentName:'',currentId:''});
+  }
+  for(const response of [{faction:undefined},{faction:{}},{user:{faction:undefined}},{user:{faction:{}}}]){
+    assert.deepEqual(M.factionRecruitmentEligibility(response),{eligible:false,known:false,currentName:'',currentId:''});
+  }
+});
