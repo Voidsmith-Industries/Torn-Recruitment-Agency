@@ -116,3 +116,10 @@ test('DNC override paths fail closed when confirmation UI is unavailable',()=>{
   assert.match(companyPlatform,/typeof globalThis\.confirm!=='function'\)throw/);
   assert.match(factionPlatform,/typeof globalThis\.confirm!=='function'\)throw/);
 });
+
+
+test('recruitment stops when affiliation API result is unverifiable',()=>{
+  const app=read('src/v45-app.js');
+  assert.match(app,/eligibility\.known===false/);
+  assert.match(app,/Could not verify \$\{playerName\}'s \$\{label\} affiliation\. Recruitment stopped\./);
+});
