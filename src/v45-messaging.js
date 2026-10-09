@@ -62,30 +62,38 @@
   }
 
   function companyRecruitmentEligibility(response = {}) {
-    const job = response?.job ?? response?.user?.job ?? null;
-    const type = text(job?.type).toLowerCase();
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasJob=Object.prototype.hasOwnProperty.call(response,'job')||Object.prototype.hasOwnProperty.call(user,'job');
+    if(!hasJob)return {eligible:false,known:false,currentName:'',currentId:''};
+    const job=Object.prototype.hasOwnProperty.call(response,'job')?response.job:user.job;
+    const type=text(job?.type).toLowerCase();
     if (job && type === 'company') {
       const currentId = text(job.id ?? job.company_id ?? job.companyId);
       return {
         eligible:false,
+        known:true,
         currentName:text(job.name ?? job.company_name ?? job.companyName) || (currentId ? `Company #${currentId}` : 'a company'),
         currentId
       };
     }
-    return {eligible:true,currentName:'',currentId:''};
+    return {eligible:true,known:true,currentName:'',currentId:''};
   }
 
   function factionRecruitmentEligibility(response = {}) {
-    const faction = response?.faction ?? response?.user?.faction ?? null;
+    const user=response?.user&&typeof response.user==='object'?response.user:{};
+    const hasFaction=Object.prototype.hasOwnProperty.call(response,'faction')||Object.prototype.hasOwnProperty.call(user,'faction');
+    if(!hasFaction)return {eligible:false,known:false,currentName:'',currentId:''};
+    const faction=Object.prototype.hasOwnProperty.call(response,'faction')?response.faction:user.faction;
     if (faction && (faction.id != null || text(faction.name))) {
       const currentId = text(faction.id ?? faction.faction_id ?? faction.factionId);
       return {
         eligible:false,
+        known:true,
         currentName:text(faction.name ?? faction.faction_name ?? faction.factionName) || (currentId ? `Faction #${currentId}` : 'a faction'),
         currentId
       };
     }
-    return {eligible:true,currentName:'',currentId:''};
+    return {eligible:true,known:true,currentName:'',currentId:''};
   }
 
   function profileUrl(userId) {
