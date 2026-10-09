@@ -132,6 +132,10 @@ test('Faction Opportunity renders excluded evidence as unknown, never zero',()=>
   const html=ui().renderOpportunityPage(model);
   assert.match(html,/Match: —/);
   assert.match(html,/Fit: —/);
+  assert.match(html,/Match: — \(excluded\)/);
+  assert.match(html,/Fit: — \(excluded\)/);
+  assert.doesNotMatch(html,/Match: —[^<]*= 0/);
+  assert.doesNotMatch(html,/Fit: —[^<]*= 0/);
   assert.doesNotMatch(html,/Match: 0/);
   assert.doesNotMatch(html,/Fit: 0/);
 });
