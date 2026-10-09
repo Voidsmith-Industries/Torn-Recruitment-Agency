@@ -65,7 +65,7 @@
     async function ensureCompany(userId, recruitmentPatch = {}, options = {}) {
       const id = Domain.normalizeUserId(userId);
       const observedAt = legacyTimestamp(options.observedAt,Date.now());
-      await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'company',observedAt);
+      if(options.skipShared!==true)await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'company',observedAt);
       const existing = await idb.get('companyRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
@@ -77,7 +77,7 @@
     async function ensureFaction(userId, recruitmentPatch = {}, options = {}) {
       const id = Domain.normalizeUserId(userId);
       const observedAt = legacyTimestamp(options.observedAt,Date.now());
-      await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'faction',observedAt);
+      if(options.skipShared!==true)await players.ensure(id,{...candidateSharedPatch(recruitmentPatch),...definedPatch(options.sharedPatch || {})},options.source || 'faction',observedAt);
       const existing = await idb.get('factionRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
