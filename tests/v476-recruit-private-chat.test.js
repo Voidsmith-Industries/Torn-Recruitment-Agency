@@ -107,3 +107,12 @@ test('Company and Faction candidate actions are Recruit actions backed by fresh 
   assert.match(app, /Messaging\.queuePrivateChatDraft/);
   assert.match(app, /Messaging\.consumePrivateChatDraft/);
 });
+
+test('DNC override paths fail closed when confirmation UI is unavailable',()=>{
+  const companyPlatform=read('src/v46-company-platform.js');
+  const factionPlatform=read('src/v47-faction-platform.js');
+  assert.match(companyPlatform,/override confirmation is unavailable\. Recruitment stopped/);
+  assert.match(factionPlatform,/override confirmation is unavailable\. Recruitment stopped/);
+  assert.match(companyPlatform,/typeof globalThis\.confirm!=='function'\)throw/);
+  assert.match(factionPlatform,/typeof globalThis\.confirm!=='function'\)throw/);
+});
