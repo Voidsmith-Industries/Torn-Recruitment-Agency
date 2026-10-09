@@ -46,3 +46,16 @@ test('undefined or empty affiliation payloads remain unverifiable',()=>{
     assert.deepEqual(M.factionRecruitmentEligibility(response),{eligible:false,known:false,currentName:'',currentId:''});
   }
 });
+
+
+test('private-chat draft persists only explicit DNC override authority',()=>{
+  const storage=memoryStorage();
+  const base=M.recruitmentChatPlan('company','Hello {name}',{userId:789,name:'Override'});
+  M.queuePrivateChatDraft({...base,dncOverrideConfirmed:true},storage,1000);
+  const approved=M.consumePrivateChatDraft('789',storage,1100);
+  assert.equal(approved.dncOverrideConfirmed,true);
+
+  M.queuePrivateChatDraft(base,storage,2000);
+  const normal=M.consumePrivateChatDraft('789',storage,2100);
+  assert.equal(normal.dncOverrideConfirmed,false);
+});
