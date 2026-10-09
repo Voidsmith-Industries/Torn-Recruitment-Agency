@@ -12,8 +12,8 @@
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const hours=(now,at)=>Math.max(0,(number(now)-number(at,0))/3600000);
-  const money=value=>Number.isFinite(Number(value))?`$${Math.round(Number(value)).toLocaleString()}`:'—';
-  const metric=value=>Number.isFinite(Number(value))?Number(value).toLocaleString():'—';
+  const money=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?`${Math.round(Number(value)).toLocaleString()}`:'—');
+  const metric=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toLocaleString():'—');
   const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Math.round(Number(value)):'—');
 
   function freshness(lastScoutAt,now){
