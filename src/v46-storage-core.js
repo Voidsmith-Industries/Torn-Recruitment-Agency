@@ -224,28 +224,21 @@
         if (ambiguous) ambiguousCount += 1;
 
         if (domains.includes('company')) {
-          const converted = Domain.legacyCandidateToCompany(candidate,at,{ambiguous,assumed:!knownEvidence});
           const existing = await idb.get('companyRecruitment',userId);
-          const next = existing ? {...converted,...existing,
-            discoverySources:[...new Set([...(converted.discoverySources || []),...(existing.discoverySources || [])])],
-            migrationReviewRequired:converted.migrationReviewRequired || existing.migrationReviewRequired || false,
-            legacySharedState:existing.legacySharedState || converted.legacySharedState,
-            legacyDomainAssumed:existing.legacyDomainAssumed || converted.legacyDomainAssumed
-          } : converted;
-          await idb.put('companyRecruitment',next);
-          companyCount += 1;
+          if(!existing){
+            const converted = Domain.legacyCandidateToCompany(candidate,at,{ambiguous,assumed:!knownEvidence});
+            await idb.put('companyRecruitment',converted);
+            companyCount += 1;
+          }
         }
 
         if (domains.includes('faction')) {
-          const converted = Domain.legacyCandidateToFaction(candidate,at,{ambiguous});
           const existing = await idb.get('factionRecruitment',userId);
-          const next = existing ? {...converted,...existing,
-            discoverySources:[...new Set([...(converted.discoverySources || []),...(existing.discoverySources || [])])],
-            migrationReviewRequired:converted.migrationReviewRequired || existing.migrationReviewRequired || false,
-            legacySharedState:existing.legacySharedState || converted.legacySharedState
-          } : converted;
-          await idb.put('factionRecruitment',next);
-          factionCount += 1;
+          if(!existing){
+            const converted = Domain.legacyCandidateToFaction(candidate,at,{ambiguous});
+            await idb.put('factionRecruitment',converted);
+            factionCount += 1;
+          }
         }
       }
 
