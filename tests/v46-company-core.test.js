@@ -109,3 +109,26 @@ test('unknown Company criteria and vacancy evidence remain unscored',()=>{
   const result=Company.evaluateVacancy(vacancy,{fit:null},[]);
   assert.equal(result.matchScore,null);
 });
+
+
+test('unknown hard Company requirement is Unknown, not a failure',()=>{
+  const criteria=[{id:'ee',field:'ee',operator:'gte',value:10,kind:'Hard',weight:1}];
+  const baseline=Company.evaluateCriteria(criteria,{ee:null},[]);
+  assert.equal(baseline.eligibility,'Unknown');
+  assert.equal(baseline.hardFailed,false);
+  assert.equal(baseline.hardFailures.length,0);
+  assert.equal(baseline.unknownHard.length,1);
+  assert.equal(baseline.failures.length,0);
+  const vacancy=Company.evaluateVacancy(Company.normalizeVacancy({id:'u',name:'Unknown',status:'Open',criteria}),{ee:null},[]);
+  assert.equal(vacancy.eligibility,'Unknown');
+  assert.equal(vacancy.eligible,false);
+  assert.equal(vacancy.matchScore,null);
+});
+
+test('Company Opportunity is unknown when no substantive evidence is known',()=>{
+  const result=Company.computeOpportunity({
+    match:null,fit:null,availability:'Unknown',lastActiveAgeHours:null,intelligenceFreshness:'Unknown',followUpDue:false,contactPenalty:0
+  },{match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
+  assert.equal(result.score,null);
+  assert.equal(result.rawScore,null);
+});
