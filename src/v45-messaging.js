@@ -138,6 +138,7 @@
       profileUrl:text(plan.profileUrl) || profileUrl(userId),
       transport:'private-chat',
       autoSubmit:false,
+      dncOverrideConfirmed:plan?.dncOverrideConfirmed===true,
       queuedAt:Number(now) || Date.now(),
       expiresAt:(Number(now) || Date.now()) + PRIVATE_CHAT_DRAFT_TTL_MS
     };
