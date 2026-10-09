@@ -289,3 +289,26 @@ test('v4.9 Company workflow saves never replay candidate facts into shared intel
   assert.match(saveCandidate,/skipShared:true/);
   assert.doesNotMatch(saveCandidate,/sharedPatch/);
 });
+
+
+test('v4.9 private-chat handoff rechecks current DNC and discards stale draft',async()=>{
+  const Messaging=require('../src/v45-messaging');
+  const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://www.torn.com/profiles.php?XID=993'});
+  global.window=dom.window;
+  global.document=dom.window.document;
+  global.location=dom.window.location;
+  global.localStorage=dom.window.localStorage;
+
+  const db=await App.openDB(indexedDB);
+  App._test.state.db=db;
+  App._test.state.settings=App.mergeSettings({});
+  await put(db,'companyRecruitment',{userId:'993',domain:'company',pipelineStage:'Not Contacted',doNotContact:true});
+  const plan=Messaging.recruitmentChatPlan('company','Hello {name}',{userId:'993',name:'Blocked'});
+  Messaging.queuePrivateChatDraft(plan,dom.window.localStorage,Date.now());
+
+  await assert.rejects(()=>App._test.restorePendingPrivateChatDraft(20),/Do Not Contact is currently set/);
+  assert.equal(dom.window.localStorage.getItem(Messaging.PRIVATE_CHAT_DRAFT_KEY),null);
+
+  db.close();
+  dom.window.close();
+});
