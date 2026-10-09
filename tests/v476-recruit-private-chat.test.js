@@ -37,15 +37,27 @@ test('Company and Faction recruitment templates use separate approved placeholde
 
 test('fresh Company and Faction eligibility is conservative', () => {
   assert.deepEqual(M.companyRecruitmentEligibility({job:{type:'company',name:'Acme',id:42}}), {
-    eligible:false,currentName:'Acme',currentId:'42'
+    eligible:false,known:true,currentName:'Acme',currentId:'42'
   });
-  assert.equal(M.companyRecruitmentEligibility({job:{type:'job',name:'Army'}}).eligible, true);
-  assert.equal(M.companyRecruitmentEligibility({job:null}).eligible, true);
+  assert.deepEqual(M.companyRecruitmentEligibility({job:{type:'job',name:'Army'}}), {
+    eligible:true,known:true,currentName:'',currentId:''
+  });
+  assert.deepEqual(M.companyRecruitmentEligibility({job:null}), {
+    eligible:true,known:true,currentName:'',currentId:''
+  });
+  assert.deepEqual(M.companyRecruitmentEligibility({}), {
+    eligible:false,known:false,currentName:'',currentId:''
+  });
 
   assert.deepEqual(M.factionRecruitmentEligibility({faction:{name:'Existing Faction',id:77}}), {
-    eligible:false,currentName:'Existing Faction',currentId:'77'
+    eligible:false,known:true,currentName:'Existing Faction',currentId:'77'
   });
-  assert.equal(M.factionRecruitmentEligibility({faction:null}).eligible, true);
+  assert.deepEqual(M.factionRecruitmentEligibility({faction:null}), {
+    eligible:true,known:true,currentName:'',currentId:''
+  });
+  assert.deepEqual(M.factionRecruitmentEligibility({}), {
+    eligible:false,known:false,currentName:'',currentId:''
+  });
 });
 
 test('Recruit prepares Torn private chat, never Torn Mail and never auto-submits', () => {
