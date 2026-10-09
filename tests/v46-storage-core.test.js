@@ -182,3 +182,44 @@ test('legacy migration can write domain state without overwriting shared Player 
   assert.equal(company.recruiterNote,'legacy');
   db.close();
 });
+
+
+test('legacy backfill cannot overwrite newer authoritative Player Intelligence',async()=>{
+  const name=`ra-storage-protect-modern-${Date.now()}-${Math.random()}`;
+  let db=await openDb(name,12,db=>createLegacyStores(db));
+  const tx=db.transaction('candidateLocal','readwrite');
+  tx.objectStore('candidateLocal').put({
+    userId:'997',
+    name:'Old Legacy',
+    ee:1,
+    pipelineStage:'Replied',
+    discoverySources:['MANUAL'],
+    updatedAt:'2026-10-09T12:00:00.000Z'
+  });
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+
+  db=await openDb(name,13,db=>S.applyUpgrade(db));
+  const idb=adapter(db);
+  await idb.put('playerIntelligence',{
+    userId:'997',
+    name:'New Scout',
+    nameLower:'new scout',
+    ee:99,
+    level:75,
+    lastObservedAt:5000,
+    updatedAt:5000,
+    createdAt:5000,
+    sources:['scout']
+  });
+
+  const repos=S.createRepositories(idb);
+  await repos.backfillLegacy(1773000000000);
+  const player=await idb.get('playerIntelligence','997');
+  assert.equal(player.name,'New Scout');
+  assert.equal(player.ee,99);
+  assert.equal(player.level,75);
+  assert.equal(player.lastObservedAt,5000);
+  assert.ok(player.sources.includes('legacy-candidate'));
+  db.close();
+});
