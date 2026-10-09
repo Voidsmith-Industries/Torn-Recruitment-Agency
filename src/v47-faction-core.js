@@ -160,9 +160,9 @@
   }
 
   function opportunityComponent(label,value,weight){
-    const normalized=clamp(value);
     const w=Math.max(0,number(weight));
-    return {label,value:normalized,weight:w,contribution:Math.round(normalized*w)/100};
+    const known=value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));
+    return {label,value:known?clamp(value):null,weight:w,known,contribution:0};
   }
 
   function computeOpportunity(input={},weights={}){
@@ -178,9 +178,12 @@
       opportunityComponent('Activity',activity,weights.activity),
       opportunityComponent('Freshness',freshness,weights.freshness),
       opportunityComponent('Follow-up',input.followUpDue?100:0,weights.followUp),
-      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),contribution:0}
+      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
     ];
-    const rawScore=Math.round(rows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
+    const scoredRows=rows.slice(0,6);
+    const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
+    for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
+    const rawScore=Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100;
     const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
     const score=Math.round(clamp(rawScore-penalty));
     const explanation=rows.slice(0,6)
