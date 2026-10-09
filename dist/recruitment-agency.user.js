@@ -2374,7 +2374,23 @@
 
       for (const [userId,list] of observations.entries()) {
         list.sort((a,b)=>a.observedAt-b.observedAt);
-        for (const item of list) await players.ensure(userId,item.patch,item.source,item.observedAt);
+        let current=await idb.get('playerIntelligence',userId);
+        for (const item of list) {
+          const currentObserved=Number(current?.lastObservedAt),incomingObserved=Number(item.patch?.lastObservedAt);
+          const currentIsAuthoritative=Number.isFinite(currentObserved)&&currentObserved>0;
+          const incomingIsNewer=Number.isFinite(incomingObserved)&&incomingObserved>currentObserved;
+          let patch=item.patch;
+          if(currentIsAuthoritative&&!incomingIsNewer){
+            const safe={};
+            for(const [key,value] of Object.entries(item.patch||{})){
+              if(key==='lastObservedAt')continue;
+              const existing=current?.[key];
+              if(existing===undefined||existing===null||existing==='')safe[key]=value;
+            }
+            patch=safe;
+          }
+          current=await players.ensure(userId,patch,item.source,item.observedAt);
+        }
       }
 
       let companyCount = 0;
