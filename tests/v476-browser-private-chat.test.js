@@ -24,7 +24,7 @@ function serve(){
     res.end(`<!doctype html><html><head><meta charset="utf-8"></head><body>
       <main id="profile-root">
         <a id="button2-profile-456" class="profile-button profile-button-initiateChat" href="#">Start chat</a>
-        <section id="fake-chat" hidden>
+        <section id="fake-chat" data-user-id="456" hidden>
           <textarea id="fake-chat-input" aria-label="Private chat message"></textarea>
           <button id="fake-send" type="button">Send</button>
         </section>
