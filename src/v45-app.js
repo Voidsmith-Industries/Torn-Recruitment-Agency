@@ -654,7 +654,8 @@
   let launcherHeaderObserver=null;
   let launcherHeaderHost=null;
   function watchLauncherHost(bar){
-    const host=bar.parentElement;
+    // Watch the nearest stable header container so swapping the status bar or its wrapper keeps the launcher reachable.
+    const host=bar.closest('header')?.parentElement||bar.parentElement?.parentElement||bar.parentElement;
     if(!host||host===launcherHeaderHost)return;
     launcherHeaderObserver?.disconnect();
     launcherHeaderHost=host;
