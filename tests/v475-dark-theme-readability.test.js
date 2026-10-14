@@ -21,7 +21,7 @@ function chromePath(){
 function serve(){
   const server=http.createServer((req,res)=>{
     res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
-    res.end('<!doctype html><html><head><meta charset="utf-8"></head><body><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section><script>window.alert=()=>{};window.confirm=()=>true;window.prompt=()=>"";window.open=()=>null;</script></body></html>');
+    res.end('<!doctype html><html><head><meta charset="utf-8"></head><body><ul class="status-icons"></ul><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section><script>window.alert=()=>{};window.confirm=()=>true;window.prompt=()=>"";window.open=()=>null;</script></body></html>');
   });
   return new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(server)));
 }
@@ -32,8 +32,8 @@ function rgb(hex){
 }
 
 async function visibleLauncher(page){
-  await page.waitForFunction(()=>['#ra-sidebar-launcher','#ra-launch'].some(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden';}),{timeout:10000});
-  return page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden';})||'');
+  await page.waitForFunction(()=>['#ra-status-launcher button'].some(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden';}),{timeout:10000});
+  return page.evaluate(()=>['#ra-status-launcher button'].find(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden';})||'');
 }
 
 test('dark theme keeps Recruitment Agency tables and settings readable against hostile Torn text rules',{timeout:60000},async()=>{
