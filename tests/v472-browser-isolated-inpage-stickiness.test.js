@@ -12,12 +12,12 @@ const MODULES=['scout-core.js','results-core.js','global-core.js','match-core.js
 const BOOT=sourceCompatibleBoot(ROOT);
 
 function chromePath(){for(const cmd of ['google-chrome-stable','google-chrome','chromium-browser','chromium']){try{return execFileSync('which',[cmd],{encoding:'utf8'}).trim();}catch{}}throw new Error('No Chrome/Chromium executable found.');}
-function serve(){const server=http.createServer((req,res)=>{res.writeHead(200,{'content-type':'text/html'});res.end('<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}</style></head><body><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></body></html>');});return new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(server)));}
+function serve(){const server=http.createServer((req,res)=>{res.writeHead(200,{'content-type':'text/html'});res.end('<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}</style></head><body><ul class="status-icons"></ul><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></body></html>');});return new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(server)));}
 async function physicalClick(page,selector){await page.waitForSelector(selector,{visible:true});const p=await page.$eval(selector,el=>{el.scrollIntoView({block:'center',inline:'nearest'});const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);return{x,y,ok:hit===el||!!(hit&&el.contains(hit)),hit:hit&&(hit.id||hit.tagName)};});assert.equal(p.ok,true,`${selector} is covered by ${p.hit}`);await page.mouse.click(p.x,p.y);}
 async function isolatedEval(client,contextId,expression,awaitPromise=false){const out=await client.send('Runtime.evaluate',{contextId,expression,awaitPromise,returnByValue:true});if(out.exceptionDetails)throw new Error(out.exceptionDetails.exception?.description||out.exceptionDetails.text);return out.result.value;}
 async function visibleLauncher(page){
-  await page.waitForFunction(()=>['#ra-sidebar-launcher','#ra-launch'].some(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';}),{timeout:10000});
-  return page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';})||'');
+  await page.waitForFunction(()=>['#ra-status-launcher button'].some(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';}),{timeout:10000});
+  return page.evaluate(()=>['#ra-status-launcher button'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';})||'');
 }
 
 test('Tampermonkey-like isolated world keeps Faction Requirements active through in-page actions',{timeout:60000},async()=>{
