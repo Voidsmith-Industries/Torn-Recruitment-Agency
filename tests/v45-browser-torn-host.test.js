@@ -74,6 +74,16 @@ test('public v4.7.2 runtime remains physically clickable on the real Torn host p
       window.open = () => null;
     });
 
+    // Anonymous Torn pages may omit the logged-in status bar.
+    // Supply only the header fixture; the rest of the browser runs on Torn.
+    await page.evaluate(() => {
+      if (!document.querySelector('ul[class*="status-icons"]')) {
+        const bar = document.createElement('ul');
+        bar.className = 'status-icons';
+        document.body.prepend(bar);
+      }
+    });
+
     for (const file of MODULES) {
       await page.addScriptTag({ content: fs.readFileSync(path.join(ROOT, 'src', file), 'utf8') });
     }
