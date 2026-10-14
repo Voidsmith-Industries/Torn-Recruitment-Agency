@@ -5852,6 +5852,18 @@
   function bindWindow(){const app=document.getElementById('ra-app'),handle=document.getElementById('ra-titlebar');let dragging=false,dx=0,dy=0;handle.onpointerdown=e=>{if(e.target.closest('button,select,input,label'))return;dragging=true;const r=app.getBoundingClientRect();dx=e.clientX-r.left;dy=e.clientY-r.top;state.topZ++;app.style.zIndex=state.topZ;handle.setPointerCapture?.(e.pointerId);e.preventDefault();};handle.onpointermove=e=>{if(!dragging)return;app.style.left=`${Math.max(4,Math.min(e.clientX-dx,innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(e.clientY-dy,innerHeight-48))}px`;};handle.onpointerup=e=>{if(!dragging)return;dragging=false;try{handle.releasePointerCapture(e.pointerId);}catch{}saveGeometry().catch(()=>{});};const ro=new ResizeObserver(()=>{clearTimeout(state.resizeTimer);state.resizeTimer=setTimeout(()=>saveGeometry().catch(()=>{}),250);});ro.observe(app);}
   function openApp(){const app=document.getElementById('ra-app');if(!app)return;app.style.display='block';state.topZ++;app.style.zIndex=state.topZ;}
 
+  let launcherHeaderObserver=null;
+  let launcherHeaderHost=null;
+  function watchLauncherHost(bar){
+    const host=bar.parentElement;
+    if(!host||host===launcherHeaderHost)return;
+    launcherHeaderObserver?.disconnect();
+    launcherHeaderHost=host;
+    launcherHeaderObserver=new MutationObserver(()=>{
+      if(!document.getElementById('ra-status-launcher')?.isConnected)ensureTornLauncher();
+    });
+    launcherHeaderObserver.observe(host,{childList:true,subtree:true});
+  }
   function ensureTornLauncher(){
     const bar=document.querySelector('ul[class*="status-icons"],ul[class*="statusIcons"]');
     if(!bar)return false;
@@ -5869,6 +5881,7 @@
       item.appendChild(button);
     }
     if(item.parentElement!==bar)bar.prepend(item);
+    watchLauncherHost(bar);
     syncLauncherVisibility();
     return true;
   }
@@ -5893,6 +5906,8 @@
     V47FactionPlatform.install(companyPlatformApp,{renderInitial:false});
     await route(state.page,false);
     ensureTornLauncher();syncLauncherVisibility();
+    window.addEventListener('popstate',ensureTornLauncher);
+    window.addEventListener('hashchange',ensureTornLauncher);
     void restorePendingPrivateChatDraft().catch(error=>toast(error.message,true));
     // Bounded header discovery, never a permanent whole-page observer.
     if(!document.getElementById('ra-status-launcher')){
