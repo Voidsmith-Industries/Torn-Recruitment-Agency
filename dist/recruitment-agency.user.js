@@ -5308,7 +5308,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const clampRate = value => Math.max(10,Math.min(HARD_API_RATE,number(value,HARD_API_RATE)));
   const formatNumber = (value,dp=0) => finite(value)===null?'—':Number(value).toLocaleString(undefined,{maximumFractionDigits:dp});
-  const money = value => { const x=finite(value); if(x===null)return '—'; if(x>=1e9)return `${(x/1e9).toFixed(2)}B`; if(x>=1e6)return `${(x/1e6).toFixed(1)}M`; return `${Math.round(x).toLocaleString()}`; };
+  const money = value => { const x=finite(value); if(x===null)return '—'; if(x>=1e9)return `$${(x/1e9).toFixed(2)}B`; if(x>=1e6)return `$${(x/1e6).toFixed(1)}M`; return `$${Math.round(x).toLocaleString()}`; };
   const profileUrl = id => Candidates.tornProfileUrl(id);
   const forumThreadUrl = id => /^\d+$/.test(text(id)) ? `https://www.torn.com/forums.php?a=0&p=threads&t=${text(id)}` : '';
 
