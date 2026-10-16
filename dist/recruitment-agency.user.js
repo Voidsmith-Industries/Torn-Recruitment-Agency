@@ -5915,9 +5915,10 @@
     const checkHeader=()=>{
       const icon=document.getElementById('ra-status-launcher');
       if(!icon?.isConnected || icon.parentElement!==visibleStatusBar())ensureTornLauncher();
-      setTimeout(checkHeader,5000);
+      headerTimer=window.setTimeout(checkHeader,5000);
     };
-    setTimeout(checkHeader,5000);
+    let headerTimer=window.setTimeout(checkHeader,5000);
+    window.addEventListener('pagehide',()=>window.clearTimeout(headerTimer),{once:true});
     await logEvent('startup',`Recruitment Agency v${SCRIPT_VERSION} source started`,{version:SCRIPT_VERSION,dbVersion:DB_VERSION});
     if(state.settings.global.enabled&&globalEndpoint())void flushGlobalQueue(false);
     return true;
