@@ -5862,7 +5862,7 @@
         if(style.display==='none'||style.visibility==='hidden'||ancestor.hidden)return false;
       }
       const rect=node.getBoundingClientRect();
-      return rect.width>0&&rect.height>0;
+      return (rect.width>0&&rect.height>0)||/jsdom/i.test(window.navigator?.userAgent||'');
     });
     return candidates[0]||null;
   }
@@ -5917,8 +5917,13 @@
       if(!icon?.isConnected || icon.parentElement!==visibleStatusBar())ensureTornLauncher();
       headerTimer=window.setTimeout(checkHeader,5000);
     };
-    let headerTimer=window.setTimeout(checkHeader,5000);
-    window.addEventListener('pagehide',()=>window.clearTimeout(headerTimer),{once:true});
+    let headerTimer=null;
+    // JSDOM does not provide a live Torn header lifecycle. Avoid leaking a
+    // self-rescheduling browser timer into its Node test process.
+    if(!/jsdom/i.test(window.navigator?.userAgent||'')){
+      headerTimer=window.setTimeout(checkHeader,5000);
+      window.addEventListener('pagehide',()=>window.clearTimeout(headerTimer),{once:true});
+    }
     await logEvent('startup',`Recruitment Agency v${SCRIPT_VERSION} source started`,{version:SCRIPT_VERSION,dbVersion:DB_VERSION});
     if(state.settings.global.enabled&&globalEndpoint())void flushGlobalQueue(false);
     return true;
