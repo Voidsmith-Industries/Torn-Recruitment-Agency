@@ -5854,19 +5854,20 @@
 
   let launcherHeaderObserver=null;
   let launcherHeaderHost=null;
-  function watchLauncherHost(bar){
-    // Watch the nearest stable header container so swapping the status bar or its wrapper keeps the launcher reachable.
-    const host=bar.closest('header')?.parentElement||bar.parentElement?.parentElement||bar.parentElement;
-    if(!host||host===launcherHeaderHost)return;
-    launcherHeaderObserver?.disconnect();
-    launcherHeaderHost=host;
-    launcherHeaderObserver=new MutationObserver(()=>{
-      if(!document.getElementById('ra-status-launcher')?.isConnected)ensureTornLauncher();
+  function visibleStatusBar(){
+    const all=[...document.querySelectorAll('ul[class*="status-icons"],ul[class*="statusIcons"]')];
+    const candidates=all.filter(node=>{
+      for(let ancestor=node;ancestor;ancestor=ancestor.parentElement){
+        const style=window.getComputedStyle(ancestor);
+        if(style.display==='none'||style.visibility==='hidden'||ancestor.hidden)return false;
+      }
+      const rect=node.getBoundingClientRect();
+      return rect.width>0&&rect.height>0;
     });
-    launcherHeaderObserver.observe(host,{childList:true,subtree:true});
+    return candidates[0]||null;
   }
   function ensureTornLauncher(){
-    const bar=document.querySelector('ul[class*="status-icons"],ul[class*="statusIcons"]');
+    const bar=visibleStatusBar();
     if(!bar)return false;
     let item=document.getElementById('ra-status-launcher');
     if(!item){
@@ -5882,7 +5883,6 @@
       item.appendChild(button);
     }
     if(item.parentElement!==bar)bar.prepend(item);
-    watchLauncherHost(bar);
     syncLauncherVisibility();
     return true;
   }
@@ -5910,12 +5910,14 @@
     window.addEventListener('popstate',ensureTornLauncher);
     window.addEventListener('hashchange',ensureTornLauncher);
     void restorePendingPrivateChatDraft().catch(error=>toast(error.message,true));
-    // Bounded header discovery, never a permanent whole-page observer.
-    if(!document.getElementById('ra-status-launcher')){
-      let attempts=0;
-      const check=()=>{if(ensureTornLauncher()||++attempts>=16)return;setTimeout(check,500);};
-      setTimeout(check,500);
-    }
+    // Recheck only header attachment at a bounded cadence. Torn can replace
+    // responsive headers without a route event or a child-list mutation.
+    const checkHeader=()=>{
+      const icon=document.getElementById('ra-status-launcher');
+      if(!icon?.isConnected || icon.parentElement!==visibleStatusBar())ensureTornLauncher();
+      setTimeout(checkHeader,5000);
+    };
+    setTimeout(checkHeader,5000);
     await logEvent('startup',`Recruitment Agency v${SCRIPT_VERSION} source started`,{version:SCRIPT_VERSION,dbVersion:DB_VERSION});
     if(state.settings.global.enabled&&globalEndpoint())void flushGlobalQueue(false);
     return true;
