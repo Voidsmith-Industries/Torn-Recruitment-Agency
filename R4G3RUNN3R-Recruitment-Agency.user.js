@@ -47,8 +47,8 @@
 
 (() => {
   'use strict';
-  const INSTALLER_VERSION = '4.8.4';
-  const EXPECTED_APP_VERSION = '4.8.3';
+  const INSTALLER_VERSION = '4.8.5';
+  const EXPECTED_APP_VERSION = '4.8.5';
   const DOM_GUARD = 'data-r4g3-ra-v45-owner';
   const RA_ROOT_SELECTOR = '#ra-app,#ra-hover,#ra-context,#ra-help-popover';
   const SHELL_STYLE_ID = 'ra-v454-shell-css';
