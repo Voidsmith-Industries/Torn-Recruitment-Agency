@@ -32,6 +32,8 @@ test('Claude remediation: cleared Company profile remains explicitly cleared',as
   App._test.state.settings=App.mergeSettings({...App._test.state.settings,match:{...App._test.state.settings.match,activeProfileId:''}});
   assert.equal(await App._test.getActiveMatchProfile(),null);
   assert.equal(App._test.state.settings.match.activeProfileId,'');
+  assert.ok(await App._test.getActiveMatchProfile(true),'editor can preview a stored profile');
+  assert.equal(App._test.state.settings.match.activeProfileId,'','preview must not silently reactivate a cleared profile');
   db.close();
 });
 
@@ -54,6 +56,15 @@ test('Claude remediation: Player Card recruitment re-reads domain DNC state befo
 test('Claude remediation: Smart Match editor alone may bootstrap a fallback profile',()=>{
   const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
   assert.match(source,/async function getActiveMatchProfile\(fallback=false\)/);
-  assert.match(source,/return fallback\?ensureDefaultMatchProfile\(\):null/);
+  assert.match(source,/if\(!fallback\)return null/);
+  assert.match(source,/const ensured=await ensureDefaultMatchProfile\(\)/);
+  assert.match(source,/return profiles\.length\?MatchCore\.normalizeProfile\(profiles\[0\]\):null/);
   assert.match(source,/async function renderSmartMatch\(\).*?getActiveMatchProfile\(true\)/s);
+});
+
+test('RA-003: Match Profile criteria saves preserve existing Company search filters',()=>{
+  const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
+  assert.match(source,/Object\.prototype\.hasOwnProperty\.call\(profile,'searchFilters'\)/);
+  assert.match(source,/normalized\.searchFilters=MatchCore\.normalizeProfile\(existing\)\.searchFilters/);
+  assert.match(source,/criteria,createdAt:active\.createdAt,searchFilters:active\.searchFilters/);
 });
