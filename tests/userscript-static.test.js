@@ -16,7 +16,7 @@ test('public userscript is the v4.8.4 icon release with immutable v4.8.3 core re
     assert.ok(boot.includes(`/${PINNED_RUNTIME}/src/${file}`),`pinned ${file}`);
   }
   assert.doesNotMatch(boot,/@require\s+https:\/\/raw\.githubusercontent\.com\/R4G3RUNN3R\/Torn-Recruitment-Agency\/main\/src\//);
-  assert.match(boot,/INSTALLER_VERSION\s*=\s*'4\.8\.4'/);
+  assert.match(boot,/INSTALLER_VERSION\s*=\s*'4\.8\.5'/);
   assert.match(boot,/EXPECTED_APP_VERSION\s*=\s*'4\.8\.3'/);
   assert.match(boot,/app\.SCRIPT_VERSION/);
   assert.match(boot,/app\.start\(\)/);
