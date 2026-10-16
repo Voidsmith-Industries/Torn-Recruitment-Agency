@@ -14,6 +14,19 @@ if (!headerMatch) throw new Error('Userscript metadata block is missing or malfo
 
 const header = headerMatch[1];
 const bootstrap = headerMatch[2].trimStart();
+const runtimeSource = fs.readFileSync(path.join(ROOT, 'src', 'v45-app.js'), 'utf8');
+const runtimeVersion = runtimeSource.match(/\bconst SCRIPT_VERSION\s*=\s*'([^']+)'/);
+const installerVersion = bootstrap.match(/\bconst INSTALLER_VERSION\s*=\s*'([^']+)'/);
+if (!runtimeVersion || !installerVersion || runtimeVersion[1] !== installerVersion[1]) {
+  throw new Error('Bundled runtime and installer versions do not match.');
+}
+if (!/\bconst EXPECTED_APP_VERSION\s*=\s*'[^']+';/.test(bootstrap)) {
+  throw new Error('Userscript runtime version guard is missing.');
+}
+const bundledBootstrap = bootstrap.replace(
+  /\bconst EXPECTED_APP_VERSION\s*=\s*'[^']+';/,
+  `const EXPECTED_APP_VERSION = '${runtimeVersion[1]}';`
+);
 const requireUrls = [...header.matchAll(/^\/\/ @require\s+(\S+)\s*$/gm)].map(match => match[1]);
 if (!requireUrls.length) throw new Error('No runtime modules were declared in the userscript wrapper.');
 
@@ -35,7 +48,7 @@ const modules = moduleFiles.map(({ name, file }) => {
   return `\n/* bundled runtime: ${name} */\n${source}\n`;
 }).join('');
 
-const output = `${bundledHeader}\n\n${modules}\n/* userscript bootstrap */\n${bootstrap.trim()}\n`;
+const output = `${bundledHeader}\n\n${modules}\n/* userscript bootstrap */\n${bundledBootstrap.trim()}\n`;
 fs.mkdirSync(DIST_DIR, { recursive: true });
 fs.writeFileSync(DIST, output, 'utf8');
 
