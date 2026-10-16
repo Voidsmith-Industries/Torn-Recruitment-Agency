@@ -22,7 +22,7 @@ test('source foundation remains wired beneath additive DB14 Company and DB15 Fac
 });
 
 test('source foundation preserves API pacing and v4.8.3 core runtime contract',()=>{
-  assert.match(app,/SCRIPT_VERSION\s*=\s*'4\.8\.3'/);
+  assert.match(app,/SCRIPT_VERSION\s*=\s*'4\.8\.5'/);
   assert.match(app,/HARD_API_RATE\s*=\s*75/);
   assert.match(app,/MIN_API_GAP_MS\s*=\s*800/);
 });
