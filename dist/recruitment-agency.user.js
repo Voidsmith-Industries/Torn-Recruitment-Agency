@@ -5862,7 +5862,7 @@
         if(style.display==='none'||style.visibility==='hidden'||ancestor.hidden)return false;
       }
       const rect=node.getBoundingClientRect();
-      return (rect.width>0&&rect.height>0)||/jsdom/i.test(window.navigator?.userAgent||'');
+      return rect.width>0||/jsdom/i.test(window.navigator?.userAgent||'');
     });
     return candidates[0]||null;
   }
