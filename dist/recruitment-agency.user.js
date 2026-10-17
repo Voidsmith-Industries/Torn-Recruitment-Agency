@@ -834,7 +834,10 @@
     add('contact','Contact timing',weights.contact,contact,
       contact===null?'Contact timing is unknown.':'Uses existing contact/stage history to avoid over-prioritizing recently contacted candidates.');
 
-    const score=knownWeight>0?Math.round((weighted/knownWeight)*1000)/10:null;
+    // Contact timing and discovery provenance are not suitability evidence.
+    const hasSuitabilityEvidence=components.some(item=>item.known&&item.evidenceWeight>0&&
+      ['requirements','eligibility','activity','scoutFit','organization'].includes(item.key));
+    const score=knownWeight>0&&hasSuitabilityEvidence?Math.round((weighted/knownWeight)*1000)/10:null;
     const coverage=possibleWeight>0?knownWeight/possibleWeight:0;
     let confidence=coverage>=.72?'High':coverage>=.42?'Medium':'Low';
     if(provenance.freshness==='Stale'&&confidence==='High')confidence='Medium';

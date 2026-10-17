@@ -201,8 +201,17 @@ test('v4.9 Recruitment Fit never converts missing evidence into zero', () => {
   assert.equal(requirements.points,null);
   assert.equal(activity.known,false);
   assert.equal(activity.points,null);
-  assert.ok(result.score>0,'known positive evidence should still produce a score');
+  assert.equal(result.score,null,'provenance and contact timing alone do not establish suitability');
   assert.equal(result.confidence,'Low','missing evidence should reduce confidence instead of fabricating zeros');
+});
+
+test('v4.9 Recruitment Fit remains unknown with only contact or discovery provenance', () => {
+  for (const [domain, stage] of [['company','Not Contacted'],['faction','Prospect']]) {
+    const empty=R.recruitmentFit({pipelineStage:stage},{domain,nowMs:NOW});
+    assert.equal(empty.score,null,domain+': contact-only must not establish fit');
+    const discovered=R.recruitmentFit({pipelineStage:stage,[domain+'Record']:{discoverySources:['TORN USER SEARCH'],updatedAt:NOW}},{domain,nowMs:NOW});
+    assert.equal(discovered.score,null,domain+': discovery-only must not establish fit');
+  }
 });
 
 test('v4.9 provenance classifies active, passive, known and reactivation prospects deterministically', () => {
