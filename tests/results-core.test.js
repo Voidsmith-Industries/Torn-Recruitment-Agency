@@ -205,6 +205,14 @@ test('v4.9 Recruitment Fit never converts missing evidence into zero', () => {
   assert.equal(result.confidence,'Low','missing evidence should reduce confidence instead of fabricating zeros');
 });
 
+test('v4.9 failed hard criteria trump fractional Faction match, and one point is 1%', () => {
+  const base={fit:90,lastActive:NOW-3600000,factionId:0,pipelineStage:'Prospect'};
+  const ineligible=R.recruitmentFit({...base,eligibility:'NOT ELIGIBLE',eligibilityScore:50},{domain:'faction',nowMs:NOW});
+  assert.equal(ineligible.components.find(x=>x.key==='eligibility').factor,0);
+  const onePercent=R.recruitmentFit({...base,eligibilityScore:1},{domain:'faction',nowMs:NOW});
+  assert.equal(onePercent.components.find(x=>x.key==='eligibility').factor,.01);
+});
+
 test('v4.9 Recruitment Fit remains unknown with only contact or discovery provenance', () => {
   for (const [domain, stage] of [['company','Not Contacted'],['faction','Prospect']]) {
     const empty=R.recruitmentFit({pipelineStage:stage},{domain,nowMs:NOW});

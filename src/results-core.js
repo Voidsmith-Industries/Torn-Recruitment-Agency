@@ -481,11 +481,11 @@
   }
 
   function eligibilityFactor(row) {
-    const score=finite(row?.eligibilityScore??row?.matchScore??row?.specialistMatchScore);
-    if(score!==null)return Math.max(0,Math.min(1,score>1?score/100:score));
     const label=lower(row?.eligibility);
+    if(label.includes('not eligible')||label.includes('not currently eligible')||label.includes('ineligible'))return 0;
+    const score=finite(row?.eligibilityScore??row?.matchScore??row?.specialistMatchScore);
+    if(score!==null)return Math.max(0,Math.min(1,score/100));
     if(!label||label==='unknown')return null;
-    if(label.includes('not currently eligible')||label.includes('ineligible'))return 0;
     if(label.includes('eligible by waiver'))return .8;
     if(label==='eligible')return 1;
     return null;
