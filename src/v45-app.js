@@ -533,6 +533,7 @@
 #ra-app .ra-about-links{display:flex;flex-wrap:wrap;gap:16px}
 #ra-app .ra-about-links a{color:var(--ra-accent2);text-decoration:none}
 #ra-app .ra-about-disclaimer{margin:0;color:var(--ra-muted);font-size:10px}
+#ra-app .ra-about .ra-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px}
 @media(max-width:610px){#ra-app .ra-about-meta{grid-template-columns:1fr}#ra-app .ra-about-hero h3{font-size:18px}}
 @media(prefers-reduced-motion:reduce){#ra-app .ra-btn{transition:none}#ra-app .ra-btn:hover{transform:none}}
 :root[data-ra-theme="light"]{--ra-bg:#f6f3fa;--ra-panel:#fff;--ra-panel2:#f7f3fb;--ra-line:#d8cce4;--ra-line-strong:#b49acb;--ra-text:#1d1722;--ra-muted:#6f6479;--ra-accent:#7c3aed;--ra-accent2:#9333ea;--ra-danger:#b4232a;--ra-warn:#8c5b13}
@@ -757,8 +758,50 @@
   async function openEditCandidateModal(id){const views=await candidateViews();const v=views.find(x=>String(x.userId)===String(id));if(!v)return;showModal(`<h3>Edit Candidate</h3><div class="ra-formgrid"><div class="ra-field"><label>Stage</label><select id="ra-edit-stage">${Runtime.PIPELINE_STAGES.map(s=>`<option ${s===v.pipelineStage?'selected':''}>${esc(s)}</option>`).join('')}</select></div><div class="ra-field"><label>Availability</label><select id="ra-edit-availability">${Runtime.AVAILABILITY_VALUES.map(a=>`<option ${a===v.availability?'selected':''}>${esc(a)}</option>`).join('')}</select></div><div class="ra-field"><label>Desired company</label><input id="ra-edit-company" value="${esc(v.desiredCompany)}"></div><div class="ra-field"><label>Desired role</label><input id="ra-edit-role" value="${esc(v.desiredRole)}"></div><div class="ra-field"><label>Expected salary</label><input id="ra-edit-salary" value="${esc(v.expectedSalary??'')}"></div><div class="ra-field" style="grid-column:1/-1"><label>Recruiter note</label><textarea id="ra-edit-note">${esc(v.recruiterNote)}</textarea></div></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-edit-save">Save</button><button class="ra-btn" data-modal-close>Cancel</button></div>`);document.getElementById('ra-edit-save').onclick=async()=>{const c={...v.candidate,pipelineStage:document.getElementById('ra-edit-stage').value,availability:document.getElementById('ra-edit-availability').value,desiredCompany:text(document.getElementById('ra-edit-company').value),desiredRole:text(document.getElementById('ra-edit-role').value),expectedSalary:finite(document.getElementById('ra-edit-salary').value),recruiterNote:text(document.getElementById('ra-edit-note').value),manualFields:{...(v.candidate.manualFields||{}),desiredCompany:text(document.getElementById('ra-edit-company').value),desiredRole:text(document.getElementById('ra-edit-role').value),expectedSalary:finite(document.getElementById('ra-edit-salary').value),availability:document.getElementById('ra-edit-availability').value}};await saveCandidate(c);closeModal();toast('Candidate saved.');await route(state.page,false);if(!document.getElementById('ra-drawer').hidden)await openDrawer(id);};}
 
   async function openMessageModal(id){const views=await candidateViews();const v=views.find(x=>String(x.userId)===String(id));if(!v)return;state.messageCandidateId=String(id);const values=Candidates.messageValues(v,state.settings.ownCompanyName);const plan=Messaging.messagePlan(state.settings.recruitment.defaultMessage,{...values,userId:id});showModal(`<h3>Message Player · ${esc(v.name)}</h3><div class="ra-note">Prepared locally. Opening Torn compose never changes pipeline stage and never sends automatically.</div><div class="ra-field" style="margin-top:8px"><label>Message</label><textarea id="ra-message-text" style="min-height:190px">${esc(plan.preparedText)}</textarea></div><div class="ra-actions"><button class="ra-btn" id="ra-message-edit">Edit</button><button class="ra-btn" id="ra-message-default">Save as Default</button><button class="ra-btn ra-primary" id="ra-message-open">Copy & Open Torn Message</button><button class="ra-btn" data-modal-close>Cancel</button></div>`,'messagePlayer');const ta=document.getElementById('ra-message-text');ta.readOnly=true;document.getElementById('ra-message-edit').onclick=()=>{ta.readOnly=false;ta.focus();};document.getElementById('ra-message-default').onclick=async()=>{await saveSettings({recruitment:{...state.settings.recruitment,defaultMessage:ta.value}});toast('Default recruitment message saved.');};document.getElementById('ra-message-open').onclick=async()=>{const prepared=text(ta.value);let copied=false;try{await navigator.clipboard.writeText(prepared);copied=true;}catch{ta.readOnly=false;ta.select();toast('Clipboard failed. Message remains selected for manual copy.',true);}window.open(Messaging.composeUrl(id),'_blank','noopener');if(copied)toast('Message copied. Torn compose opened; you still click Send.');};}
-  function showModal(html){const modal=document.getElementById('ra-modal');modal.innerHTML=`<div class="ra-modal-card">${html}</div>`;modal.hidden=false;modal.querySelectorAll('[data-modal-close]').forEach(b=>b.onclick=closeModal);bindHelp();}
-  function closeModal(){const modal=document.getElementById('ra-modal');if(modal){modal.hidden=true;modal.innerHTML='';}state.messageCandidateId='';}
+  let modalReturnFocus=null;
+  function modalTabbables(dialog){
+    return [...dialog.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')]
+      .filter(el=>el.tabIndex>=0&&!el.closest('[hidden]')&&el.getAttribute('aria-hidden')!=='true');
+  }
+  function onModalKeydown(event){
+    const modal=document.getElementById('ra-modal');
+    if(!modal||modal.hidden)return;
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeModal();return;}
+    if(event.key!=='Tab')return;
+    const dialog=modal.querySelector('[role="dialog"]');
+    if(!dialog)return;
+    const items=modalTabbables(dialog);
+    if(!items.length){event.preventDefault();dialog.focus();return;}
+    const first=items[0],last=items[items.length-1],active=document.activeElement;
+    if(event.shiftKey&&(active===first||active===dialog||!dialog.contains(active))){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&(active===last||active===dialog||!dialog.contains(active))){event.preventDefault();first.focus();}
+  }
+  function showModal(html){
+    const modal=document.getElementById('ra-modal');
+    if(!modal)return;
+    if(modal.hidden)modalReturnFocus=document.activeElement;
+    modal.innerHTML=`<div class="ra-modal-card">${html}</div>`;
+    modal.hidden=false;
+    const dialog=modal.querySelector('[role="dialog"]')||modal.querySelector('.ra-modal-card');
+    if(!dialog.hasAttribute('role')){dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','Recruitment Agency dialog');}
+    dialog.setAttribute('tabindex','-1');
+    modal.onkeydown=onModalKeydown;
+    modal.querySelectorAll('[data-modal-close]').forEach(b=>b.onclick=closeModal);
+    bindHelp();
+    dialog.focus();
+  }
+  function closeModal(){
+    const modal=document.getElementById('ra-modal');
+    if(!modal||modal.hidden)return;
+    const previous=modalReturnFocus;
+    modalReturnFocus=null;
+    modal.onkeydown=null;
+    modal.hidden=true;
+    modal.innerHTML='';
+    state.messageCandidateId='';
+    if(previous?.isConnected&&typeof previous.focus==='function')previous.focus();
+    else document.getElementById('ra-settings-button')?.focus();
+  }
 
   function candidateCsvRow(v){return[v.userId,v.name,v.pipelineStage,v.matchScore??'',v.fitScore??'',v.lookingFor,v.sourceType,v.currentCompany,v.availability,v.man??'',v.int??'',v.end??'',v.ee??''];}
   function csvCell(value){let safe=String(value??'');if(/^\s*[=+\-@]/u.test(safe))safe=`'${safe}`;return `"${safe.replaceAll('"','""')}"`;}
