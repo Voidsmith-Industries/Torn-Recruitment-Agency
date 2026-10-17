@@ -90,3 +90,39 @@ test('evaluateMatch returns unmeasured when no enabled criterion is known', () =
   assert.equal(result.score, null);
   assert.equal(result.availableWeight, 0);
 });
+
+
+test('v4.9 match profiles preserve normalized local Company saved-search filters', () => {
+  const profile=MatchCore.normalizeProfile({
+    profileId:'sales-role',
+    name:'Sales Role',
+    searchFilters:{company:{
+      search:'  alice  ',
+      minEnd:'100k',
+      minMan:'50k',
+      minInt:'  ',
+      onlineStatus:'Online',
+      organization:'Acme',
+      organizationPresence:'has'
+    }}
+  });
+  assert.deepEqual(profile.searchFilters.company,{
+    search:'alice',
+    minEnd:'100k',
+    minMan:'50k',
+    minInt:'',
+    onlineStatus:'Online',
+    organization:'Acme',
+    organizationPresence:'has'
+  });
+});
+
+test('v4.9 saved-search normalization fails safe for unsupported status and presence values', () => {
+  assert.deepEqual(MatchCore.normalizeCompanySearchFilters({
+    onlineStatus:'Probably Online',
+    organizationPresence:'mystery'
+  }),{
+    search:'',minEnd:'',minMan:'',minInt:'',
+    onlineStatus:'',organization:'',organizationPresence:'any'
+  });
+});

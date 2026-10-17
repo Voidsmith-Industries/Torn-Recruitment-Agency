@@ -97,6 +97,30 @@ test('Faction HTML renderers escape player content and link only to Faction rout
 });
 
 
+test('Faction Results renders specialist profile controls without mixing Company profiles',()=>{
+  const html=ui().renderCandidates([],{
+    total:0,layout:'expanded',activeProfileId:'rw',
+    profiles:[{profileId:'rw',name:'RW Fighter',status:'Active',criteria:[]}]
+  });
+  assert.match(html,/id="ra-faction-results-profile"/);
+  assert.match(html,/RW Fighter/);
+  assert.match(html,/id="ra-faction-profile-apply"/);
+  assert.match(html,/<option value=""[^>]*>No profile<\/option>/);
+  assert.match(html,/id="ra-faction-profile-clear"/);
+  assert.match(html,/id="ra-faction-profile-save-search"/);
+  assert.doesNotMatch(html,/ra-company-profile/);
+});
+
+
+test('Faction Results pagination shows filtered range without rendering the full result set',()=>{
+  const rows=Array.from({length:2},(_,i)=>({userId:String(i+1),name:'F'+i,pipelineStage:'Prospect',factionRecord:{domain:'faction'},prospectProvenance:{sources:[]}}));
+  const html=ui().renderCandidates(rows,{total:350,filteredTotal:250,layout:'compact',pagination:{page:1,pageCount:3,start:100,end:102}});
+  assert.match(html,/101-102 of 250/);
+  assert.match(html,/data-results-page="prev"/);
+  assert.match(html,/data-results-page="next"/);
+});
+
+// Verified RA-002 regression coverage retained during RA-003 reconciliation.
 test('v4.9 Faction Results keep unknown battle intelligence unknown and honor contact outcomes',()=>{
   const U=ui();
   const row=U.buildCandidateRows([{userId:'404',domain:'faction',pipelineStage:'Rejected',outcomes:[{kind:'declined',at:123}],availability:'Unknown'}],[{userId:'404',name:'Delta',recruitmentFit:null,attacks30:null,rwHits30:null}],{baseline,profiles})[0];

@@ -6,10 +6,10 @@
   'use strict';
 
   const SHARED_PLAYER_FIELDS = Object.freeze([
-    'name','level','ee','man','int','end','total','factionId','factionName',
+    'name','level','age','ee','man','int','end','total','factionId','factionName',
     'currentCompany','currentCompanyId','currentCompanyRating','currentCompanyPosition','companyCheckedAt',
     'networth','fit','fitType','lastActive','onlineStatus','lastScoutAt','lastGlobalAt','lastObservedAt',
-    'activity30','xanax30','refills30','attacks30','rwHits30','scoutStatus'
+    'activity30','activeStreak','bestActiveStreak','xanax30','refills30','attacks30','rwHits30','scoutStatus'
   ]);
 
   const COMPANY_STAGES = Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);

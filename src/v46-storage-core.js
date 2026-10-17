@@ -120,9 +120,12 @@
       return definedPatch({
         name:profile.name,
         level:profile.level,
+        age:profile.age,
         factionId:profile.factionId,
         factionName:profile.factionName,
         networth:snapshot.extra?.networth,
+        activeStreak:snapshot.extra?.activeStreak,
+        bestActiveStreak:snapshot.extra?.bestActiveStreak,
         fit:snapshot.currentFit ?? snapshot.originalFit,
         fitType:snapshot.official ? 'official' : (snapshot.provisionalSource ? 'provisional' : 'unmeasured'),
         lastActive:profile.lastActionTs ? Number(profile.lastActionTs) * 1000 : null,
@@ -145,6 +148,8 @@
         fit:global.fit,
         fitType:global.fitType,
         lastActive:global.lastActive,
+        activeStreak:global.activeStreak,
+        bestActiveStreak:global.bestActiveStreak,
         scoutStatus:global.scoutStatus,
         lastGlobalAt:global.observedAt,
         lastObservedAt:global.observedAt

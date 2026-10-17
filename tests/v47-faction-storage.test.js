@@ -162,3 +162,10 @@ test('Faction campaigns and recruitment sessions remain separate durable entitie
   assert.equal((await repos.sessions.list()).length, 1);
   db.close();
 });
+
+
+test('Faction config preserves active Results specialist profile', () => {
+  const Storage=requireStorage();
+  const row=Storage.normalizeConfig({activeResultsProfileId:' rw-1 '});
+  assert.equal(row.activeResultsProfileId,'rw-1');
+});

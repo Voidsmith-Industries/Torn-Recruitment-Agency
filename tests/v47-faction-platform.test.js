@@ -54,3 +54,31 @@ test('Faction platform exposes synchronous navigation rebinding for rebuilt side
   P.uninstall();
   dom.window.close();
 });
+
+
+test('Faction Results profile applies saved filters with specialist work-stat fallbacks',()=>{
+  const P=platform();
+  const profile={
+    profileId:'rw',name:'RW Fighter',status:'Active',
+    searchFilters:{onlineStatus:'Online',organizationPresence:'none',minEnd:''},
+    criteria:[
+      {field:'end',operator:'gte',value:250000},
+      {field:'man',operator:'gte',value:50000},
+      {field:'rwHits30',operator:'gte',value:50}
+    ]
+  };
+  const filters=P._test.profileSearchFilters(profile);
+  assert.equal(filters.onlineStatus,'Online');
+  assert.equal(filters.organizationPresence,'none');
+  assert.equal(filters.minEnd,'250000');
+  assert.equal(filters.minMan,'50000');
+  assert.equal(filters.minInt,'');
+  assert.equal(P._test.activeResultsProfile({activeResultsProfileId:'rw'},[profile]).profileId,'rw');
+  assert.equal(P._test.activeResultsProfile({activeResultsProfileId:'missing'},[profile]),null);
+});
+
+
+test('Faction Results uses a bounded 100-row local render window',()=>{
+  const P=platform();
+  assert.equal(P._test.RESULTS_PAGE_SIZE,100);
+});
