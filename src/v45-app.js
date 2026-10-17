@@ -673,7 +673,7 @@
     const activeFactionProfile=activeFactionProfileId?(factionProfiles||[]).find(profile=>text(profile.profileId)===activeFactionProfileId):null;
     if(activeFactionProfile){
       const profileEvaluation=V47FactionCore.evaluateSpecialistProfile(activeFactionProfile,shared,Array.isArray(record.waivers)?record.waivers:[]);
-      intelligenceRow.eligibilityScore=profileEvaluation.matchScore;
+      intelligenceRow.eligibilityScore=profileEvaluation.matchScore;intelligenceRow.eligibility=profileEvaluation.eligibility;
     }
     const recruitmentIntelligence=ResultsCore.recruitmentFit(intelligenceRow,{domain:normalizedDomain,useEligibility:normalizedDomain==='faction'?Boolean(activeFactionProfile):false,requirements:normalizedDomain==='company'?matchProfileRequirements(activeMatchProfile||{}):{}});
     const recruitmentFit=recruitmentIntelligence.score;
