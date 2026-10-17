@@ -787,11 +787,46 @@
   function bindWindow(){const app=document.getElementById('ra-app'),handle=document.getElementById('ra-titlebar');let dragging=false,dx=0,dy=0;handle.onpointerdown=e=>{if(e.target.closest('button,select,input,label'))return;dragging=true;const r=app.getBoundingClientRect();dx=e.clientX-r.left;dy=e.clientY-r.top;state.topZ++;app.style.zIndex=state.topZ;handle.setPointerCapture?.(e.pointerId);e.preventDefault();};handle.onpointermove=e=>{if(!dragging)return;app.style.left=`${Math.max(4,Math.min(e.clientX-dx,innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(e.clientY-dy,innerHeight-48))}px`;};handle.onpointerup=e=>{if(!dragging)return;dragging=false;try{handle.releasePointerCapture(e.pointerId);}catch{}saveGeometry().catch(()=>{});};const ro=new ResizeObserver(()=>{clearTimeout(state.resizeTimer);state.resizeTimer=setTimeout(()=>saveGeometry().catch(()=>{}),250);});ro.observe(app);}
   function openApp(){const app=document.getElementById('ra-app');if(!app)return;app.style.display='block';state.topZ++;app.style.zIndex=state.topZ;}
 
-  function findInformationSection(){const nodes=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span')].filter(el=>/^information$/i.test(text(el.textContent)));for(const label of nodes){let section=label.parentElement;for(let depth=0;section&&depth<5;depth++,section=section.parentElement){const links=section.querySelectorAll("a,button,[role='button']");if(links.length>=2&&links.length<=30)return section;}}return null;}
-  function ensureTornLauncher(){if(document.getElementById('ra-sidebar-launcher'))return true;const section=findInformationSection();if(!section)return false;const button=document.createElement('button');button.id='ra-sidebar-launcher';button.type='button';button.title='Recruitment Agency';button.setAttribute('aria-label','Recruitment Agency');button.style.cssText='border:0;background:transparent;color:#d86a6a;padding:2px 4px;cursor:pointer;';button.innerHTML='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="8" r="3" stroke="currentColor" stroke-width="2"/><path d="M3 19c.6-3.2 2.4-5 5-5s4.4 1.8 5 5M11 19c.5-2.7 2.2-4.5 5-4.5 2.5 0 4.2 1.6 5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';button.onclick=openApp;section.appendChild(button);syncLauncherVisibility();return true;}
-  function syncLauncherVisibility(){const fallback=document.getElementById('ra-launch'),dock=document.getElementById('ra-sidebar-launcher');if(dock)dock.style.display=state.settings.launcherEnabled?'inline-flex':'none';if(fallback)fallback.style.display=state.settings.launcherEnabled&&!dock?'block':'none';}
+  let launcherHeaderObserver=null;
+  let launcherHeaderHost=null;
+  function visibleStatusBar(){
+    const all=[...document.querySelectorAll('ul[class*="status-icons"],ul[class*="statusIcons"]')];
+    const candidates=all.filter(node=>{
+      for(let ancestor=node;ancestor;ancestor=ancestor.parentElement){
+        const style=window.getComputedStyle(ancestor);
+        if(style.display==='none'||style.visibility==='hidden'||ancestor.hidden)return false;
+      }
+      const rect=node.getBoundingClientRect();
+      return rect.width>0||/jsdom/i.test(window.navigator?.userAgent||'');
+    });
+    return candidates[0]||null;
+  }
+  function ensureTornLauncher(){
+    const bar=visibleStatusBar();
+    if(!bar)return false;
+    let item=document.getElementById('ra-status-launcher');
+    if(!item){
+      item=document.createElement('li');
+      item.id='ra-status-launcher';
+      const button=document.createElement('button');
+      button.type='button';
+      button.title='Open Recruitment Agency';
+      button.setAttribute('aria-label','Open Recruitment Agency');
+      button.textContent='🔍';
+      button.style.cssText='cursor:pointer;background:transparent;border:0;min-width:24px;height:24px;padding:0 3px;font-size:20px;line-height:24px';
+      button.onclick=openApp;
+      item.appendChild(button);
+    }
+    if(item.parentElement!==bar)bar.prepend(item);
+    syncLauncherVisibility();
+    return true;
+  }
+  function syncLauncherVisibility(){
+    const icon=document.getElementById('ra-status-launcher');
+    if(icon)icon.style.display=state.settings.launcherEnabled?'':'none';
+  }
 
-  function mount(){injectStyles();const fallback=document.createElement('button');fallback.id='ra-launch';fallback.textContent='RA';fallback.title='Recruitment Agency';fallback.onclick=openApp;document.body.appendChild(fallback);const app=document.createElement('div');app.id='ra-app';app.innerHTML=`<div class="ra-titlebar" id="ra-titlebar"><div class="ra-title-brand"><span class="ra-title-mark" aria-hidden="true">◆</span><div class="ra-title-copy"><small>VOIDSMITH INDUSTRIES</small><strong>RECRUITMENT AGENCY <span class="ra-version">v${SCRIPT_VERSION}</span></strong></div></div>${workspaceSelectHtml()}<div class="ra-title-spacer" aria-hidden="true"></div><div class="ra-title-actions"><button class="ra-btn" id="ra-settings-button" title="Settings" aria-label="Settings">⚙</button><button class="ra-btn" id="ra-mobile-menu" aria-label="Menu">☰</button><button class="ra-btn" id="ra-close" aria-label="Close">×</button></div></div><div class="ra-shell"><aside class="ra-sidebar"><div class="ra-sidebar-head"><span class="ra-brand">RECRUITMENT</span><button class="ra-btn" id="ra-collapse" aria-label="Collapse navigation">≡</button></div><div id="ra-nav"></div></aside><main class="ra-main"><header class="ra-pagehead"><div><h2 id="ra-page-title">Search & Results</h2><p id="ra-page-desc"></p></div><div id="ra-page-actions"></div></header><div class="ra-content" id="ra-content"></div><aside id="ra-drawer" class="ra-drawer" hidden></aside><div id="ra-modal" class="ra-modal" hidden></div></main></div>`;document.body.appendChild(app);const hover=document.createElement('div');hover.id='ra-hover';hover.className='ra-hover';hover.hidden=true;hover.setAttribute('role','dialog');hover.setAttribute('aria-label','Candidate intelligence');document.body.appendChild(hover);const context=document.createElement('div');context.id='ra-context';context.hidden=true;context.setAttribute('role','menu');document.body.appendChild(context);const help=document.createElement('div');help.id='ra-help-popover';help.className='ra-help-popover';help.hidden=true;help.setAttribute('role','dialog');document.body.appendChild(help);const toasts=document.createElement('div');toasts.id='ra-toastbox';toasts.className='ra-toastbox';document.body.appendChild(toasts);document.getElementById('ra-close').onclick=()=>app.style.display='none';document.getElementById('ra-settings-button').onclick=()=>route('settings');const workspaceToggle=document.getElementById('ra-workspace-toggle'),workspaceMenu=document.getElementById('ra-workspace-menu');workspaceToggle.onclick=()=>{const opening=workspaceMenu.hidden;workspaceMenu.hidden=!opening;workspaceToggle.setAttribute('aria-expanded',String(opening));};document.querySelectorAll('[data-workspace-domain]').forEach(button=>button.onclick=async()=>{const domain=button.dataset.workspaceDomain==='faction'?'faction':'company';workspaceMenu.hidden=true;workspaceToggle.setAttribute('aria-expanded','false');await saveSettings({activeDomain:domain,activePage:`${domain}-candidates`});const drawer=document.getElementById('ra-drawer');if(drawer){drawer.hidden=true;state.drawerCandidateId='';state.playerCard.userId='';}await route(`${domain}-candidates`,false);});document.getElementById('ra-collapse').onclick=async()=>{await saveSettings({sidebarCollapsed:!state.settings.sidebarCollapsed});rebuildNav();};document.getElementById('ra-mobile-menu').onclick=()=>document.querySelector('.ra-shell')?.classList.toggle('sidebar-open');document.addEventListener('click',e=>{if(!e.target.closest('#ra-context'))closeContextMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeCandidateHover();closeHelp(true);closeModal();document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const drawer=document.getElementById('ra-drawer');if(drawer&&!drawer.hidden){drawer.hidden=true;state.drawerCandidateId='';}}});bindWindow();rebuildNav();restoreGeometry().catch(()=>{});}
+  function mount(){injectStyles();const app=document.createElement('div');app.id='ra-app';app.innerHTML=`<div class="ra-titlebar" id="ra-titlebar"><div class="ra-title-brand"><span class="ra-title-mark" aria-hidden="true">◆</span><div class="ra-title-copy"><small>VOIDSMITH INDUSTRIES</small><strong>RECRUITMENT AGENCY <span class="ra-version">v${SCRIPT_VERSION}</span></strong></div></div>${workspaceSelectHtml()}<div class="ra-title-spacer" aria-hidden="true"></div><div class="ra-title-actions"><button class="ra-btn" id="ra-settings-button" title="Settings" aria-label="Settings">⚙</button><button class="ra-btn" id="ra-mobile-menu" aria-label="Menu">☰</button><button class="ra-btn" id="ra-close" aria-label="Close">×</button></div></div><div class="ra-shell"><aside class="ra-sidebar"><div class="ra-sidebar-head"><span class="ra-brand">RECRUITMENT</span><button class="ra-btn" id="ra-collapse" aria-label="Collapse navigation">≡</button></div><div id="ra-nav"></div></aside><main class="ra-main"><header class="ra-pagehead"><div><h2 id="ra-page-title">Search & Results</h2><p id="ra-page-desc"></p></div><div id="ra-page-actions"></div></header><div class="ra-content" id="ra-content"></div><aside id="ra-drawer" class="ra-drawer" hidden></aside><div id="ra-modal" class="ra-modal" hidden></div></main></div>`;document.body.appendChild(app);const hover=document.createElement('div');hover.id='ra-hover';hover.className='ra-hover';hover.hidden=true;hover.setAttribute('role','dialog');hover.setAttribute('aria-label','Candidate intelligence');document.body.appendChild(hover);const context=document.createElement('div');context.id='ra-context';context.hidden=true;context.setAttribute('role','menu');document.body.appendChild(context);const help=document.createElement('div');help.id='ra-help-popover';help.className='ra-help-popover';help.hidden=true;help.setAttribute('role','dialog');document.body.appendChild(help);const toasts=document.createElement('div');toasts.id='ra-toastbox';toasts.className='ra-toastbox';document.body.appendChild(toasts);document.getElementById('ra-close').onclick=()=>app.style.display='none';document.getElementById('ra-settings-button').onclick=()=>route('settings');const workspaceToggle=document.getElementById('ra-workspace-toggle'),workspaceMenu=document.getElementById('ra-workspace-menu');workspaceToggle.onclick=()=>{const opening=workspaceMenu.hidden;workspaceMenu.hidden=!opening;workspaceToggle.setAttribute('aria-expanded',String(opening));};document.querySelectorAll('[data-workspace-domain]').forEach(button=>button.onclick=async()=>{const domain=button.dataset.workspaceDomain==='faction'?'faction':'company';workspaceMenu.hidden=true;workspaceToggle.setAttribute('aria-expanded','false');await saveSettings({activeDomain:domain,activePage:`${domain}-candidates`});const drawer=document.getElementById('ra-drawer');if(drawer){drawer.hidden=true;state.drawerCandidateId='';state.playerCard.userId='';}await route(`${domain}-candidates`,false);});document.getElementById('ra-collapse').onclick=async()=>{await saveSettings({sidebarCollapsed:!state.settings.sidebarCollapsed});rebuildNav();};document.getElementById('ra-mobile-menu').onclick=()=>document.querySelector('.ra-shell')?.classList.toggle('sidebar-open');document.addEventListener('click',e=>{if(!e.target.closest('#ra-context'))closeContextMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeCandidateHover();closeHelp(true);closeModal();document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const drawer=document.getElementById('ra-drawer');if(drawer&&!drawer.hidden){drawer.hidden=true;state.drawerCandidateId='';}}});bindWindow();rebuildNav();restoreGeometry().catch(()=>{});}
 
   async function start(options={}){
     if(state.mounted)return;
@@ -807,9 +842,23 @@
     V47FactionPlatform.install(companyPlatformApp,{renderInitial:false});
     await route(state.page,false);
     ensureTornLauncher();syncLauncherVisibility();
+    window.addEventListener('popstate',ensureTornLauncher);
+    window.addEventListener('hashchange',ensureTornLauncher);
     void restorePendingPrivateChatDraft().catch(error=>toast(error.message,true));
-    const observer=new MutationObserver(()=>{if(!document.getElementById('ra-sidebar-launcher'))ensureTornLauncher();});
-    observer.observe(document.documentElement,{childList:true,subtree:true});
+    // Recheck only header attachment at a bounded cadence. Torn can replace
+    // responsive headers without a route event or a child-list mutation.
+    const checkHeader=()=>{
+      const icon=document.getElementById('ra-status-launcher');
+      if(!icon?.isConnected || icon.parentElement!==visibleStatusBar())ensureTornLauncher();
+      headerTimer=window.setTimeout(checkHeader,5000);
+    };
+    let headerTimer=null;
+    // JSDOM does not provide a live Torn header lifecycle. Avoid leaking a
+    // self-rescheduling browser timer into its Node test process.
+    if(!/jsdom/i.test(window.navigator?.userAgent||'')){
+      headerTimer=window.setTimeout(checkHeader,5000);
+      window.addEventListener('pagehide',()=>window.clearTimeout(headerTimer),{once:true});
+    }
     await logEvent('startup',`Recruitment Agency v${SCRIPT_VERSION} source started`,{version:SCRIPT_VERSION,dbVersion:DB_VERSION});
     if(state.settings.global.enabled&&globalEndpoint())void flushGlobalQueue(false);
     return true;

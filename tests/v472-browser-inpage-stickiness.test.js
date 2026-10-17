@@ -36,7 +36,7 @@ function serve() {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><html><head><meta charset="utf-8"><style>
         body{margin:0;font-family:Arial,sans-serif;background:#202020;color:#fff}
-      </style></head><body>
+      </style></head><body><ul class="status-icons"></ul>
         <section><h2>Information</h2><div><button>One</button><button>Two</button></div></section>
         ${scripts}
         <script>
@@ -94,7 +94,7 @@ test('public bootstrap keeps Faction Requirements active while its own in-page c
     await page.waitForSelector('#ra-app', { timeout: 10000 });
 
     const launcher = await page.evaluate(() => {
-      for (const selector of ['#ra-sidebar-launcher', '#ra-launch']) {
+      for (const selector of ['#ra-status-launcher button']) {
         const el = document.querySelector(selector);
         if (el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden') return selector;
       }

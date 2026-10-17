@@ -39,7 +39,7 @@ function serve() {
         #torn-shell{position:relative;min-height:100vh}
         .torn-header{height:52px;background:#111;position:relative;z-index:20}
         .torn-content{position:relative;z-index:1;padding:20px}
-      </style></head><body><div id="torn-shell"><div class="torn-header"></div><div class="torn-content"><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></div></div>${scripts}<script>
+      </style></head><body><ul class="status-icons"></ul><div id="torn-shell"><div class="torn-header"></div><div class="torn-content"><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></div></div>${scripts}<script>
         window.alert=()=>{}; window.confirm=()=>true; window.prompt=()=>''; window.open=()=>null;
         window.__startupError='';
         window.addEventListener('error',e=>{window.__startupError += String(e.error||e.message)+'\\n';});
@@ -107,7 +107,7 @@ test('real Chrome hit-testing and physical clicks can navigate the public v4.8 c
     await page.addScriptTag({ content: BOOT });
     await page.waitForFunction(() => {
       if (!document.getElementById('ra-app')) return false;
-      return ['#ra-sidebar-launcher', '#ra-launch'].some(selector => {
+      return ['#ra-status-launcher button'].some(selector => {
         const el = document.querySelector(selector);
         return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
       });
@@ -117,7 +117,7 @@ test('real Chrome hit-testing and physical clicks can navigate the public v4.8 c
     assert.equal(startupError, '', `startup errors: ${startupError}`);
 
     const launcher = await page.evaluate(() => {
-      for (const selector of ['#ra-sidebar-launcher', '#ra-launch']) {
+      for (const selector of ['#ra-status-launcher button']) {
         const el = document.querySelector(selector);
         if (el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden') return selector;
       }

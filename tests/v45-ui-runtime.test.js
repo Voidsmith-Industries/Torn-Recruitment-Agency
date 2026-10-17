@@ -16,7 +16,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
 }
 
 test('v4.5 application mounts and primary navigation responds to real clicks', async () => {
-  const dom = new JSDOM(`<!doctype html><html><head></head><body>
+  const dom = new JSDOM(`<!doctype html><html><head></head><body><ul class="status-icons"></ul>
     <section><h2>Information</h2><div><button>One</button><button>Two</button></div></section>
   </body></html>`, {
     url: 'https://www.torn.com/index.php',
@@ -62,8 +62,8 @@ test('v4.5 application mounts and primary navigation responds to real clicks', a
   const app = document.getElementById('ra-app');
   assert.ok(app, 'application shell should be mounted');
 
-  document.getElementById('ra-launch').click();
-  assert.equal(app.style.display, 'block', 'fallback launcher should open the application');
+  document.querySelector('#ra-status-launcher button').click();
+  assert.equal(app.style.display, 'block', 'header launcher should open the application');
 
   async function openPage(page, expectedTitle, expectedControl) {
     const button = document.querySelector(`[data-page="${page}"]`);

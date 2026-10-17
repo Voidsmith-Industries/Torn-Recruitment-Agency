@@ -20,7 +20,7 @@ function chromePath(){
 function serve(){
   const server=http.createServer((req,res)=>{
     res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
-    res.end(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}</style></head><body><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section><script>
+    res.end(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}</style></head><body><ul class="status-icons"></ul><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section><script>
       window.__blockedClicks=0;
       document.addEventListener('click',event=>{
         if(event.target && event.target.closest && event.target.closest('#ra-app')){
@@ -87,7 +87,7 @@ test('v4.5.4 shell scrolls, hides duplicate Settings and safely maximizes/restor
     assert.equal(await page.$('[data-page="settings"]'),null,'Settings must not be duplicated in sidebar navigation');
     assert.ok(await page.$('#ra-settings-button'),'title-bar Settings must remain');
 
-    const launcher=await page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'})||'');
+    const launcher=await page.evaluate(()=>['#ra-status-launcher button'].find(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'})||'');
     assert.ok(launcher,'visible launcher should exist');
     await physicalClick(page,launcher);
     assert.equal(await page.$eval('#ra-app',el=>getComputedStyle(el).display),'block');

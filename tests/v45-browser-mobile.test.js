@@ -22,7 +22,7 @@ function serve(){
     if(url.pathname==='/'){
       const scripts=MODULES.map(f=>`<script src="/src/${f}"></script>`).join('');
       res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
-      res.end(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}.content{padding:12px}</style></head><body><div class="content"><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></div>${scripts}<script>
+      res.end(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}.content{padding:12px}</style></head><body><ul class="status-icons"></ul><div class="content"><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></div>${scripts}<script>
         window.alert=()=>{};window.confirm=()=>true;window.prompt=()=>'';window.open=()=>null;
         (async()=>{try{await RA_V45App.start();window.__raStarted=true}catch(e){window.__raError=String(e&&e.stack||e);window.__raStarted=false}})();
       </script></body></html>`);
@@ -72,7 +72,7 @@ test('421px mobile shell keeps hamburger sidebar open and routes Discover by phy
     assert.equal(await page.evaluate(()=>window.__raStarted),true);
     assert.equal(await page.evaluate(()=>window.innerWidth),421);
 
-    const launcher=await page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden'})||'');
+    const launcher=await page.evaluate(()=>['#ra-status-launcher button'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden'})||'');
     assert.ok(launcher,'visible launcher should exist');
     await physicalClick(page,launcher);
     assert.equal(await page.$eval('#ra-app',e=>getComputedStyle(e).display),'block');

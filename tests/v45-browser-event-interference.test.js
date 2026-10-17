@@ -22,7 +22,7 @@ function serve(){
     const url=new URL(req.url,'http://127.0.0.1');
     if(url.pathname==='/'){
       res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
-      res.end(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}.content{padding:20px}</style></head><body><div class="content"><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></div><script>
+      res.end(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#202020;color:#fff;font-family:Arial}.content{padding:20px}</style></head><body><ul class="status-icons"></ul><div class="content"><section><h2>Information</h2><div><button>One</button><button>Two</button></div></section></div><script>
         window.__blockedClicks=0;
         document.addEventListener('click',event=>{
           if(event.target && event.target.closest && event.target.closest('#ra-app')){
@@ -58,17 +58,13 @@ test('primary navigation and in-page controls survive a hostile document-capture
       await page.addScriptTag({content:fs.readFileSync(path.join(ROOT,'src',file),'utf8')});
     }
     await page.addScriptTag({content:sourceCompatibleBoot(ROOT)});
-    await page.waitForFunction(()=>{
-      if(!document.getElementById('ra-app')) return false;
-      return ['#ra-sidebar-launcher','#ra-launch'].some(s=>{
-        const e=document.querySelector(s);
-        return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';
-      });
-    },{timeout:5000});
-
-    const launcher=await page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden'})||'');
-    assert.ok(launcher,'visible launcher should exist');
-    await physicalClick(page,launcher);
+    await page.waitForFunction(() =>
+      !!document.getElementById('ra-app') &&
+      !!document.querySelector('ul.status-icons #ra-status-launcher button')
+    ,{timeout:5000});
+    assert.equal(await page.$eval('#ra-status-launcher button',el=>el.textContent),'🔍');
+    assert.equal(await page.$('#ra-launch'),null,'old floating launcher must not exist');
+    await physicalClick(page,'#ra-status-launcher button');
     assert.equal(await page.$eval('#ra-app',e=>getComputedStyle(e).display),'block');
 
     await physicalClick(page,'[data-page="company-candidates"]');
