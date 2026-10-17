@@ -621,7 +621,8 @@
 
   function timestamp(value) {
     const n=finite(value);
-    if(n!==null&&n>0)return n < 1e12 ? n*1000 : n;
+    if(n!==null)return n>0?(n < 1e12 ? n*1000 : n):null;
+    if(value===null||value===undefined||value==='')return null;
     const parsed=Date.parse(value);
     return Number.isFinite(parsed)?parsed:null;
   }
@@ -745,6 +746,8 @@
 
   function contactFactor(row,domain='company',nowMs=Date.now(),exclusionWindowDays=7) {
     const record=candidateRecordOf(row,domain);
+    const stage=domainStageOf(row,domain);
+    if(stage==='Hired'||stage==='Rejected'||stage==='Joined')return 0;
     const outcomes=Array.isArray(record?.outcomes)?record.outcomes:[];
     const lastContactAt=latestTimestamp([
       row?.lastContactAt,record?.lastContactAt,
@@ -755,7 +758,6 @@
       if(age<Math.max(1,finite(exclusionWindowDays)??7)*86400000)return .2;
       return .85;
     }
-    const stage=domainStageOf(row,domain);
     if(stage==='Not Contacted'||stage==='Prospect')return 1;
     if(stage==='Shortlisted'||stage==='Evaluating')return .9;
     if(stage==='Contacted'||stage==='Invite Ready')return .35;

@@ -224,6 +224,16 @@ test('v4.9 Faction provenance excludes Company-only candidateLocal evidence', ()
   assert.equal(p.state,'Known Candidate');
 });
 
+test('v4.9 unset timestamps and terminal contact stage never fabricate evidence', () => {
+  const noDate=R.prospectProvenance({pipelineStage:'Not Contacted',companyRecord:{createdAt:0,lastObservedAt:0}},{domain:'company',nowMs:NOW});
+  assert.equal(noDate.freshness,'Unknown');
+  assert.equal(noDate.state,'Known Candidate');
+  for(const [domain,stage] of [['company','Hired'],['company','Rejected'],['faction','Joined']]){
+    const result=R.recruitmentFit({pipelineStage:stage,lastContactAt:NOW-90*86400000,fit:85},{domain,nowMs:NOW});
+    assert.equal(result.components.find(x=>x.key==='contact').factor,0);
+  }
+});
+
 test('v4.9 Recruitment Fit remains unknown with only contact or discovery provenance', () => {
   for (const [domain, stage] of [['company','Not Contacted'],['faction','Prospect']]) {
     const empty=R.recruitmentFit({pipelineStage:stage},{domain,nowMs:NOW});
