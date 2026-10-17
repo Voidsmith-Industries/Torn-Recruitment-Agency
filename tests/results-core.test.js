@@ -213,6 +213,17 @@ test('v4.9 failed hard criteria trump fractional Faction match, and one point is
   assert.equal(onePercent.components.find(x=>x.key==='eligibility').factor,.01);
 });
 
+test('v4.9 Faction provenance excludes Company-only candidateLocal evidence', () => {
+  const row={pipelineStage:'Prospect',factionRecord:{pipelineStage:'Prospect'},candidateLocal:{
+    discoverySources:['COMPANY FORUM'],createdAt:NOW-1000,lastSeenAt:NOW
+  }};
+  const p=R.prospectProvenance(row,{domain:'faction',nowMs:NOW});
+  assert.equal(p.sources.includes('Recruitment Forum'),false);
+  assert.equal(p.firstDiscoveredAt,null);
+  assert.equal(p.lastObservedAt,null);
+  assert.equal(p.state,'Known Candidate');
+});
+
 test('v4.9 Recruitment Fit remains unknown with only contact or discovery provenance', () => {
   for (const [domain, stage] of [['company','Not Contacted'],['faction','Prospect']]) {
     const empty=R.recruitmentFit({pipelineStage:stage},{domain,nowMs:NOW});

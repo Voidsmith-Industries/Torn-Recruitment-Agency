@@ -697,7 +697,7 @@
     };
     const refreshButton=document.getElementById('ra-card-refresh');
     refreshButton.onclick=async()=>{
-      try{refreshButton.disabled=true;refreshButton.textContent='Refreshing…';await runScout([Number(userId)],true);await openPlayerCard(normalizedDomain,userId,{force:true});}
+      try{refreshButton.disabled=true;refreshButton.textContent='Refreshing…';const previous=await idb.get('scoutLatest',Number(userId));await runScout([Number(userId)],true);const current=await idb.get('scoutLatest',Number(userId));if(!current||current.snapshotId===previous?.snapshotId)throw new Error('Intelligence refresh failed; previous intelligence retained.');await openPlayerCard(normalizedDomain,userId,{force:true});}
       catch(error){toast(error.message,true);}
       finally{if(refreshButton?.isConnected){refreshButton.disabled=false;refreshButton.textContent='Refresh Intelligence';}}
     };

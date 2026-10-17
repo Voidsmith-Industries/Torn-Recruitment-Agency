@@ -645,9 +645,10 @@
   function prospectProvenance(row={},options={}) {
     const domain=options.domain==='faction'?'faction':'company';
     const record=candidateRecordOf(row,domain);
-    const candidate=candidateOf(row);
+    // candidateLocal belongs to Company; never import its provenance into Faction.
+    const candidate=domain==='faction'?null:candidateOf(row);
     const player=row?.playerRecord||row?.player||row;
-    const latestSource=row?.latestSource||candidate?.latestSource||{};
+    const latestSource=domain==='faction'?(record?.latestSource||{}):(row?.latestSource||candidate?.latestSource||{});
     const rawSources=uniqueText([
       ...(Array.isArray(record?.discoverySources)?record.discoverySources:[]),
       ...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),
@@ -6269,7 +6270,7 @@
     };
     const refreshButton=document.getElementById('ra-card-refresh');
     refreshButton.onclick=async()=>{
-      try{refreshButton.disabled=true;refreshButton.textContent='Refreshing…';await runScout([Number(userId)],true);await openPlayerCard(normalizedDomain,userId,{force:true});}
+      try{refreshButton.disabled=true;refreshButton.textContent='Refreshing…';const previous=await idb.get('scoutLatest',Number(userId));await runScout([Number(userId)],true);const current=await idb.get('scoutLatest',Number(userId));if(!current||current.snapshotId===previous?.snapshotId)throw new Error('Intelligence refresh failed; previous intelligence retained.');await openPlayerCard(normalizedDomain,userId,{force:true});}
       catch(error){toast(error.message,true);}
       finally{if(refreshButton?.isConnected){refreshButton.disabled=false;refreshButton.textContent='Refresh Intelligence';}}
     };
