@@ -220,6 +220,7 @@
       name: cleanText(source.name) || 'Smart Match',
       criteria,
       searchFilters:{company:normalizeCompanySearchFilters(searchSource.company)},
+      searchFiltersCustom:source.searchFiltersCustom===true,
       createdAt: cleanText(source.createdAt),
       updatedAt: cleanText(source.updatedAt)
     };

@@ -86,9 +86,9 @@
     const saved=profile?.searchFilters?.company||{};
     const filters={...DEFAULT_SEARCH_FILTERS,...saved};
     const requirements=profileRequirements(profile);
-    if(!Object.prototype.hasOwnProperty.call(saved,'minMan')&&requirements.minMan)filters.minMan=String(requirements.minMan);
-    if(!Object.prototype.hasOwnProperty.call(saved,'minInt')&&requirements.minInt)filters.minInt=String(requirements.minInt);
-    if(!Object.prototype.hasOwnProperty.call(saved,'minEnd')&&requirements.minEnd)filters.minEnd=String(requirements.minEnd);
+    if(profile.searchFiltersCustom!==true&&!text(saved.minMan)&&requirements.minMan)filters.minMan=String(requirements.minMan);
+    if(profile.searchFiltersCustom!==true&&!text(saved.minInt)&&requirements.minInt)filters.minInt=String(requirements.minInt);
+    if(profile.searchFiltersCustom!==true&&!text(saved.minEnd)&&requirements.minEnd)filters.minEnd=String(requirements.minEnd);
     return filters;
   }
   let idSequence=0;

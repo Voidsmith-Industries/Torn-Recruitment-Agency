@@ -58,6 +58,7 @@
       status,
       criteria:(Array.isArray(raw.criteria)?raw.criteria:[]).map(normalizeRequirement),
       searchFilters:normalizeFactionSearchFilters(raw.searchFilters),
+      searchFiltersCustom:raw.searchFiltersCustom===true,
       notes:text(raw.notes),
       version:Math.max(1,Math.floor(number(raw.version,1))),
       createdAt:number(raw.createdAt,0),
