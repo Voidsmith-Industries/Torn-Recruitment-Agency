@@ -5673,7 +5673,7 @@
 
   const state = {
     db:null, settings:null, page:'company-candidates', mounted:false, topZ:2147483400,
-    apiGate:Promise.resolve(), apiNextAt:0,
+    apiGate:Promise.resolve(), apiNextAt:0, metaGate:Promise.resolve(),
     sync:{running:false,cancelled:false,feed:'',pages:0},
     fill:{running:false,cancelled:false,done:0,total:0,errors:[]},
     scout:{running:false,paused:false,cancelled:false,done:0,total:0,calls:0,currentId:null,status:'Idle'},
@@ -5753,7 +5753,8 @@
   }
 
   async function getMeta(){return await idb.get('meta','global')||{key:'global',settings:defaultSettings(),ui:{windowGeometry:{}}};}
-  async function saveSettings(patch){const meta=await getMeta();meta.settings=mergeSettings({...meta.settings,...patch});await idb.put('meta',meta);state.settings=meta.settings;return state.settings;}
+  async function mutateMeta(mutator){const previous=state.metaGate;let release;state.metaGate=new Promise(resolve=>{release=resolve;});await previous;try{const meta=await getMeta();await mutator(meta);await idb.put('meta',meta);return meta;}finally{release();}}
+  async function saveSettings(patch){const meta=await mutateMeta(meta=>{meta.settings=mergeSettings({...meta.settings,...patch});});state.settings=meta.settings;return state.settings;}
   async function logEvent(type,message,details={}){if(!state.db)return;const item=Runtime.makeLogEntry(type,message,details);item.logId=`${item.at}:${Math.random().toString(36).slice(2,8)}`;await idb.put('appLogs',item);const rows=await idb.getAll('appLogs');if(rows.length>500){rows.sort((a,b)=>a.at-b.at);for(const old of rows.slice(0,rows.length-500))await idb.delete('appLogs',old.logId);}}
 
   async function reserveApiCall(countScout=false){let unlock;const previous=state.apiGate;state.apiGate=new Promise(resolve=>{unlock=resolve;});await previous;try{if(countScout){while(state.scout.paused&&!state.scout.cancelled)await sleep(200);if(state.scout.cancelled)throw Object.assign(new Error('Scout cancelled.'),{cancelled:true});if(state.scout.calls>=state.settings.scout.budget)throw Object.assign(new Error('Scout request budget reached.'),{budget:true});}const gap=Math.max(MIN_API_GAP_MS,60000/clampRate(state.settings.scout.rate));const wait=Math.max(0,state.apiNextAt-Date.now());if(wait)await sleep(wait);state.apiNextAt=Date.now()+gap;if(countScout)state.scout.calls++;}finally{unlock();}}
@@ -6389,7 +6390,7 @@
   async function hardReset(){if(!confirm('NUKE IT ALL will permanently delete Recruitment Agency browser-local candidates, forum imports, Scout cache/history, Global cache/queue, Match Profiles, logs, messages/settings and layout. Torn account data and unrelated userscripts are not touched. Continue?'))return;const typed=text(prompt('Type NUKE to confirm the hard local reset:','')).toUpperCase();if(typed!=='NUKE'){toast('Hard reset cancelled.',true);return;}for(const store of STORE_NAMES)await idb.clear(store);state.settings=mergeSettings({});state.page='company-candidates';applyTheme();rebuildNav();closeModal();document.getElementById('ra-drawer').hidden=true;await route('company-candidates',false);toast('Recruitment Agency local data was reset.');}
   async function clearRecruitmentData(){for(const store of ['users','candidateLocal','companyRecruitment','factionRecruitment','companyVacancies','companyCampaigns','companyRecruitmentConfig','companyRecruitmentSessions','factionSpecialistProfiles','factionCampaigns','factionRecruitmentConfig','factionRecruitmentSessions','forumSources','forumSyncState'])await idb.clear(store);return true;}
   async function clearRecruitment(){if(!confirm('Clear local Company/Faction recruitment and forum discovery data? Shared Scout/Player Intelligence will be kept.'))return;await clearRecruitmentData();toast('Recruitment/forum data cleared.');await logEvent('reset','Recruitment and forum data cleared');await route(state.page,false);}
-  async function resetLayout(){const meta=await getMeta();meta.ui={windowGeometry:{}};await idb.put('meta',meta);const app=document.getElementById('ra-app');Object.assign(app.style,{left:'6vw',top:'5vh',width:'88vw',height:'86vh'});toast('Layout reset.');}
+  async function resetLayout(){await mutateMeta(meta=>{meta.ui={windowGeometry:{}};});const app=document.getElementById('ra-app');Object.assign(app.style,{left:'6vw',top:'5vh',width:'88vw',height:'86vh'});toast('Layout reset.');}
 
   function readFiltersFromUi(){const old=state.settings.candidates.filters;return{...old,search:text(document.getElementById('ra-filter-search')?.value),stage:text(document.getElementById('ra-filter-stage')?.value),source:text(document.getElementById('ra-filter-source')?.value),lookingFor:text(document.getElementById('ra-filter-looking')?.value),currentCompany:text(document.getElementById('ra-filter-company')?.value),minMatch:text(document.getElementById('ra-filter-match')?.value),minFit:text(document.getElementById('ra-filter-fit')?.value),activeOnly:document.getElementById('ra-filter-active')?.value==='true',minMan:text(document.getElementById('ra-filter-man')?.value),minInt:text(document.getElementById('ra-filter-int')?.value),minEnd:text(document.getElementById('ra-filter-end')?.value),minActivity30:text(document.getElementById('ra-filter-activity')?.value)};}
   async function persistFilters(){await saveSettings({candidates:{...state.settings.candidates,filters:readFiltersFromUi()}});await route('company-candidates',false);}
@@ -6447,7 +6448,7 @@
   function startLogRefresh(){stopLogRefresh();state.logRefreshTimer=setInterval(()=>{if(state.page==='logs')route('logs',false).catch(()=>{});},5000);}
   function stopLogRefresh(){if(state.logRefreshTimer){clearInterval(state.logRefreshTimer);state.logRefreshTimer=null;}}
 
-  async function saveGeometry(){const app=document.getElementById('ra-app');if(!app)return;const r=app.getBoundingClientRect();const meta=await getMeta();meta.ui=meta.ui||{};meta.ui.windowGeometry=meta.ui.windowGeometry||{};meta.ui.windowGeometry.main={x:r.left,y:r.top,width:r.width,height:r.height};await idb.put('meta',meta);}
+  async function saveGeometry(){const app=document.getElementById('ra-app');if(!app)return;const r=app.getBoundingClientRect();await mutateMeta(meta=>{meta.ui=meta.ui||{};meta.ui.windowGeometry=meta.ui.windowGeometry||{};meta.ui.windowGeometry.main={x:r.left,y:r.top,width:r.width,height:r.height};});}
   async function restoreGeometry(){const app=document.getElementById('ra-app');const meta=await getMeta();const g=meta.ui?.windowGeometry?.main;if(!app||!g)return;const minW=Math.min(560,innerWidth-8),minH=Math.min(420,innerHeight-8);app.style.left=`${Math.max(4,Math.min(number(g.x,20),innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(number(g.y,50),innerHeight-48))}px`;app.style.width=`${Math.max(minW,Math.min(number(g.width,900),innerWidth-8))}px`;app.style.height=`${Math.max(minH,Math.min(number(g.height,650),innerHeight-8))}px`;}
   function bindWindow(){const app=document.getElementById('ra-app'),handle=document.getElementById('ra-titlebar');let dragging=false,dx=0,dy=0;handle.onpointerdown=e=>{if(e.target.closest('button,select,input,label'))return;dragging=true;const r=app.getBoundingClientRect();dx=e.clientX-r.left;dy=e.clientY-r.top;state.topZ++;app.style.zIndex=state.topZ;handle.setPointerCapture?.(e.pointerId);e.preventDefault();};handle.onpointermove=e=>{if(!dragging)return;app.style.left=`${Math.max(4,Math.min(e.clientX-dx,innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(e.clientY-dy,innerHeight-48))}px`;};handle.onpointerup=e=>{if(!dragging)return;dragging=false;try{handle.releasePointerCapture(e.pointerId);}catch{}saveGeometry().catch(()=>{});};const ro=new ResizeObserver(()=>{clearTimeout(state.resizeTimer);state.resizeTimer=setTimeout(()=>saveGeometry().catch(()=>{}),250);});ro.observe(app);}
   function openApp(){const app=document.getElementById('ra-app');if(!app)return;app.style.display='block';state.topZ++;app.style.zIndex=state.topZ;}
@@ -6464,7 +6465,7 @@
     state.settings=mergeSettings((await getMeta()).settings||{});
     state.page=V46Navigation.normalizeRoute(state.settings.activePage,state.settings.complexity);
     if(!visibleRouteSet().has(state.page))state.page=defaultDomainRoute();
-    const meta=await getMeta();meta.settings=state.settings;meta.ui=meta.ui||{windowGeometry:{}};await idb.put('meta',meta);
+    await mutateMeta(meta=>{meta.settings=state.settings;meta.ui=meta.ui||{windowGeometry:{}};});
     await migrateLegacyUsers();await repositories.backfillLegacy(Date.now());await ensureDefaultMatchProfile();
     if(document.readyState==='loading')await new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));
     applyTheme();mount();state.mounted=true;
@@ -6480,7 +6481,7 @@
     return true;
   }
 
-  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,setCompanyWatchlist,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
+  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,setCompanyWatchlist,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId,getMeta,saveSettings,saveGeometry,resetLayout,mutateMeta,idb}});
 });
 
 /* userscript bootstrap */
