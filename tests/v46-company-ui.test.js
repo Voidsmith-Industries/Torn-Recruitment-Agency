@@ -82,6 +82,34 @@ test('Company HTML renderers expose operational links and escaped player content
 });
 
 
+test('v4.9 Company results surface local recruitment profiles without adding a second profile system',()=>{
+  const html=CompanyUI.renderCandidates([],{
+    profiles:[
+      {profileId:'sales',name:'Sales Role'},
+      {profileId:'trainer',name:'Trainer Role'}
+    ],
+    activeProfileId:'trainer'
+  });
+  assert.match(html,/id="ra-company-profile-select"/);
+  assert.match(html,/Sales Role/);
+  assert.match(html,/value="trainer" selected/);
+  assert.match(html,/id="ra-company-profile-apply"/);
+  assert.match(html,/<option value=""[^>]*>No profile<\/option>/);
+  assert.match(html,/id="ra-company-profile-clear"/);
+  assert.match(html,/id="ra-company-profile-save-search"/);
+  assert.match(html,/id="ra-company-profile-manage"/);
+});
+
+
+test('Company Results pagination shows filtered range without rendering the full result set',()=>{
+  const rows=Array.from({length:2},(_,i)=>({userId:String(i+1),name:'C'+i,pipelineStage:'Not Contacted',prospectProvenance:{sources:[]}}));
+  const html=CompanyUI.renderCandidates(rows,{total:350,filteredTotal:250,layout:'compact',pagination:{page:1,pageCount:3,start:100,end:102}});
+  assert.match(html,/101-102 of 250/);
+  assert.match(html,/data-results-page="prev"/);
+  assert.match(html,/data-results-page="next"/);
+});
+
+// Verified RA-002 regression coverage retained during RA-003 reconciliation.
 test('v4.9 Results preserve unknown Recruitment Fit and recorded contact history',()=>{
   const row=CompanyUI.buildCandidateRows([{userId:'404',domain:'company',pipelineStage:'Rejected',outcomes:[{kind:'declined',at:123}],availability:'Unknown'}],[{userId:'404',name:'Delta',recruitmentFit:null}],{eligibilityFor})[0];
   const html=CompanyUI.renderCandidates([row],{layout:'expanded'});

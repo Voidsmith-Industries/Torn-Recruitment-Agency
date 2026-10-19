@@ -59,6 +59,7 @@
       baseline:FactionCore.normalizeBaseline(raw.baseline||{}),
       stageThresholds:thresholds,
       opportunityWeights:weights,
+      activeResultsProfileId:text(raw.activeResultsProfileId),
       updatedAt:number(raw.updatedAt,Date.now())
     };
   }
