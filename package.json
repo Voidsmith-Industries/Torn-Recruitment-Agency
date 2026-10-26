@@ -9,7 +9,7 @@
     "syntax": "node --check src/scout-core.js && node --check src/results-core.js && node --check src/global-core.js && node --check src/match-core.js && node --check src/forum-core.js && node --check src/v45-runtime.js && node --check src/v45-candidates.js && node --check src/v45-discovery.js && node --check src/v45-messaging.js && node --check src/v46-domain-core.js && node --check src/v46-storage-core.js && node --check src/v46-navigation.js && node --check src/v46-company-core.js && node --check src/v46-company-storage.js && node --check src/v46-company-ui.js && node --check src/v46-company-operations.js && node --check src/v46-company-workflow.js && node --check src/v46-company-workflow-ui.js && node --check src/v46-company-opportunity-ui.js && node --check src/v46-company-platform.js && node --check src/v47-faction-core.js && node --check src/v47-faction-storage.js && node --check src/v47-faction-ui.js && node --check src/v47-faction-operations.js && node --check src/v47-faction-workflow.js && node --check src/v47-faction-workflow-ui.js && node --check src/v47-faction-opportunity-ui.js && node --check src/v47-faction-platform.js && node --check src/v45-app.js && node --check R4G3RUNN3R-Recruitment-Agency.user.js"
   },
   "devDependencies": {
-    "fake-indexeddb": "6.2.5",
+    "fake-indexeddb": "6.2.6",
     "jsdom": "26.1.0",
     "puppeteer-core": "23.11.1"
   },
