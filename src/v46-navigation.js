@@ -19,8 +19,7 @@
     Object.freeze({id:'intelligence',label:'OPTIONAL TOOLS',pages:Object.freeze([
       Object.freeze({id:'company-discover',label:'Forum Discovery',flag:'companyDiscovery'}),
       Object.freeze({id:'scout',label:'Scout',flag:'scout'}),
-      Object.freeze({id:'smart-match',label:'Smart Match',flag:'smartMatch'}),
-      Object.freeze({id:'global-intelligence',label:'Global Intelligence',flag:'globalIntelligence'})
+      Object.freeze({id:'smart-match',label:'Smart Match',flag:'smartMatch'})
     ])}),
     Object.freeze({id:'application',label:'ADVANCED',pages:Object.freeze([
       Object.freeze({id:'data',label:'Data',flag:'data'})

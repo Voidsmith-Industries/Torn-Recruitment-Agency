@@ -6,6 +6,7 @@ const root=path.join(__dirname,'..');
 const boot=fs.readFileSync(path.join(root,'R4G3RUNN3R-Recruitment-Agency.user.js'),'utf8');
 const app=fs.readFileSync(path.join(root,'src','v45-app.js'),'utf8');
 
-test('global transport grant remains limited to Google Apps Script hosts',()=>{assert.match(boot,/@connect\s+script\.google\.com/);assert.match(boot,/@connect\s+script\.googleusercontent\.com/);assert.doesNotMatch(boot,/@connect\s+\*/);});
+// v4.9.1 hides Global Intelligence until a hosted service exists: no cross-origin transport is declared or used.
+test('Global Intelligence is hidden: the userscript declares no @connect and keeps its single grant',()=>{assert.doesNotMatch(boot,/@connect/);assert.deepEqual(boot.match(/^\/\/ @grant\s+\S+$/gm),['// @grant        GM_xmlhttpRequest']);});
 
-test('global JSON transport prefers GM_xmlhttpRequest and retains fetch fallback',()=>{assert.match(app,/typeof globalThis\.GM_xmlhttpRequest===['"]function['"]/);assert.match(app,/globalThis\.GM_xmlhttpRequest/);assert.match(app,/await fetch\(url/);});
+test('the app has no Global Intelligence network transport',()=>{assert.doesNotMatch(app,/GM_xmlhttpRequest/);assert.doesNotMatch(app,/function globalJson|flushGlobalQueue|testGlobalService/);});

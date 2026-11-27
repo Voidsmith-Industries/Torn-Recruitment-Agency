@@ -126,11 +126,11 @@ test('first run: desktop has no dead mobile menu button and Settings leads with 
     assert.deepEqual(layout.openOthers, [], 'every other section starts collapsed');
     assert.equal(layout.scoutHasKey, false, 'the API key control is not buried in Scout');
     assert.match(layout.advancedHeading, /Advanced/);
-    for (const id of ['optional-features', 'recruitment', 'scout', 'candidates', 'smart-match', 'global', 'data', 'danger']) {
+    for (const id of ['optional-features', 'recruitment', 'scout', 'candidates', 'smart-match', 'data', 'danger']) {
       assert.ok(layout.advancedSections.includes(id), `${id} should be grouped under Advanced`);
     }
     assert.deepEqual(layout.optionalGroups, ['tools'], 'only the kept optional tools are offered');
-    assert.deepEqual(layout.optionalKeys, ['companyDiscovery', 'scout', 'smartMatch', 'globalIntelligence', 'data'], 'Optional Features lists only kept tools; removed workflow pages have no toggles');
+    assert.deepEqual(layout.optionalKeys, ['companyDiscovery', 'scout', 'smartMatch', 'data'], 'Optional Features lists only kept tools; removed workflow pages have no toggles');
 
     // Existing user data is untouched: enabling a tool still works through the regrouped list and saving keeps messages.
     await page.evaluate(() => {

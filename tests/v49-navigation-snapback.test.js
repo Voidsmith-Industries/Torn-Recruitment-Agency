@@ -129,7 +129,7 @@ test('a slow render of an older route never overwrites the page the user navigat
   await withApp(async page => {
     for (const [older, newer, store, expectTitle, expectContent] of [
       ['scout', 'company-discover', 'scoutHistory', 'Forum Discovery', 'Forum Discovery'],
-      ['global-intelligence', 'data', 'globalSyncQueue', 'Data', 'Local Data'],
+      ['data', 'smart-match', 'appLogs', 'Smart Match', 'Smart MatchLocal-only'], // Global Intelligence was hidden in v4.9.1,
       ['smart-match', 'settings', 'matchProfiles', 'Settings', 'Getting started']
     ]) {
       await page.evaluate(async (older, newer, store) => {

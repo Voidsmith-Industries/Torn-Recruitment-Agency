@@ -14,7 +14,7 @@ test('navigation keeps Search & Results per domain and Forum Discovery under opt
   assert.deepEqual(N.GROUPS.find(g=>g.id==='company-recruitment').pages.map(p=>p.id),['company-candidates']);
   assert.deepEqual(N.GROUPS.find(g=>g.id==='faction-recruitment').pages.map(p=>p.id),['faction-candidates']);
   const tools=N.GROUPS.find(g=>g.id==='intelligence');
-  assert.deepEqual(tools.pages.map(p=>p.id),['company-discover','scout','smart-match','global-intelligence']);
+  assert.deepEqual(tools.pages.map(p=>p.id),['company-discover','scout','smart-match']);
   const forum=tools.pages.find(p=>p.id==='company-discover');
   assert.equal(forum.label,'Forum Discovery');
   assert.equal(forum.flag,'companyDiscovery','saved optionalModules.companyDiscovery keeps working');

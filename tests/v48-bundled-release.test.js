@@ -44,7 +44,7 @@ test('bundled release keeps the metadata block byte-exact and unminified (minus 
   const grants = expected.match(/^\/\/ @grant\s+.+$/gm) || [];
   assert.deepEqual(grants.map(line => line.split(/\s+/).pop()), ['GM_xmlhttpRequest'], 'grants must not widen');
   const connects = expected.match(/^\/\/ @connect\s+.+$/gm) || [];
-  assert.deepEqual(connects.map(line => line.split(/\s+/).pop()), ['script.google.com', 'script.googleusercontent.com']);
+  assert.deepEqual(connects, [], 'Global Intelligence is hidden, so nothing needs a cross-origin @connect');
   assert.match(expected, /^\/\/ @match\s+https:\/\/www\.torn\.com\/\*$/m);
   assert.match(expected, /^\/\/ @noframes$/m);
 });
