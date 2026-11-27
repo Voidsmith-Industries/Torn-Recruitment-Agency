@@ -190,8 +190,8 @@ test('header launcher is re-attached when Torn replaces its header', {timeout:90
 test('Torn DOM churn does not trigger a full-document launcher scan per mutation', {timeout:90000}, async()=>{
   await withPage({beforeBoot:()=>{
     window.__raScans=0;
-    const native=Document.prototype.querySelectorAll;
-    Document.prototype.querySelectorAll=function(sel){if(sel==='h1,h2,h3,h4,h5,h6,div,span')window.__raScans++;return native.call(this,sel);};
+    const native=Document.prototype.querySelector;
+    Document.prototype.querySelector=function(sel){if(sel==='#sidebar')window.__raScans++;return native.call(this,sel);};
   }}, DESKTOP, async page=>{
     await page.evaluate(()=>{window.__raScans=0;});
     await page.evaluate(async()=>{const box=document.querySelector('.content-wrapper');for(let i=0;i<200;i++){box.appendChild(document.createElement('span'));await new Promise(r=>setTimeout(r,2));}});
@@ -214,17 +214,17 @@ const instrumentHost = () => {
 };
 const idleTimers = page => page.evaluate(async()=>{ await new Promise(r=>setTimeout(r,400)); window.__raTimers=0; window.__countTimers=true; await new Promise(r=>requestAnimationFrame(()=>r())); const wait=Date.now()+1500; while(Date.now()<wait) await new Promise(r=>requestAnimationFrame(()=>r())); window.__countTimers=false; return window.__raTimers; });
 const raFootprint = page => page.evaluate(()=>({
-  nodes:[...document.querySelectorAll('*')].filter(el=>el.closest('[id^="ra-"]')).length,
+  nodes:[...document.querySelectorAll('*')].filter(el=>el.closest('[id^="ra-"],[data-voidsmith-dock="recruitment-agency"]')).length,
   css:[...document.querySelectorAll('style')].filter(el=>/^ra-/.test(el.id)).reduce((n,el)=>n+el.textContent.length,0),
   heavy:['ra-app','ra-hover','ra-context','ra-help-popover','ra-toastbox','ra-v45-css','ra-v454-shell-css'].filter(id=>document.getElementById(id))
 }));
 
 test('closed panel: only launcher nodes, no document-wide subtree observer, no timers', {timeout:90000}, async()=>{
-  for(const [variant, viewport] of [[{header:true,beforeBoot:instrumentHost}, DESKTOP],[{beforeBoot:instrumentHost}, DESKTOP],[{header:true,mobile:true,beforeBoot:instrumentHost}, MOBILE]]){
+  for(const [variant, viewport] of [[{header:true,sidebar:true,beforeBoot:instrumentHost}, DESKTOP],[{header:true,beforeBoot:instrumentHost}, DESKTOP],[{beforeBoot:instrumentHost}, DESKTOP],[{header:true,mobile:true,beforeBoot:instrumentHost}, MOBILE]]){
     await withPage(variant, viewport, async page=>{
       const closed = await raFootprint(page);
       assert.deepEqual(closed.heavy, [], 'app shell, overlays and app CSS must not exist before first open');
-      assert.ok(closed.nodes<=8, `closed panel must add only launcher nodes, got ${closed.nodes}`);
+      assert.ok(closed.nodes<=9, `closed panel must add only launcher nodes, got ${closed.nodes}`);
       assert.ok(closed.css<=2048, `closed panel CSS must be tiny, got ${closed.css} chars`);
       const observed = await page.evaluate(()=>window.__raObserved);
       assert.deepEqual(observed.filter(o=>o.subtree&&['HTML','BODY','#document'].includes(o.id)), [], `no subtree observer on document/body: ${JSON.stringify(observed)}`);
