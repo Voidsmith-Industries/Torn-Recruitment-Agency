@@ -93,6 +93,10 @@ test('public bootstrap keeps Faction Requirements active while its own in-page c
     await page.addScriptTag({ content: BOOT });
     await page.waitForSelector('#ra-app', { timeout: 10000 });
 
+    await page.waitForFunction(() => ['#ra-sidebar-launcher', '#ra-launch'].some(selector => {
+      const el = document.querySelector(selector);
+      return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    }), { timeout: 10000 }).catch(() => {});
     const launcher = await page.evaluate(() => {
       for (const selector of ['#ra-sidebar-launcher', '#ra-launch']) {
         const el = document.querySelector(selector);

@@ -131,7 +131,7 @@ test('a slow render of an older route never overwrites the page the user navigat
     for (const [older, newer, store, expectTitle, expectContent] of [
       ['scout', 'company-pipeline', 'scoutHistory', 'Company Pipeline', 'Not Contacted'],
       ['global-intelligence', 'data', 'globalSyncQueue', 'Data', 'Local Data'],
-      ['smart-match', 'settings', 'matchProfiles', 'Settings', 'General']
+      ['smart-match', 'settings', 'matchProfiles', 'Settings', 'Getting started']
     ]) {
       await page.evaluate(async (older, newer, store) => {
         window.__slowStores = { [store]: 400 };
