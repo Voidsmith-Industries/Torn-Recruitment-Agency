@@ -257,10 +257,7 @@
   'use strict';
 
   const PIPELINE_STAGES = Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
-  const DEFAULT_VISIBLE_COLUMNS = Object.freeze(['player','pipelineStage','match','fit','lookingFor','sourceType','lastActive']);
-  const DEFAULT_SORT = Object.freeze({ key: 'match', direction: 'desc' });
   const SCOUT_STATUS_ORDER = Object.freeze(['live','fresh','cached','provisional','stale','failed','unscouted']);
-  const SCOUT_STATUS_RANK = Object.freeze(Object.fromEntries(SCOUT_STATUS_ORDER.map((key, index) => [key, index])));
 
   const COMPANY_KEYS = Object.freeze([
     'adult_novelties','amusement_park','candle_shop','car_dealership','clothing_store','cruise_line','cyber_cafe',
@@ -300,68 +297,15 @@
   function text(value) { return String(value == null ? '' : value).replace(/\s+/g, ' ').trim(); }
   function lower(value) { return text(value).toLowerCase(); }
 
-  function parseCompactNumber(value) {
-    const raw = String(value ?? '').trim().replace(/,/g, '');
-    if (!raw) return { valid: true, empty: true, value: null };
-    const m = raw.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*([kmb])?$/i);
-    if (!m) return { valid: false, empty: false, value: null };
-    const base = Number(m[1]);
-    if (!Number.isFinite(base) || base < 0) return { valid: false, empty: false, value: null };
-    const mult = ({ k: 1e3, m: 1e6, b: 1e9 })[(m[2] || '').toLowerCase()] || 1;
-    const out = base * mult;
-    return Number.isFinite(out) ? { valid: true, empty: false, value: out } : { valid: false, empty: false, value: null };
-  }
 
-  function normalizeCompany(value) {
-    const raw = String(value ?? '').trim().toLowerCase().replace(/[.*]/g, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
-    return COMPANY_ALIASES.get(raw) || '';
-  }
 
-  function parsePreferredCompany(value) {
-    const raw = String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!raw) return '';
-    const intent = /(?:\blooking\s+for\b|\bseeking\b|\bprefer(?:ably|red|ring)?\b|\bwant(?:ing)?\b|\bafter\b)\s+(?:a\s+|an\s+|any\s+|\d+\s*\*?\s*)?([^,.;|]{1,80})/ig;
-    let match;
-    while ((match = intent.exec(raw))) {
-      const phrase = match[1].toLowerCase().replace(/[()\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
-      const candidates = [...COMPANY_ALIASES.keys()].sort((a, b) => b.length - a.length);
-      for (const alias of candidates) {
-        const re = new RegExp(`(?:^|\\b)${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\b|$)`, 'i');
-        if (re.test(phrase)) return COMPANY_ALIASES.get(alias) || '';
-      }
-    }
-    return '';
-  }
 
-  function formatCompany(key) {
-    const normalized = normalizeCompany(key) || String(key || '').toLowerCase();
-    if (!normalized) return '—';
-    return normalized.split('_').map(x => x ? x[0].toUpperCase() + x.slice(1) : '').join(' ');
-  }
 
   function scoutOf(row) { return row?.scout || (row?.w30 || row?.profile ? row : null); }
   function profileOf(row) { return scoutOf(row)?.profile || row?.api || row?.profile || {}; }
-  function window30(row) { const s = scoutOf(row); return s?.w30 || s?.provisionalSource || {}; }
   function candidateOf(row) { return row?.candidateLocal || row?.candidate || {}; }
 
-  function fitOf(row) {
-    const direct = finite(row?.fit);
-    if (direct !== null) return direct;
-    const s = scoutOf(row);
-    if (!s) return null;
-    for (const key of ['currentFit','fit','originalFit']) {
-      const x = finite(s[key]);
-      if (x !== null) return x;
-    }
-    return null;
-  }
 
-  function idleSeconds(row, nowMs = Date.now()) {
-    const p = profileOf(row);
-    const ts = finite(p.lastActionTs ?? p.last_action?.timestamp ?? row?.lastActionTs);
-    if (ts === null || ts <= 0) return null;
-    return Math.max(0, Math.floor(nowMs / 1000 - ts));
-  }
 
   function classifyScoutStatus(row, nowMs = Date.now(), freshMs = 12 * 60 * 60 * 1000) {
     const s = scoutOf(row);
@@ -378,212 +322,21 @@
     return 'stale';
   }
 
-  function pipelineStageOf(row) {
-    const value = text(row?.pipelineStage || candidateOf(row)?.pipelineStage);
-    return PIPELINE_STAGES.find(stage => stage.toLowerCase() === value.toLowerCase()) || 'Not Contacted';
-  }
 
-  function sourceTypeOf(row) {
-    const direct = text(row?.sourceType || row?.latestSource?.sourceType);
-    if (direct) return direct.toUpperCase();
-    const sources = row?.discoverySources || candidateOf(row)?.discoverySources;
-    return Array.isArray(sources) && sources.length ? text(sources[sources.length - 1]).toUpperCase() : '';
-  }
 
-  function currentCompanyOf(row) {
-    const p = profileOf(row);
-    return text(row?.currentCompany || row?.companyName || p?.company?.name || p?.job?.company_name || p?.company_name);
-  }
 
-  function lookingForOf(row) {
-    const c = candidateOf(row);
-    return text(row?.lookingFor || c?.lookingFor || c?.desiredRole || c?.desiredCompany || row?.preferredCompany || row?.company);
-  }
 
-  function availabilityOf(row) { return text(row?.availability || candidateOf(row)?.availability) || 'Unknown'; }
 
-  function isActiveCandidate(row, nowMs = Date.now(), activeAgeDays = 30) {
-    if (row?.active === false || candidateOf(row)?.active === false) return false;
-    const limit = Math.max(0, finite(activeAgeDays) ?? 30) * 86400;
-    if (!limit) return true;
-    const idle = idleSeconds(row, nowMs);
-    return idle === null ? true : idle <= limit;
-  }
 
-  const COLUMNS = Object.freeze([
-    { key:'player', label:'Player', type:'text', sortable:true, defaultDirection:'asc', getValue:r => lower(r?.name || profileOf(r)?.name) },
-    { key:'pipelineStage', label:'Stage', type:'text', sortable:true, defaultDirection:'asc', getValue:r => lower(pipelineStageOf(r)) },
-    { key:'match', label:'Match', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(r?.matchScore) },
-    { key:'fit', label:'Fit', type:'number', sortable:true, defaultDirection:'desc', getValue:r => fitOf(r) },
-    { key:'lookingFor', label:'Looking For', type:'text', sortable:true, defaultDirection:'asc', getValue:r => lower(lookingForOf(r)) || null },
-    { key:'sourceType', label:'Source', type:'text', sortable:true, defaultDirection:'asc', getValue:r => lower(sourceTypeOf(r)) || null },
-    { key:'lastActive', label:'Last Active', type:'number', sortable:true, defaultDirection:'asc', getValue:(r,now) => idleSeconds(r, now) },
-    { key:'currentCompany', label:'Current Company', type:'text', sortable:true, defaultDirection:'asc', getValue:r => lower(currentCompanyOf(r)) || null },
-    { key:'availability', label:'Availability', type:'text', sortable:true, defaultDirection:'asc', getValue:r => lower(availabilityOf(r)) },
-    { key:'man', label:'MAN', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(r?.stats?.man) },
-    { key:'int', label:'INT', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(r?.stats?.int) },
-    { key:'end', label:'END', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(r?.stats?.end) },
-    { key:'total', label:'TOTAL', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(r?.stats?.total) },
-    { key:'ee', label:'EE', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(r?.ee) },
-    { key:'preferredCompany', label:'Preferred Company', type:'text', sortable:true, defaultDirection:'asc', getValue:r => normalizeCompany(r?.preferredCompany || r?.company) || null },
-    { key:'trend', label:'Trend', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(scoutOf(r)?.trend ?? r?.trend) },
-    { key:'activity30', label:'Activity', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(window30(r)?.activityHours) },
-    { key:'scoutStatus', label:'Scout Status', type:'rank', sortable:true, defaultDirection:'asc', getValue:(r,now) => SCOUT_STATUS_RANK[classifyScoutStatus(r, now)] ?? 999 },
-    { key:'level', label:'Level', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(profileOf(r)?.level) },
-    { key:'xanax30', label:'Xanax 30d', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(window30(r)?.xanax) },
-    { key:'refills30', label:'Refills 30d', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(window30(r)?.refills) },
-    { key:'attacks30', label:'Attacks 30d', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(window30(r)?.attacks) },
-    { key:'rwHits30', label:'RW Hits 30d', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(window30(r)?.rwHits) },
-    { key:'networth', label:'Net Worth', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(scoutOf(r)?.extra?.networth) },
-    { key:'activeStreak', label:'Active Streak', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(scoutOf(r)?.extra?.activeStreak) },
-    { key:'bestStreak', label:'Best Streak', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(scoutOf(r)?.extra?.bestActiveStreak) },
-    { key:'postDate', label:'Post Date', type:'number', sortable:true, defaultDirection:'desc', getValue:r => finite(r?.lastSeenPost) },
-    { key:'scoutAge', label:'Scout Age', type:'number', sortable:true, defaultDirection:'asc', getValue:(r,now) => { const c=finite(scoutOf(r)?.capturedAt); return c===null?null:Math.max(0,now-c); } }
-  ]);
 
-  const COLUMN_MAP = Object.freeze(Object.fromEntries(COLUMNS.map(c => [c.key, c])));
-  function getColumn(key) { return COLUMN_MAP[String(key || '')] || null; }
 
-  function missing(value, type) {
-    if (value === null || value === undefined || value === '') return true;
-    if ((type === 'number' || type === 'rank') && !Number.isFinite(Number(value))) return true;
-    return false;
-  }
 
-  function tieBreak(a, b) {
-    const an = lower(a?.name || profileOf(a)?.name);
-    const bn = lower(b?.name || profileOf(b)?.name);
-    const byName = an.localeCompare(bn);
-    if (byName) return byName;
-    return (finite(a?.userId) || finite(a?.id) || 0) - (finite(b?.userId) || finite(b?.id) || 0);
-  }
 
-  function sortRows(rows, sortState = DEFAULT_SORT, nowMs = Date.now()) {
-    const col = getColumn(sortState?.key) || getColumn(DEFAULT_SORT.key);
-    const direction = sortState?.direction === 'asc' ? 'asc' : 'desc';
-    const sign = direction === 'asc' ? 1 : -1;
-    return [...(rows || [])].sort((a, b) => {
-      const av = col.getValue(a, nowMs);
-      const bv = col.getValue(b, nowMs);
-      const am = missing(av, col.type);
-      const bm = missing(bv, col.type);
-      if (am !== bm) return am ? 1 : -1;
-      if (am && bm) return tieBreak(a, b);
-      const cmp = col.type === 'text' ? String(av).localeCompare(String(bv)) : Number(av) - Number(bv);
-      return cmp ? cmp * sign : tieBreak(a, b);
-    });
-  }
 
-  function numFilter(filters, key) {
-    const raw = filters?.[key];
-    if (raw === null || raw === undefined || raw === '') return null;
-    const parsed = typeof raw === 'number' ? {valid:Number.isFinite(raw),empty:false,value:raw} : parseCompactNumber(raw);
-    return parsed.valid && !parsed.empty ? parsed.value : null;
-  }
 
-  function sameText(actual, expected) {
-    const wanted = lower(expected);
-    return !wanted || lower(actual) === wanted;
-  }
 
-  function applyFilters(rows, filters = {}, nowMs = Date.now()) {
-    const q = lower(filters.search);
-    const minMan = numFilter(filters,'minMan');
-    const minInt = numFilter(filters,'minInt');
-    const minEnd = numFilter(filters,'minEnd');
-    const minTotal = numFilter(filters,'minTotal');
-    const minEe = numFilter(filters,'minEe');
-    const maxEe = numFilter(filters,'maxEe');
-    const minActivity30 = numFilter(filters,'minActivity30');
-    const maxIdleDays = numFilter(filters,'maxIdleDays');
-    const minFit = numFilter(filters,'minFit');
-    const minMatch = numFilter(filters,'minMatch');
-    const minLevel = numFilter(filters,'minLevel');
-    const maxLevel = numFilter(filters,'maxLevel');
-    const minNetworth = numFilter(filters,'minNetworth');
-    const minActiveStreak = numFilter(filters,'minActiveStreak');
-    const minBestStreak = numFilter(filters,'minBestStreak');
-    const minStatEnhancers = numFilter(filters,'minStatEnhancers');
-    const minXanax30 = numFilter(filters,'minXanax30');
-    const minRefills30 = numFilter(filters,'minRefills30');
-    const minAttacks30 = numFilter(filters,'minAttacks30');
-    const minRwHits30 = numFilter(filters,'minRwHits30');
-    const maxDataAgeDays = numFilter(filters,'maxDataAgeDays');
-    const company = normalizeCompany(filters.preferredCompany);
-    const scoutStatus = lower(filters.scoutStatus);
-    const faction = lower(filters.faction || 'any');
-    const pipelineStage = text(filters.pipelineStage || filters.stage);
-    const sourceType = text(filters.sourceType || filters.source).toUpperCase();
-    const currentCompany = lower(filters.currentCompany);
-    const lookingFor = lower(filters.lookingFor);
-    const availability = lower(filters.availability);
-    const activeOnly = filters.activeOnly === true || String(filters.activeOnly).toLowerCase() === 'true';
-    const activeAgeDays = numFilter(filters,'activeAgeDays') ?? 30;
 
-    return (rows || []).filter(row => {
-      const p = profileOf(row);
-      const s = scoutOf(row);
-      const w = window30(row);
-      const name = lower(row?.name || p?.name);
-      const id = String(row?.userId || row?.id || '');
-      if (q && !name.includes(q) && !id.includes(q) && !lower(lookingForOf(row)).includes(q) && !lower(currentCompanyOf(row)).includes(q)) return false;
-      if (pipelineStage && pipelineStageOf(row).toLowerCase() !== pipelineStage.toLowerCase()) return false;
-      if (sourceType && sourceTypeOf(row) !== sourceType) return false;
-      if (currentCompany && !lower(currentCompanyOf(row)).includes(currentCompany)) return false;
-      if (lookingFor && !lower(lookingForOf(row)).includes(lookingFor)) return false;
-      if (availability && !sameText(availabilityOf(row), availability)) return false;
-      if (activeOnly && !isActiveCandidate(row, nowMs, activeAgeDays)) return false;
-      if (minMan !== null && (finite(row?.stats?.man) === null || Number(row.stats.man) < minMan)) return false;
-      if (minInt !== null && (finite(row?.stats?.int) === null || Number(row.stats.int) < minInt)) return false;
-      if (minEnd !== null && (finite(row?.stats?.end) === null || Number(row.stats.end) < minEnd)) return false;
-      if (minTotal !== null && (finite(row?.stats?.total) === null || Number(row.stats.total) < minTotal)) return false;
-      const ee = finite(row?.ee);
-      if (minEe !== null && (ee === null || ee < minEe)) return false;
-      if (maxEe !== null && (ee === null || ee > maxEe)) return false;
-      if (company && normalizeCompany(row?.preferredCompany || row?.company) !== company) return false;
-      const act = finite(w?.activityHours);
-      if (minActivity30 !== null && (act === null || act < minActivity30)) return false;
-      const idle = idleSeconds(row, nowMs);
-      if (maxIdleDays !== null && (idle === null || idle > maxIdleDays * 86400)) return false;
-      const fit = fitOf(row);
-      if (minFit !== null && (fit === null || fit < minFit)) return false;
-      const matchScore = finite(row?.matchScore);
-      if (minMatch !== null && (matchScore === null || matchScore < minMatch)) return false;
-      const level = finite(p?.level);
-      if (minLevel !== null && (level === null || level < minLevel)) return false;
-      if (maxLevel !== null && (level === null || level > maxLevel)) return false;
-      if (minNetworth !== null && (finite(s?.extra?.networth) === null || Number(s.extra.networth) < minNetworth)) return false;
-      if (scoutStatus && scoutStatus !== 'any' && classifyScoutStatus(row, nowMs) !== scoutStatus) return false;
-      const factionId = finite(p?.factionId) || 0;
-      if (faction === 'none' && factionId) return false;
-      if (faction === 'has' && !factionId) return false;
-      if (minActiveStreak !== null && (finite(s?.extra?.activeStreak) === null || Number(s.extra.activeStreak) < minActiveStreak)) return false;
-      if (minBestStreak !== null && (finite(s?.extra?.bestActiveStreak) === null || Number(s.extra.bestActiveStreak) < minBestStreak)) return false;
-      if (minStatEnhancers !== null && (finite(s?.extra?.statEnhancers30) === null || Number(s.extra.statEnhancers30) < minStatEnhancers)) return false;
-      if (minXanax30 !== null && (finite(w?.xanax) === null || Number(w.xanax) < minXanax30)) return false;
-      if (minRefills30 !== null && (finite(w?.refills) === null || Number(w.refills) < minRefills30)) return false;
-      if (minAttacks30 !== null && (finite(w?.attacks) === null || Number(w.attacks) < minAttacks30)) return false;
-      if (minRwHits30 !== null && (finite(w?.rwHits) === null || Number(w.rwHits) < minRwHits30)) return false;
-      if (maxDataAgeDays !== null) {
-        const captured = finite(s?.capturedAt);
-        if (captured === null || Math.max(0, nowMs - captured) > maxDataAgeDays * 86400000) return false;
-      }
-      return true;
-    });
-  }
 
-  function activeFilterCount(filters = {}) {
-    return Object.entries(filters).filter(([key, value]) => {
-      if (key === 'search') return text(value) !== '';
-      if (key === 'activeAgeDays') return false;
-      if (value === null || value === undefined || value === '' || value === false || value === 'any') return false;
-      return true;
-    }).length;
-  }
-
-  function processRows(rows, filters = {}, sortState = DEFAULT_SORT, nowMs = Date.now()) {
-    return sortRows(applyFilters(rows, filters, nowMs), sortState, nowMs);
-  }
 
 
   const RECRUITMENT_FIT_DEFAULT_WEIGHTS = Object.freeze({
@@ -856,29 +609,9 @@
 
   return Object.freeze({
     PIPELINE_STAGES,
-    DEFAULT_VISIBLE_COLUMNS,
-    DEFAULT_SORT,
     SCOUT_STATUS_ORDER,
-    SCOUT_STATUS_RANK,
     COMPANY_KEYS,
-    COLUMNS,
-    parseCompactNumber,
-    normalizeCompany,
-    parsePreferredCompany,
-    formatCompany,
-    idleSeconds,
     classifyScoutStatus,
-    pipelineStageOf,
-    sourceTypeOf,
-    currentCompanyOf,
-    lookingForOf,
-    availabilityOf,
-    isActiveCandidate,
-    getColumn,
-    sortRows,
-    applyFilters,
-    processRows,
-    activeFilterCount,
     RECRUITMENT_FIT_DEFAULT_WEIGHTS,
     normalizeSourceLabel,
     domainStageOf,
@@ -1708,24 +1441,6 @@
   'use strict';
 
   const DB_VERSION = 12;
-  const PAGE_GROUPS = Object.freeze([
-    Object.freeze({label:'RECRUITMENT', pages:Object.freeze([
-      Object.freeze({id:'overview', label:'Overview'}),
-      Object.freeze({id:'discover', label:'Discover'}),
-      Object.freeze({id:'candidates', label:'Candidates'}),
-      Object.freeze({id:'pipeline', label:'Pipeline'})
-    ])}),
-    Object.freeze({label:'INTELLIGENCE', pages:Object.freeze([
-      Object.freeze({id:'scout', label:'Scout'}),
-      Object.freeze({id:'smart-match', label:'Smart Match'}),
-      Object.freeze({id:'global-intelligence', label:'Global Intelligence'})
-    ])}),
-    Object.freeze({label:'APPLICATION', pages:Object.freeze([
-      Object.freeze({id:'settings', label:'Settings'}),
-      Object.freeze({id:'data', label:'Data'}),
-      Object.freeze({id:'logs', label:'Logs', advancedOnly:true})
-    ])})
-  ]);
 
   const PIPELINE_STAGES = Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
   const AVAILABILITY_VALUES = Object.freeze(['Available','Unavailable','Unknown']);
@@ -1746,30 +1461,12 @@
     discovery:{title:'Discovery',body:'Imports explicit recruitment intent from configured Torn forum sources. Forum text and workflow data remain local.'},
     sync:{title:'Sync Forum Posts',body:'Uses the shared Torn API scheduler. Completed pages are saved before the sanitized continuation checkpoint is advanced.'},
     fillCompanies:{title:'Fill Companies',body:'Looks up current company data sequentially through the shared scheduler. It never changes pipeline stage.'},
-    pipeline:{title:'Pipeline / Stage',body:'Stage changes only when you explicitly move a candidate, use the context menu, or edit the stage field.'},
     messagePlayer:{title:'Recruit Player',body:'Freshly checks the target through Torn v2, prepares the saved Company or Faction private-chat template, opens the player profile and fills Torn private chat. You still press Send.'},
     defaultMessage:{title:'Recruitment Templates',body:'Company and Faction private-chat templates are saved separately and remain browser-local.'},
     data:{title:'Data',body:'Shows local IndexedDB counts and export/reset controls. No workspace backup/import system is added in v4.5.'},
-    logs:{title:'Logs',body:'Shows sanitized application events only. API keys, private messages, recruiter notes and forum bodies are excluded.'}
   });
 
   const PRIVATE_LOG_FIELDS = new Set(['apiKey','key','messageBody','forumBody','rawText','recruiterNote','defaultMessage','preparedMessage','companyRecruitmentMessage','factionRecruitmentMessage']);
-
-  function normalizePage(value, complexity = 'simple') {
-    const requested = String(value || '').trim().toLowerCase();
-    const pages = PAGE_GROUPS.flatMap(group => group.pages);
-    const found = pages.find(page => page.id === requested);
-    if (!found) return 'overview';
-    if (found.advancedOnly && complexity !== 'advanced') return 'overview';
-    return found.id;
-  }
-
-  function visiblePages(complexity = 'simple') {
-    return PAGE_GROUPS.map(group => ({
-      label:group.label,
-      pages:group.pages.filter(page => !page.advancedOnly || complexity === 'advanced').map(page => ({...page}))
-    }));
-  }
 
   function normalizeStage(value) {
     const raw = String(value || '').trim().toLowerCase();
@@ -1796,24 +1493,6 @@
       latestForumSourceId:String(record.latestForumSourceId || ''),
       updatedAt:record.updatedAt || new Date().toISOString()
     };
-  }
-
-  function dbUpgradePlan() {
-    return Object.freeze({
-      version:DB_VERSION,
-      stores:Object.freeze({
-        forumSources:Object.freeze({
-          keyPath:'sourceId',
-          indexes:Object.freeze([
-            Object.freeze({name:'userId', keyPath:'userId'}),
-            Object.freeze({name:'postedAt', keyPath:'postedAt'}),
-            Object.freeze({name:'sourceType', keyPath:'sourceType'}),
-            Object.freeze({name:'threadId', keyPath:'threadId'})
-          ])
-        }),
-        forumSyncState:Object.freeze({keyPath:'feedId', indexes:Object.freeze([])})
-      })
-    });
   }
 
   function normalizeRecruitmentSettings(input = {}) {
@@ -1858,19 +1537,8 @@
     };
   }
 
-  function kpiCounts(candidates = [], highMatchThreshold = 80) {
-    const rows = Array.isArray(candidates) ? candidates : [];
-    return {
-      active:rows.filter(row => String(row.status || 'active').toLowerCase() !== 'inactive').length,
-      highMatch:rows.filter(row => Number(row.matchScore) >= Number(highMatchThreshold || 80)).length,
-      shortlisted:rows.filter(row => normalizeStage(row.pipelineStage) === 'Shortlisted').length,
-      replied:rows.filter(row => normalizeStage(row.pipelineStage) === 'Replied').length
-    };
-  }
-
   return Object.freeze({
     DB_VERSION,
-    PAGE_GROUPS,
     PIPELINE_STAGES,
     AVAILABILITY_VALUES,
     STAGE_COLORS,
@@ -1879,16 +1547,12 @@
     DEFAULT_COMPANY_RECRUITMENT_MESSAGE,
     DEFAULT_FACTION_RECRUITMENT_MESSAGE,
     HELP_REGISTRY,
-    normalizePage,
-    visiblePages,
     normalizeStage,
     normalizeAvailability,
     normalizeCandidateRecord,
-    dbUpgradePlan,
     normalizeRecruitmentSettings,
     sanitizeLogDetails,
-    makeLogEntry,
-    kpiCounts
+    makeLogEntry
   });
 });
 
@@ -1968,71 +1632,22 @@
     };
   }
 
-  function contextMenuModel(view = {}) {
-    const availability = normalizeAvailability(view.availability);
-    return [
-      {id:'message',label:'Message Player'},
-      {id:'details',label:'View Details'},
-      {id:'profile',label:'Open Torn Profile'},
-      {id:'forum',label:'Open Latest Forum Post',disabled:!text(view.forumUrl)},
-      {separator:true},
-      {id:'stage',label:'Move to Stage',children:PIPELINE_STAGES.map(stage => ({id:`stage:${stage}`,label:stage,checked:normalizeStage(view.pipelineStage)===stage}))},
-      {id:'availability',label:'Availability',children:AVAILABILITY_VALUES.map(value => ({id:`availability:${value}`,label:value,checked:availability===value}))},
-      {separator:true},
-      {id:'scout',label:'Scout Player'},
-      {id:'edit',label:'Edit Candidate'},
-      {id:'delete',label:'Delete Candidate'}
-    ];
-  }
 
-  function changeStage(candidate = {}, stage) {
-    const next = normalizeStage(stage);
-    return {...candidate,pipelineStage:next,updatedAt:new Date().toISOString()};
-  }
 
-  function changeAvailability(candidate = {}, availability) {
-    return {...candidate,availability:normalizeAvailability(availability),updatedAt:new Date().toISOString()};
-  }
 
-  function pipelineBuckets(candidates = []) {
-    const buckets = Object.fromEntries(PIPELINE_STAGES.map(stage => [stage,[]]));
-    for (const candidate of candidates || []) buckets[normalizeStage(candidate.pipelineStage)].push(candidate);
-    return buckets;
-  }
 
-  function messageValues(view = {}, ownCompanyName = '') {
-    return {
-      name:text(view.name),
-      player_id:text(view.userId),
-      looking_for:text(view.lookingFor === 'Unknown' ? '' : view.lookingFor),
-      company_name:text(ownCompanyName),
-      current_company:text(view.currentCompany),
-      match_score:view.matchScore == null ? '' : String(view.matchScore),
-      fit_score:view.fitScore == null ? '' : String(view.fitScore)
-    };
-  }
 
   function tornProfileUrl(userId) {
     const id = text(userId);
     return /^\d+$/.test(id) ? `https://www.torn.com/profiles.php?XID=${id}` : '';
   }
 
-  function tornMessageUrl(userId) {
-    const id = text(userId);
-    return /^\d+$/.test(id) ? `https://www.torn.com/messages.php#/p=compose&XID=${id}` : '';
-  }
 
   return Object.freeze({
     PIPELINE_STAGES,
     AVAILABILITY_VALUES,
     composeCandidateView,
-    contextMenuModel,
-    changeStage,
-    changeAvailability,
-    pipelineBuckets,
-    messageValues,
-    tornProfileUrl,
-    tornMessageUrl
+    tornProfileUrl
   });
 });
 
@@ -2200,7 +1815,6 @@
   'use strict';
   if (!ForumCore) throw new Error('RA_ForumCore is required.');
 
-  const PLACEHOLDERS = Object.freeze(['name','player_id','looking_for','company_name','current_company','match_score','fit_score']);
   const COMPANY_RECRUITMENT_PLACEHOLDERS = Object.freeze(['name','company_name','company_type']);
   const FACTION_RECRUITMENT_PLACEHOLDERS = Object.freeze(['name','faction_name']);
   const TORN_CHAT_MAX_LENGTH = 840;
@@ -2211,9 +1825,6 @@
 
   function text(value) { return String(value ?? '').trim(); }
 
-  function approvedValues(input = {}) {
-    return Object.fromEntries(PLACEHOLDERS.map(key => [key, text(input[key])]));
-  }
 
   function cleanPreparedText(value) {
     return String(value || '')
@@ -2227,11 +1838,6 @@
       .trim();
   }
 
-  function prepareMessage(template, input = {}) {
-    const values = approvedValues(input);
-    const prepared = ForumCore.substituteMessage(String(template || ''), values);
-    return cleanPreparedText(prepared);
-  }
 
   function recruitmentPlaceholders(domain) {
     const normalized = text(domain).toLowerCase();
@@ -2360,25 +1966,9 @@
     return {...queued,userId:expected,preparedText,transport:'private-chat',autoSubmit:false};
   }
 
-  function composeUrl(userId) {
-    const id = text(userId);
-    return /^\d+$/.test(id) ? `https://www.torn.com/messages.php#/p=compose&XID=${id}` : '';
-  }
 
-  function messagePlan(template, input = {}) {
-    const userId = text(input.player_id || input.userId);
-    if (!/^\d+$/.test(userId)) throw new Error('A valid Torn player ID is required.');
-    return {
-      userId,
-      preparedText:prepareMessage(template,{...input,player_id:userId}),
-      composeUrl:composeUrl(userId),
-      autoSubmit:false,
-      stageChange:null
-    };
-  }
 
   return Object.freeze({
-    PLACEHOLDERS,
     COMPANY_RECRUITMENT_PLACEHOLDERS,
     FACTION_RECRUITMENT_PLACEHOLDERS,
     TORN_CHAT_MAX_LENGTH,
@@ -2386,9 +1976,7 @@
     PRIVATE_CHAT_DRAFT_TTL_MS,
     DEFAULT_COMPANY_RECRUITMENT_MESSAGE,
     DEFAULT_FACTION_RECRUITMENT_MESSAGE,
-    approvedValues,
     cleanPreparedText,
-    prepareMessage,
     recruitmentPlaceholders,
     prepareRecruitmentMessage,
     companyRecruitmentEligibility,
@@ -2396,9 +1984,7 @@
     profileUrl,
     recruitmentChatPlan,
     queuePrivateChatDraft,
-    consumePrivateChatDraft,
-    composeUrl,
-    messagePlan
+    consumePrivateChatDraft
   });
 });
 
