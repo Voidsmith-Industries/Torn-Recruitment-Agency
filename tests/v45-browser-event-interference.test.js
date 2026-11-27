@@ -59,7 +59,6 @@ test('primary navigation and in-page controls survive a hostile document-capture
     }
     await page.addScriptTag({content:sourceCompatibleBoot(ROOT)});
     await page.waitForFunction(()=>{
-      if(!document.getElementById('ra-app')) return false;
       return ['#ra-sidebar-launcher','#ra-launch'].some(s=>{
         const e=document.querySelector(s);
         return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';

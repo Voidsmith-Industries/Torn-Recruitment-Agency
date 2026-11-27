@@ -30,6 +30,10 @@ test('DOM singleton prevents duplicate source-compatible mounts across isolated 
 
     await isolatedEval(client,a,BOOT);
     await isolatedEval(client,b,BOOT);
+    await page.waitForFunction(()=>document.querySelectorAll('#ra-launch').length===1,{timeout:10000});
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('#ra-sidebar-launcher')||document.querySelector('#ra-launch')).display!=='none',{timeout:10000});
+    assert.equal(await page.evaluate(()=>document.querySelectorAll('#ra-launch').length),1,'only one launcher may mount');
+    await page.evaluate(()=>(document.querySelector('#ra-sidebar-launcher')||document.querySelector('#ra-launch')).click());
     await page.waitForFunction(()=>document.querySelectorAll('#ra-app').length===1,{timeout:10000});
 
     assert.equal(await page.evaluate(()=>document.querySelectorAll('#ra-app').length),1,'only one app shell may mount');

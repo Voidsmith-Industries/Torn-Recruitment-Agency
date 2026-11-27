@@ -30,7 +30,7 @@ test('Faction controls stay on the route the recruiter navigated to',async()=>{
   await deleteDb();
   const dom=installDom();
   const App=freshApp();
-  assert.equal(await App.start({indexedDB}),true);
+  assert.equal(await App.start({indexedDB}),true);await App._test.openApp();
 
   await App._test.repositories.players.ensure('123',{name:'Alpha',level:75,fit:90},'route-stickiness-test',100);
   await App._test.repositories.faction.ensure('123',{pipelineStage:'Prospect',waivers:[]},{source:'route-stickiness-test',observedAt:100});

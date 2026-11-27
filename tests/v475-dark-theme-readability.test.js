@@ -47,7 +47,7 @@ test('dark theme keeps Recruitment Agency tables and settings readable against h
 
     for(const file of MODULES) await page.addScriptTag({content:fs.readFileSync(path.join(ROOT,'src',file),'utf8')});
     await page.addScriptTag({content:BOOT});
-    await page.waitForSelector('#ra-app',{timeout:10000});
+    await page.waitForSelector('#ra-sidebar-launcher,#ra-launch',{timeout:10000});
 
     const launcher=await visibleLauncher(page);
     assert.ok(launcher,'visible launcher should exist');

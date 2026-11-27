@@ -106,7 +106,6 @@ test('real Chrome hit-testing and physical clicks can navigate the public v4.8 c
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle0' });
     await page.addScriptTag({ content: BOOT });
     await page.waitForFunction(() => {
-      if (!document.getElementById('ra-app')) return false;
       return ['#ra-sidebar-launcher', '#ra-launch'].some(selector => {
         const el = document.querySelector(selector);
         return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';

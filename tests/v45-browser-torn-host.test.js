@@ -80,7 +80,6 @@ test('public v4.7.2 runtime remains physically clickable on the real Torn host p
     await page.addScriptTag({ content: BOOT });
 
     await page.waitForFunction(() => {
-      if (!document.getElementById('ra-app')) return false;
       return ['#ra-sidebar-launcher', '#ra-launch'].some(selector => {
         const el = document.querySelector(selector);
         return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';

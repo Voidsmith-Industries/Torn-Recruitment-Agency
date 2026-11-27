@@ -31,7 +31,7 @@ function freshApp(){
 test('v4.8 domain switch and core route persist without exposing optional navigation by default',async()=>{
   const dom1=installDom();
   const App1=freshApp();
-  assert.equal(await App1.start({indexedDB}),true);
+  assert.equal(await App1.start({indexedDB}),true);await App1._test.openApp();
 
   assert.equal(document.querySelector('[data-nav-toggle="company-recruitment"]'),null);
   assert.equal(document.querySelector('[data-nav-toggle="faction-recruitment"]'),null);
@@ -54,7 +54,7 @@ test('v4.8 domain switch and core route persist without exposing optional naviga
 
   const dom2=installDom();
   const App2=freshApp();
-  assert.equal(await App2.start({indexedDB}),true);
+  assert.equal(await App2.start({indexedDB}),true);await App2._test.openApp();
   await tick(80);
   meta=await readMeta(App2._test.state.db);
   assert.equal(meta.settings.activeDomain,'faction');

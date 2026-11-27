@@ -446,11 +446,19 @@
     return;
   }
 
-  const restoreResizeObserver = installShellResizeGuard();
-  app.start().then(() => {
+  // The app shell is built lazily on first open; guard its ResizeObserver and enhance it at that moment.
+  let restoreResizeObserver = () => {};
+  window.addEventListener('ra:app-mounting', () => { restoreResizeObserver = installShellResizeGuard(); });
+  window.addEventListener('ra:app-mounted', () => {
     restoreResizeObserver();
-    enhanceShellUi(app);
-  }).catch(error => {
+    try {
+      enhanceShellUi(app);
+    } catch (error) {
+      console.error(`[RA] ${INSTALLER_VERSION} shell enhancement failed.`, error);
+      try { alert(`Recruitment Agency could not start: ${error?.message || error}`); } catch {}
+    }
+  });
+  app.start().catch(error => {
     restoreResizeObserver();
     clearDomGuard();
     console.error(`[RA] ${INSTALLER_VERSION} failed to start.`, error);
