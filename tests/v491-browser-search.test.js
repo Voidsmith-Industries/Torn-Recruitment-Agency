@@ -139,3 +139,31 @@ test('Search with END >= 100k lists Torn API players (stats Unknown) and Search 
     assert.equal(await page.evaluate(() => window.__runtimeErrors), '');
   });
 });
+
+test('Search and Discover buttons show progress while Torn is answering', { timeout: 60000 }, async () => {
+  await withBrowser(async (page, base) => {
+    await page.setRequestInterception(true);
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (url.hostname === '127.0.0.1') return request.continue();
+      if (url.hostname !== 'api.torn.com') return request.abort();
+      const body = url.pathname === '/v2/user/search'
+        ? { search: [], _metadata: { links: { next: null, prev: null }, total: 0 } }
+        : url.pathname === '/v2/torn/hof' ? { hof: [] } : { posts: [], _metadata: { links: { next: null, prev: null } } };
+      setTimeout(() => request.respond({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) }).catch(() => {}), 1500);
+    });
+    await boot(page, base);
+    await page.evaluate(async () => { await RA_V45App._test.openApp(); await RA_V45App._test.navigate('company-candidates', false); });
+    for (const [id, busy] of [['#ra-company-search-apply', 'Searching…'], ['#ra-company-hof-discover', 'Discovering…']]) {
+      await page.waitForSelector(id, { visible: true });
+      await page.click(id);
+      await page.waitForFunction((sel, label) => {
+        const el = document.querySelector(sel);
+        return el && el.disabled && el.textContent === label;
+      }, { timeout: 1000 }, id, busy);
+      await page.waitForFunction(sel => { const el = document.querySelector(sel); return el && !el.disabled; }, { timeout: 20000 }, id);
+    }
+    const errors = await page.evaluate(() => window.__runtimeErrors);
+    assert.equal(errors, '', `runtime errors: ${errors}`);
+  });
+});
