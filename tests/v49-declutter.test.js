@@ -64,8 +64,8 @@ async function boot(page, port, viewport) {
   await page.setViewport(viewport);
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle0' });
   await page.addScriptTag({ content: BOOT });
-  await page.waitForFunction(() => window.RA_V45App?._test && document.getElementById('ra-app'), { timeout: 10000 });
-  await page.evaluate(() => { document.getElementById('ra-app').style.display = 'block'; });
+  await page.waitForFunction(() => window.RA_V45App?._test?.state?.mounted, { timeout: 10000 });
+  await page.evaluate(() => RA_V45App._test.openApp());
 }
 
 async function openSettings(page) {

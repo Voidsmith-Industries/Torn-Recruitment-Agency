@@ -94,9 +94,11 @@ async function withApp(run) {
     const boot = async () => {
       await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle0' });
       await page.addScriptTag({ content: BOOT });
-      await page.waitForSelector('#ra-app', { timeout: 10000 });
-      await page.waitForFunction(() => window.RA_V45App?._test?.state?.mounted && document.getElementById('ra-page-title')?.textContent, { timeout: 10000 });
+      await page.waitForSelector('#ra-sidebar-launcher,#ra-launch', { timeout: 10000 });
+      await page.waitForFunction(() => window.RA_V45App?._test?.state?.mounted, { timeout: 10000 });
+      // The app is built lazily on first open: open it through the real launcher, then wait for the restored page to render.
       await page.evaluate(() => (document.getElementById('ra-sidebar-launcher') || document.getElementById('ra-launch')).click());
+      await page.waitForFunction(() => document.getElementById('ra-app')?.style.display === 'block' && document.getElementById('ra-page-title')?.textContent && document.getElementById('ra-content')?.textContent, { timeout: 10000 });
       await page.evaluate(SLOW_STORES);
     };
     await boot();

@@ -58,7 +58,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function boot(page, base, pathname) {
   await page.goto(base + pathname, { waitUntil: 'networkidle0' });
   await page.addScriptTag({ content: BOOT });
-  await page.waitForFunction(() => window.RA_V45App?._test?.state?.db && document.getElementById('ra-app'), { timeout: 10000 });
+  await page.waitForFunction(() => window.RA_V45App?._test?.state?.db && window.RA_V45App._test.state.mounted, { timeout: 10000 });
+  await page.evaluate(() => RA_V45App._test.openApp());
   await page.evaluate(() => { RA_V45App._test.state.settings.apiKey = 'testkeytestkey01'; });
 }
 
@@ -160,9 +161,25 @@ test('Results search filters, sort and visible results survive a reload and Torn
     assert.equal(factionStatusBefore.organization, 'Alpha');
     await page.reload({ waitUntil: 'networkidle0' });
     await page.addScriptTag({ content: BOOT });
-    await page.waitForFunction(() => window.RA_V45App?._test?.state?.db && document.getElementById('ra-app'), { timeout: 10000 });
+    await page.waitForFunction(() => window.RA_V45App?._test?.state?.db && window.RA_V45App._test.state.mounted, { timeout: 10000 });
+  await page.evaluate(() => RA_V45App._test.openApp());
     await open(page, 'faction');
     assert.deepEqual(await view(page, 'faction'), factionStatusBefore, 'Faction status/membership filters survive page.reload');
+
+    // The app is built lazily: after a reload, opening it with the launcher (no programmatic navigation)
+    // must restore the last page and its results view on the first render.
+    // Leave the page and come back so the route is persisted the way a nav click persists it.
+    await page.evaluate(async () => { await RA_V45App._test.navigate('settings'); await RA_V45App._test.navigate('faction-candidates'); });
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.addScriptTag({ content: BOOT });
+    await page.waitForSelector('#ra-sidebar-launcher,#ra-launch', { timeout: 10000 });
+    await page.waitForFunction(() => window.RA_V45App?._test?.state?.mounted, { timeout: 10000 });
+    assert.equal(await page.evaluate(() => document.getElementById('ra-app')), null, 'app shell is not built before the user opens it');
+    await page.evaluate(() => (document.getElementById('ra-sidebar-launcher') || document.getElementById('ra-launch')).click());
+    await page.waitForSelector('#ra-faction-filter-search', { timeout: 10000 });
+    await wait(150);
+    assert.equal(await page.evaluate(() => RA_V45App._test.state.page), 'faction-candidates', 'opening the app restores the last page');
+    assert.deepEqual(await view(page, 'faction'), factionStatusBefore, 'opening the app after reload restores the Faction results view');
     await open(page, 'company');
     assert.deepEqual(await view(page, 'company'), companyBefore, 'Company state is not affected by Faction changes');
 
