@@ -1,9 +1,12 @@
 (function(root,factory){
-  const api=factory();
+  let Shared=root&&root.RA_V46RecruitmentShared;
+  if(!Shared&&typeof module==='object'&&module.exports)Shared=require('./v46-recruitment-shared');
+  const api=factory(Shared);
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.RA_V47FactionCore=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
+})(typeof globalThis!=='undefined'?globalThis:this,function(Shared){
   'use strict';
+  if(!Shared)throw new Error('RA_V46RecruitmentShared is required.');
 
   const FACTION_STAGES=Object.freeze([
     'Prospect','Contacted','Replied','Evaluating','Invite Ready','Joined','Rejected','Deferred'
@@ -11,31 +14,8 @@
   const PROFILE_STATES=Object.freeze(['Draft','Active','Paused','Archived']);
   const REQUIREMENT_KINDS=Object.freeze(['Hard','Preferred']);
 
-  function text(value){return String(value??'').trim();}
-  function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
+  const {text,number,normalizeRequirement,normalizeBaseline,compare}=Shared;
   function clamp(value,min=0,max=100){return Math.max(min,Math.min(max,number(value)));}
-
-  function normalizeKind(value){return text(value).toLowerCase()==='hard'?'Hard':'Preferred';}
-  function normalizeRequirement(raw={},index=0){
-    const field=text(raw.field);
-    return {
-      id:text(raw.id)||`${field||'criterion'}-${index+1}`,
-      field,
-      operator:text(raw.operator||'gte').toLowerCase(),
-      value:raw.value,
-      value2:raw.value2,
-      kind:normalizeKind(raw.kind),
-      label:text(raw.label)||field||`Criterion ${index+1}`,
-      weight:Math.max(0,number(raw.weight,1))
-    };
-  }
-
-  function normalizeBaseline(config={}){
-    return {
-      criteria:(Array.isArray(config.criteria)?config.criteria:[]).map(normalizeRequirement),
-      updatedAt:number(config.updatedAt,0)
-    };
-  }
 
   const FACTION_SEARCH_FILTER_KEYS=Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
   function normalizeFactionSearchFilters(input={}){
@@ -65,30 +45,6 @@
     };
   }
 
-  function compare(operator,actual,value,value2){
-    if(actual===undefined||actual===null||actual==='')return {known:false,passed:false};
-    const op=text(operator).toLowerCase();
-    if(op==='gte'||op==='gt'||op==='lte'||op==='lt'){
-      const a=Number(actual),b=Number(value);
-      if(!Number.isFinite(a)||!Number.isFinite(b))return {known:false,passed:false};
-      if(op==='gte')return {known:true,passed:a>=b};
-      if(op==='gt')return {known:true,passed:a>b};
-      if(op==='lte')return {known:true,passed:a<=b};
-      return {known:true,passed:a<b};
-    }
-    if(op==='between'){
-      const a=Number(actual),lo=Number(value),hi=Number(value2);
-      if(![a,lo,hi].every(Number.isFinite))return {known:false,passed:false};
-      return {known:true,passed:a>=Math.min(lo,hi)&&a<=Math.max(lo,hi)};
-    }
-    if(op==='contains')return {known:true,passed:text(actual).toLowerCase().includes(text(value).toLowerCase())};
-    if(op==='oneof'){
-      const allowed=(Array.isArray(value)?value:[value]).map(item=>text(item).toLowerCase());
-      return {known:true,passed:allowed.includes(text(actual).toLowerCase())};
-    }
-    return {known:true,passed:text(actual).toLowerCase()===text(value).toLowerCase()};
-  }
-
   function waiverFor(requirementId,waivers=[],scope={}){
     const wantedContext=text(scope.context||'baseline').toLowerCase();
     const wantedProfile=text(scope.profileId);
@@ -102,32 +58,7 @@
     })||null;
   }
 
-  function evaluateCriteria(criteria=[],facts={},waivers=[],scope={context:'baseline'}){
-    const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
-    const results=normalized.map(req=>{
-      const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
-      return {
-        ...req,
-        known:verdict.known,
-        passed:verdict.passed,
-        waived:Boolean(waiver),
-        waiver,
-        effectivePass:verdict.passed||Boolean(waiver)
-      };
-    });
-    const hardFailures=results.filter(result=>result.kind==='Hard'&&result.known&&!result.passed);
-    const unknownHard=results.filter(result=>result.kind==='Hard'&&!result.known);
-    const unwaivedHardFailures=hardFailures.filter(result=>!result.waived);
-    const failures=results.filter(result=>result.known&&!result.passed);
-    const known=results.filter(result=>result.known);
-    const totalWeight=known.reduce((sum,result)=>sum+(result.weight||1),0);
-    const earned=known.filter(result=>result.passed).reduce((sum,result)=>sum+(result.weight||1),0);
-    const score=totalWeight?Math.round(earned/totalWeight*100):null;
-    const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
-    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
-  }
+  function evaluateCriteria(criteria=[],facts={},waivers=[],scope={context:'baseline'}){return Shared.evaluateCriteria(criteria,facts,id=>waiverFor(id,waivers,scope));}
 
   function ratioScore(req,facts){
     const rawActual=facts?.[req.field],rawTarget=req.value;
