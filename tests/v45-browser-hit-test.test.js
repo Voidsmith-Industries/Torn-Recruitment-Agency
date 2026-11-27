@@ -139,9 +139,9 @@ test('real Chrome hit-testing and physical clicks can navigate the public v4.8 c
     await physicalClick(page, '#ra-settings-button');
     await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Settings', { timeout: 10000 });
 
-    await physicalClick(page, '#ra-mobile-menu');
-    await page.waitForFunction(() => document.querySelector('.ra-shell')?.classList.contains('sidebar-open'), { timeout: 5000 });
-    assert.equal(await page.$eval('.ra-shell', el => el.classList.contains('sidebar-open')), true);
+    // The mobile menu button only toggles the off-canvas sidebar used at phone widths; on desktop it is hidden
+    // (the mobile browser test exercises it physically at phone width).
+    assert.equal(await page.$eval('#ra-mobile-menu', el => getComputedStyle(el).display), 'none');
 
     await physicalClick(page, '#ra-close');
     assert.equal(await page.$eval('#ra-app', el => getComputedStyle(el).display), 'none');
