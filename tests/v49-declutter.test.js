@@ -14,11 +14,8 @@ const MODULES = [
   'scout-core.js', 'results-core.js', 'global-core.js', 'match-core.js', 'forum-core.js',
   'v45-runtime.js', 'v45-candidates.js', 'v45-discovery.js', 'v45-messaging.js',
   'v46-domain-core.js', 'v46-storage-core.js', 'v46-navigation.js', 'v46-company-core.js',
-  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-operations.js',
-  'v46-company-workflow.js', 'v46-company-workflow-ui.js', 'v46-company-opportunity-ui.js',
-  'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
-  'v47-faction-ui.js', 'v47-faction-operations.js', 'v47-faction-workflow.js',
-  'v47-faction-workflow-ui.js', 'v47-faction-opportunity-ui.js', 'v47-faction-platform.js',
+  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
+  'v47-faction-ui.js', 'v47-faction-platform.js',
   'v45-app.js'
 ];
 const BOOT = sourceCompatibleBoot(ROOT);
@@ -120,7 +117,7 @@ test('first run: desktop has no dead mobile menu button and Settings leads with 
         advancedHeading: advanced?.querySelector('.ra-settings-group-title')?.textContent || '',
         scoutHasKey: !!document.querySelector('[data-settings-section="scout"] #ra-set-key'),
         optionalGroups,
-        optionalCount: document.querySelectorAll('[data-optional-module]').length
+        optionalKeys: [...document.querySelectorAll('[data-optional-module]')].map(el => el.dataset.optionalModule)
       };
     });
     assert.equal(layout.firstId, 'essentials', 'Settings should start with the essentials needed to search and message');
@@ -132,19 +129,19 @@ test('first run: desktop has no dead mobile menu button and Settings leads with 
     for (const id of ['optional-features', 'recruitment', 'scout', 'candidates', 'smart-match', 'global', 'data', 'danger']) {
       assert.ok(layout.advancedSections.includes(id), `${id} should be grouped under Advanced`);
     }
-    assert.deepEqual(layout.optionalGroups, ['company', 'faction', 'tools'], 'optional features are grouped instead of one flat list');
-    assert.equal(layout.optionalCount, 34, 'every optional tool remains reachable from Settings');
+    assert.deepEqual(layout.optionalGroups, ['tools'], 'only the kept optional tools are offered');
+    assert.deepEqual(layout.optionalKeys, ['companyDiscovery', 'scout', 'smartMatch', 'globalIntelligence', 'data'], 'Optional Features lists only kept tools; removed workflow pages have no toggles');
 
     // Existing user data is untouched: enabling a tool still works through the regrouped list and saving keeps messages.
     await page.evaluate(() => {
-      document.querySelector('[data-optional-module="companyPipeline"]').checked = true;
+      document.querySelector('[data-optional-module="companyDiscovery"]').checked = true;
       document.getElementById('ra-setting-company-message').value = 'Hi {name}, join us.';
       document.getElementById('ra-save-settings').click();
     });
-    await page.waitForFunction(() => window.RA_V45App._test.state.settings.optionalModules.companyPipeline === true, { timeout: 5000 });
+    await page.waitForFunction(() => window.RA_V45App._test.state.settings.optionalModules.companyDiscovery === true, { timeout: 5000 });
     const saved = await page.evaluate(() => ({
       message: window.RA_V45App._test.state.settings.recruitment.companyRecruitmentMessage,
-      nav: !!document.querySelector('[data-page="company-pipeline"]')
+      nav: !!document.querySelector('[data-page="company-discover"]')
     }));
     assert.equal(saved.message, 'Hi {name}, join us.');
     assert.equal(saved.nav, true, 'enabled optional tools still appear in navigation');

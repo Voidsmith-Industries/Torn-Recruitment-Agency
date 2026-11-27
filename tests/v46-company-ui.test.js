@@ -29,58 +29,22 @@ test('candidate rows join Company workflow with shared player facts and never re
   assert.equal(Object.hasOwn(rows[0],'factionStage'),false);
 });
 
-test('Company overview summarizes active pipeline eligibility and vacancy coverage without mutating records',()=>{
-  const companyBefore=structuredClone(company);
-  const rows=CompanyUI.buildCandidateRows(company,players,{eligibilityFor});
-  const overview=CompanyUI.buildOverviewModel(rows,[
-    {vacancyId:'v1',name:'Sales',status:'Open',openings:2},
-    {vacancyId:'v2',name:'Manager',status:'Filled',openings:1}
-  ]);
-  assert.equal(overview.totalCandidates,3);
-  assert.equal(overview.activeCandidates,2);
-  assert.equal(overview.stageCounts.Replied,1);
-  assert.equal(overview.stageCounts.Hired,1);
-  assert.equal(overview.eligible,2);
-  assert.equal(overview.notCurrentlyEligible,1);
-  assert.equal(overview.openVacancies,1);
-  assert.equal(overview.openings,2);
-  assert.deepEqual(company,companyBefore);
-});
-
-test('Company Today enriches core priority queue with shared identity while preserving workflow state',()=>{
-  const before=structuredClone(company);
-  const rows=CompanyUI.buildCandidateRows(company,players,{eligibilityFor});
-  const today=CompanyUI.buildTodayModel(rows,{now:4000,stageThresholds:{Contacted:0},opportunities:{101:90,202:30}});
-  assert.deepEqual(today.map(item=>item.userId),['101','202']);
-  assert.equal(today[0].name,'Alpha');
-  assert.ok(today[0].reasons.includes('Reply waiting'));
-  assert.ok(today[1].reasons.some(reason=>reason.startsWith('Overdue follow-up')));
-  assert.deepEqual(company,before);
-});
-
-test('Company pipeline buckets only Company records into the canonical domain stages',()=>{
-  const rows=CompanyUI.buildCandidateRows(company,players,{eligibilityFor});
-  const pipeline=CompanyUI.buildPipelineModel(rows);
-  assert.deepEqual(Object.keys(pipeline),CompanyUI.COMPANY_STAGES);
-  assert.deepEqual(pipeline.Replied.map(row=>row.userId),['101']);
-  assert.deepEqual(pipeline.Contacted.map(row=>row.userId),['202']);
-  assert.deepEqual(pipeline.Hired.map(row=>row.userId),['303']);
-});
-
-test('Company HTML renderers expose operational links and escaped player content',()=>{
+test('Company HTML renderers escape player content',()=>{
   const rows=CompanyUI.buildCandidateRows([{...company[0]}],[{...players[0],name:'<Alpha>'}],{eligibilityFor});
-  const overview=CompanyUI.renderOverview(CompanyUI.buildOverviewModel(rows,[{vacancyId:'v1',name:'Sales',status:'Open',openings:1}]));
-  const today=CompanyUI.renderToday(CompanyUI.buildTodayModel(rows,{now:4000,opportunities:{101:90}}));
   const candidates=CompanyUI.renderCandidates(rows);
-  const pipeline=CompanyUI.renderPipeline(CompanyUI.buildPipelineModel(rows));
-  assert.match(overview,/data-go-page="company-today"/);
-  assert.match(overview,/data-go-page="company-vacancies"/);
-  assert.match(today,/Reply waiting/);
   assert.match(candidates,/&lt;Alpha&gt;/);
   assert.doesNotMatch(candidates,/<Alpha>/);
-  assert.match(pipeline,/data-company-stage="Replied"/);
 });
 
+test('Company eligibility baseline editor renders saved criteria collapsed by default',()=>{
+  const html=CompanyUI.renderBaselineEditor({baseline:{criteria:[{id:'ee',field:'ee',operator:'gte',value:5000,kind:'Hard',label:'<EE>',weight:1}]}});
+  assert.match(html,/<details[^>]*id="ra-company-baseline-editor"/);
+  assert.doesNotMatch(html,/id="ra-company-baseline-editor" open/);
+  assert.match(html,/id="ra-company-baseline-save"/);
+  assert.match(html,/data-criterion-id="ee"/);
+  assert.match(html,/&lt;EE&gt;/);
+  assert.match(CompanyUI.renderBaselineEditor({},{open:true}),/id="ra-company-baseline-editor" open/);
+});
 
 test('v4.9 Company results surface local recruitment profiles without adding a second profile system',()=>{
   const html=CompanyUI.renderCandidates([],{
@@ -100,7 +64,6 @@ test('v4.9 Company results surface local recruitment profiles without adding a s
   assert.match(html,/id="ra-company-profile-manage"/);
 });
 
-
 test('Company Results pagination shows filtered range without rendering the full result set',()=>{
   const rows=Array.from({length:2},(_,i)=>({userId:String(i+1),name:'C'+i,pipelineStage:'Not Contacted',prospectProvenance:{sources:[]}}));
   const html=CompanyUI.renderCandidates(rows,{total:350,filteredTotal:250,layout:'compact',pagination:{page:1,pageCount:3,start:100,end:102}});
@@ -116,7 +79,6 @@ test('v4.9 Results preserve unknown Recruitment Fit and recorded contact history
   assert.doesNotMatch(html,/>0\.0<\/td>/);
   assert.match(html,/>Contacted<\/td>/);
 });
-
 
 test('Company candidate rows preserve unmeasured eligibility as null',()=>{
   const rows=CompanyUI.buildCandidateRows(

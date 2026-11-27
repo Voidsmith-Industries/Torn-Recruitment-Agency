@@ -11,7 +11,7 @@ const puppeteer = require('puppeteer-core');
 const sourceCompatibleBoot = require('./source-compatible-boot');
 
 const ROOT = path.join(__dirname, '..');
-const MODULES = ['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-operations.js','v46-company-workflow.js','v46-company-workflow-ui.js','v46-company-opportunity-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-operations.js','v47-faction-workflow.js','v47-faction-workflow-ui.js','v47-faction-opportunity-ui.js','v47-faction-platform.js','v45-app.js'];
+const MODULES = ['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js','v45-app.js'];
 const DESKTOP = {width:1440,height:900};
 const MOBILE = {width:390,height:844,isMobile:true,deviceScaleFactor:1};
 
@@ -149,7 +149,7 @@ test('Escape closes inner popovers first, then the app; it never fires while the
   });
 });
 
-test('closing the app clears pinned help, context menu and hover so no invisible RA layer intercepts Torn clicks', {timeout:90000}, async()=>{
+test('closing the app clears pinned help so no invisible RA layer intercepts Torn clicks', {timeout:90000}, async()=>{
   await withPage({header:true}, DESKTOP, async page=>{
     await page.waitForSelector('#ra-status-launcher button');
     await physicalClick(page,'#ra-status-launcher button');
@@ -158,10 +158,10 @@ test('closing the app clears pinned help, context menu and hover so no invisible
     await page.$eval('#ra-app .ra-help',el=>el.scrollIntoView({block:'center'}));
     await physicalClick(page,'#ra-app .ra-help');
     assert.equal(await shown(page,'#ra-help-popover'),true);
-    await page.evaluate(()=>{for(const id of ['ra-context','ra-hover']){const el=document.getElementById(id);el.textContent='x';el.style.left='600px';el.style.top='400px';el.hidden=false;}});
+    assert.equal(await page.evaluate(()=>!!document.getElementById('ra-context')||!!document.getElementById('ra-hover')),false,'the legacy context menu and hover layers are gone');
     await physicalClick(page,'#ra-close');
     assert.equal(await appOpen(page),false);
-    for(const id of ['#ra-help-popover','#ra-context','#ra-hover']) assert.equal(await shown(page,id),false,`${id} must close with the app`);
+    for(const id of ['#ra-help-popover']) assert.equal(await shown(page,id),false,`${id} must close with the app`);
     assert.deepEqual((await raHitTargets(page)).filter(id=>id!=='ra-status-launcher'),[],'no RA layer may intercept clicks after closing');
   });
 });

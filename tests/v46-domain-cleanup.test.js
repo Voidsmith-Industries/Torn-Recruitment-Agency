@@ -11,30 +11,6 @@ async function clear(db,stores){for(const store of stores){await new Promise((re
 
 const CLEAN_STORES=['users','candidateLocal','forumSources','forumSyncState','playerIntelligence','companyRecruitment','factionRecruitment','scoutLatest'];
 
-test('deleting a Company candidate preserves Faction state and shared intelligence',async()=>{
-  const db=await App.openDB(indexedDB);
-  App._test.state.db=db;
-  await clear(db,CLEAN_STORES);
-
-  await App._test.repositories.company.ensure('555',{pipelineStage:'Replied',recruiterNote:'company note',discoverySources:['COMPANY FORUM']},{sharedPatch:{name:'Dual Recruit'},source:'test-company',observedAt:1000});
-  await App._test.repositories.faction.ensure('555',{pipelineStage:'Invite Ready',recruiterNote:'faction note',discoverySources:['FACTION FORUM']},{sharedPatch:{name:'Dual Recruit'},source:'test-faction',observedAt:1100});
-  await put(db,'candidateLocal',{userId:'555',name:'Dual Recruit',pipelineStage:'Replied',discoverySources:['COMPANY FORUM']});
-  await put(db,'forumSources',{sourceId:'COMPANY FORUM:t:1:555',userId:555,sourceType:'COMPANY FORUM',threadId:'t',postId:'1'});
-  await put(db,'forumSources',{sourceId:'FACTION FORUM:t:2:555',userId:555,sourceType:'FACTION FORUM',threadId:'t',postId:'2'});
-  await put(db,'users',{recordId:'company:555',userId:555,sourceMode:'company'});
-  await put(db,'users',{recordId:'faction:555',userId:555,sourceMode:'faction'});
-
-  await App._test.deleteCompanyCandidateData('555');
-
-  assert.equal(await get(db,'candidateLocal','555'),undefined);
-  assert.equal(await get(db,'companyRecruitment','555'),undefined);
-  assert.ok(await get(db,'factionRecruitment','555'));
-  assert.ok(await get(db,'playerIntelligence','555'));
-  assert.deepEqual((await getAll(db,'forumSources')).map(x=>x.sourceType),['FACTION FORUM']);
-  assert.deepEqual((await getAll(db,'users')).map(x=>x.sourceMode),['faction']);
-  db.close();
-});
-
 test('clear recruitment removes both recruitment domains but preserves shared/scout intelligence',async()=>{
   const db=await App.openDB(indexedDB);
   App._test.state.db=db;

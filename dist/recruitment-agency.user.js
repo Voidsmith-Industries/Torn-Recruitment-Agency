@@ -2762,80 +2762,37 @@
   'use strict';
 
   const COMPANY_PAGES = Object.freeze([
-    Object.freeze({id:'company-candidates',label:'Search & Results',core:true}),
-    Object.freeze({id:'company-overview',label:'Overview',flag:'companyOverview'}),
-    Object.freeze({id:'company-today',label:'Today',flag:'companyToday'}),
-    Object.freeze({id:'company-discover',label:'Discovery',flag:'companyDiscovery'}),
-    Object.freeze({id:'company-pipeline',label:'Pipeline',flag:'companyPipeline'}),
-    Object.freeze({id:'company-vacancies',label:'Vacancies',flag:'companyVacancies'}),
-    Object.freeze({id:'company-campaigns',label:'Campaigns',flag:'companyCampaigns'}),
-    Object.freeze({id:'company-followups',label:'Follow-ups',flag:'companyFollowups'}),
-    Object.freeze({id:'company-timeline',label:'Timeline',flag:'companyTimeline'}),
-    Object.freeze({id:'company-stage-aging',label:'Stage Aging',flag:'companyStageAging'}),
-    Object.freeze({id:'company-contact-outcomes',label:'Contact Outcomes',flag:'companyContactOutcomes'}),
-    Object.freeze({id:'company-recruitment-sessions',label:'Recruitment Sessions',flag:'companySessions'}),
-    Object.freeze({id:'company-talent-pool',label:'Talent Pool',flag:'companyTalentPool'}),
-    Object.freeze({id:'company-reactivation',label:'Reactivation',flag:'companyReactivation'}),
-    Object.freeze({id:'company-opportunity',label:'Opportunity Queue',flag:'companyOpportunity'}),
-    Object.freeze({id:'company-compare',label:'Compare',flag:'companyCompare'})
+    Object.freeze({id:'company-candidates',label:'Search & Results',core:true})
   ]);
 
   const FACTION_PAGES = Object.freeze([
-    Object.freeze({id:'faction-candidates',label:'Search & Results',core:true}),
-    Object.freeze({id:'faction-overview',label:'Overview',flag:'factionOverview'}),
-    Object.freeze({id:'faction-today',label:'Today',flag:'factionToday'}),
-    Object.freeze({id:'faction-discover',label:'Discovery',flag:'factionDiscovery'}),
-    Object.freeze({id:'faction-pipeline',label:'Pipeline',flag:'factionPipeline'}),
-    Object.freeze({id:'faction-requirements',label:'Requirements',flag:'factionRequirements'}),
-    Object.freeze({id:'faction-campaigns',label:'Campaigns',flag:'factionCampaigns'}),
-    Object.freeze({id:'faction-followups',label:'Follow-ups',flag:'factionFollowups'}),
-    Object.freeze({id:'faction-timeline',label:'Timeline',flag:'factionTimeline'}),
-    Object.freeze({id:'faction-stage-aging',label:'Stage Aging',flag:'factionStageAging'}),
-    Object.freeze({id:'faction-contact-outcomes',label:'Contact Outcomes',flag:'factionContactOutcomes'}),
-    Object.freeze({id:'faction-recruitment-sessions',label:'Recruitment Sessions',flag:'factionSessions'}),
-    Object.freeze({id:'faction-reactivation',label:'Reactivation',flag:'factionReactivation'}),
-    Object.freeze({id:'faction-opportunity',label:'Opportunity Queue',flag:'factionOpportunity'}),
-    Object.freeze({id:'faction-compare',label:'Compare',flag:'factionCompare'})
+    Object.freeze({id:'faction-candidates',label:'Search & Results',core:true})
   ]);
 
   const GROUPS = Object.freeze([
     Object.freeze({id:'company-recruitment',label:'COMPANY',pages:COMPANY_PAGES}),
     Object.freeze({id:'faction-recruitment',label:'FACTION',pages:FACTION_PAGES}),
     Object.freeze({id:'intelligence',label:'OPTIONAL TOOLS',pages:Object.freeze([
+      Object.freeze({id:'company-discover',label:'Forum Discovery',flag:'companyDiscovery'}),
       Object.freeze({id:'scout',label:'Scout',flag:'scout'}),
       Object.freeze({id:'smart-match',label:'Smart Match',flag:'smartMatch'}),
       Object.freeze({id:'global-intelligence',label:'Global Intelligence',flag:'globalIntelligence'})
     ])}),
     Object.freeze({id:'application',label:'ADVANCED',pages:Object.freeze([
-      Object.freeze({id:'data',label:'Data',flag:'data'}),
-      Object.freeze({id:'logs',label:'Logs',flag:'logs',advancedOnly:true})
+      Object.freeze({id:'data',label:'Data',flag:'data'})
     ])})
   ]);
 
-  const LEGACY_ROUTE_ALIASES = Object.freeze({
-    overview:'company-overview',
-    discover:'company-discover',
-    candidates:'company-candidates',
-    pipeline:'company-pipeline'
-  });
   const GROUP_IDS = Object.freeze(GROUPS.map(group => group.id));
   const ROUTES = Object.freeze([...GROUPS.flatMap(group => group.pages.map(page => page.id)),'settings']);
 
-  function complexityValue(value) {
-    return String(value || '').trim().toLowerCase() === 'advanced' ? 'advanced' : 'simple';
-  }
-
-  function normalizeRoute(value, complexity = 'simple') {
-    const raw = String(value || '').trim().toLowerCase();
-    const requested = LEGACY_ROUTE_ALIASES[raw] || raw;
-    if (!ROUTES.includes(requested)) return 'company-candidates';
-    if (requested === 'logs' && complexityValue(complexity) !== 'advanced') return 'company-candidates';
-    return requested;
+  function normalizeRoute(value) {
+    const requested = String(value || '').trim().toLowerCase();
+    return ROUTES.includes(requested) ? requested : 'company-candidates';
   }
 
   function moduleEnabled(settings, page) {
     if (page.core) return true;
-    if (page.advancedOnly && complexityValue(settings?.complexity) !== 'advanced') return false;
     return settings?.optionalModules?.[page.flag] === true;
   }
 
@@ -2850,13 +2807,12 @@
   function normalizeExpandedGroups(value) {
     if (value === undefined) return ['company-recruitment'];
     if (!Array.isArray(value)) return ['company-recruitment'];
-    const requested = new Set(value.map(item => String(item || '').trim().toLowerCase()).map(id => id === 'recruitment' ? 'company-recruitment' : id));
+    const requested = new Set(value.map(item => String(item || '').trim().toLowerCase()));
     return GROUP_IDS.filter(id => requested.has(id));
   }
 
   function toggleExpandedGroup(current, groupId) {
-    let id = String(groupId || '').trim().toLowerCase();
-    if (id === 'recruitment') id = 'company-recruitment';
+    const id = String(groupId || '').trim().toLowerCase();
     const normalized = normalizeExpandedGroups(Array.isArray(current) ? current : undefined);
     if (!GROUP_IDS.includes(id)) return normalized;
     const open = new Set(normalized);
@@ -2865,7 +2821,7 @@
     return GROUP_IDS.filter(group => open.has(group));
   }
 
-  return Object.freeze({COMPANY_PAGES,FACTION_PAGES,GROUPS,GROUP_IDS,ROUTES,LEGACY_ROUTE_ALIASES,normalizeRoute,visibleGroups,normalizeExpandedGroups,toggleExpandedGroup});
+  return Object.freeze({COMPANY_PAGES,FACTION_PAGES,GROUPS,GROUP_IDS,ROUTES,normalizeRoute,visibleGroups,normalizeExpandedGroups,toggleExpandedGroup});
 });
 
 /* bundled runtime: v46-company-core.js */
@@ -2876,14 +2832,10 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
 
-  const VACANCY_STATES=Object.freeze(['Draft','Open','Paused','Filled','Archived']);
   const REQUIREMENT_KINDS=Object.freeze(['Hard','Preferred']);
-  const DAY_MS=86400000;
 
   function text(value){return String(value??'').trim();}
   function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
-  function clamp(value,min=0,max=100){return Math.max(min,Math.min(max,number(value)));}
-  function unique(values){return [...new Set((Array.isArray(values)?values:[]).map(text).filter(Boolean))];}
 
   function normalizeKind(value){return text(value).toLowerCase()==='hard'?'Hard':'Preferred';}
   function normalizeRequirement(raw={},index=0){
@@ -2902,27 +2854,6 @@
 
   function normalizeBaseline(config={}){
     return {criteria:(Array.isArray(config.criteria)?config.criteria:[]).map(normalizeRequirement),updatedAt:number(config.updatedAt,0)};
-  }
-
-  function normalizeVacancy(raw={}){
-    const statusRaw=text(raw.status).toLowerCase();
-    const status=VACANCY_STATES.find(v=>v.toLowerCase()===statusRaw)||'Draft';
-    return {
-      vacancyId:text(raw.vacancyId??raw.id),
-      name:text(raw.name),
-      role:text(raw.role),
-      openings:Math.max(1,Math.floor(number(raw.openings,1))),
-      status,
-      criteria:(Array.isArray(raw.criteria)?raw.criteria:[]).map(normalizeRequirement),
-      weights:{...(raw.weights||{})},
-      salaryBudget:raw.salaryBudget??null,
-      expectedSalary:raw.expectedSalary??null,
-      availability:text(raw.availability)||'Unknown',
-      notes:text(raw.notes),
-      version:Math.max(1,Math.floor(number(raw.version,1))),
-      createdAt:number(raw.createdAt,0),
-      updatedAt:number(raw.updatedAt,0)
-    };
   }
 
   function compare(operator,actual,value,value2){
@@ -2973,116 +2904,8 @@
     return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
   }
 
-  function ratioScore(req,facts){
-    const rawActual=facts?.[req.field],rawTarget=req.value;
-    if(rawActual===null||rawActual===undefined||text(rawActual)===''||rawTarget===null||rawTarget===undefined||text(rawTarget)==='')return null;
-    const actual=Number(rawActual);
-    const target=Number(rawTarget);
-    if(!Number.isFinite(actual)||!Number.isFinite(target))return null;
-    if(['gte','gt'].includes(req.operator))return target<=0?100:clamp(actual/target*100);
-    if(['lte','lt'].includes(req.operator))return actual<=target?100:(actual<=0?0:clamp(target/actual*100));
-    return compare(req.operator,facts?.[req.field],req.value,req.value2).passed?100:0;
-  }
-
-  function evaluateVacancy(rawVacancy,facts={},waivers=[]){
-    const vacancy=normalizeVacancy(rawVacancy);
-    const criteria=evaluateCriteria(vacancy.criteria,facts,waivers);
-    const measured=vacancy.criteria.map(req=>({req,score:ratioScore(req,facts)})).filter(v=>v.score!==null);
-    const totalWeight=measured.reduce((sum,v)=>sum+(v.req.weight||1),0);
-    const raw=totalWeight?measured.reduce((sum,v)=>sum+v.score*(v.req.weight||1),0)/totalWeight:null;
-    const matchScore=raw===null?null:Math.round(clamp(raw));
-    return {
-      vacancyId:vacancy.vacancyId,
-      matchScore,
-      eligible:criteria.eligibility==='Eligible'||criteria.eligibility==='Eligible by Waiver',
-      hardFailed:criteria.hardFailed,
-      eligibility:criteria.hardFailed?'NOT ELIGIBLE':criteria.eligibility==='Unknown'?'Unknown':criteria.hardFailures.length?'Eligible by Waiver':'Eligible',
-      criteria
-    };
-  }
-
-  function suggestVacancy(vacancies=[],evaluations=[],pinnedVacancyId=''){
-    const activeIds=new Set((Array.isArray(vacancies)?vacancies:[]).map(normalizeVacancy).filter(v=>v.status==='Open').map(v=>v.vacancyId));
-    const eligible=(Array.isArray(evaluations)?evaluations:[]).filter(e=>e&&e.eligible===true&&activeIds.has(text(e.vacancyId))).sort((a,b)=>number(b.matchScore)-number(a.matchScore)||text(a.vacancyId).localeCompare(text(b.vacancyId)));
-    const suggestedVacancyId=text(eligible[0]?.vacancyId);
-    const pinned=text(pinnedVacancyId);
-    return {suggestedVacancyId,pinnedVacancyId:pinned,bestChanged:Boolean(pinned&&suggestedVacancyId&&pinned!==suggestedVacancyId)};
-  }
-
-  function opportunityComponent(label,value,weight){
-    const w=Math.max(0,number(weight));
-    const known=value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));
-    return {label,value:known?clamp(value):null,weight:w,known,contribution:0};
-  }
-
-  function computeOpportunity(input={},weights={}){
-    const availabilityText=text(input.availability).toLowerCase();
-    const availability=availabilityText==='available'?100:availabilityText==='unavailable'?0:null;
-    const ageKnown=input.lastActiveAgeHours!==null&&input.lastActiveAgeHours!==undefined&&text(input.lastActiveAgeHours)!==''&&Number.isFinite(Number(input.lastActiveAgeHours));
-    const age=ageKnown?Math.max(0,Number(input.lastActiveAgeHours)):null;
-    const activity=age===null?null:(age<=6?100:age<=24?80:age<=72?55:age<=168?30:10);
-    const freshMap={fresh:100,aging:70,stale:40,'very stale':15};
-    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??null;
-    const rows=[
-      opportunityComponent('Match',input.match,weights.match),
-      opportunityComponent('Fit',input.fit,weights.fit),
-      opportunityComponent('Availability',availability,weights.availability),
-      opportunityComponent('Activity',activity,weights.activity),
-      opportunityComponent('Freshness',freshness,weights.freshness),
-      opportunityComponent('Follow-up',input.followUpDue?100:0,weights.followUp),
-      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
-    ];
-    const scoredRows=rows.slice(0,6);
-    const primaryRows=rows.slice(0,5);
-    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
-    const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
-    for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
-    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
-    const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
-    const explanation=scoredRows.map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`).join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
-    return {score,rawScore,penalty,availableWeight,breakdown:rows,explanation};
-  }
-
-  function stageAgeStatus(record={},thresholds={},now=Date.now()){
-    const changed=number(record.stageChangedAt??record.updatedAt,now);
-    const daysInStage=Math.max(0,Math.floor((number(now)-changed)/DAY_MS));
-    const threshold=Math.max(0,number(thresholds?.[record.pipelineStage],0));
-    return {pipelineStage:text(record.pipelineStage),daysInStage,thresholdDays:threshold,stale:threshold>0&&daysInStage>=threshold};
-  }
-
-  function followUpTimestamp(followUp){
-    if(Number.isFinite(Number(followUp?.dueAt)))return Number(followUp.dueAt);
-    const raw=text(followUp?.date)+(text(followUp?.time)?`T${text(followUp.time)}`:'T23:59:59');
-    const parsed=Date.parse(raw);
-    return Number.isFinite(parsed)?parsed:Infinity;
-  }
-
-  function buildTodayQueue(records=[],context={}){
-    const now=number(context.now,Date.now());
-    const opportunities=context.opportunities||{};
-    const out=[];
-    for(const record of Array.isArray(records)?records:[]){
-      if(record?.archived===true)continue;
-      const reasons=[];
-      let priority=0;
-      if(text(record.pipelineStage)==='Replied'){reasons.push('Reply waiting');priority=Math.max(priority,100);}
-      const overdue=(Array.isArray(record.followUps)?record.followUps:[]).filter(f=>!['completed','cancelled'].includes(text(f.state).toLowerCase())&&followUpTimestamp(f)<now);
-      if(overdue.length){reasons.push(`Overdue follow-up (${overdue.length})`);priority=Math.max(priority,85);}
-      const aging=stageAgeStatus(record,context.stageThresholds||{},now);
-      if(aging.stale){reasons.push('Stale stage');priority=Math.max(priority,75);}
-      if(number(record.newlyEligibleAt,0)>0&&now-number(record.newlyEligibleAt)<=DAY_MS){reasons.push('Newly eligible');priority=Math.max(priority,70);}
-      if(number(record.newlyDiscoveredAt,0)>0&&now-number(record.newlyDiscoveredAt)<=DAY_MS){reasons.push('Newly discovered');priority=Math.max(priority,60);}
-      if(number(opportunities?.[record.userId],0)>=80){reasons.push('High opportunity');priority=Math.max(priority,55);}
-      if(reasons.length)out.push({userId:text(record.userId),pipelineStage:text(record.pipelineStage),priority,reasons});
-    }
-    return out.sort((a,b)=>b.priority-a.priority||a.userId.localeCompare(b.userId,undefined,{numeric:true}));
-  }
-
   return Object.freeze({
-    VACANCY_STATES,REQUIREMENT_KINDS,
-    normalizeBaseline,normalizeVacancy,evaluateCriteria,evaluateVacancy,suggestVacancy,
-    computeOpportunity,stageAgeStatus,buildTodayQueue
+    REQUIREMENT_KINDS,normalizeBaseline,evaluateCriteria
   });
 });
 
@@ -3117,14 +2940,6 @@
 
   function text(value){return String(value??'').trim();}
   function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
-  function uniqueIds(values){return [...new Set((Array.isArray(values)?values:[]).map(text).filter(v=>/^\d+$/.test(v)&&Number(v)>0))];}
-  let idSequence=0;
-  function makeId(prefix){
-    const uuid=globalThis.crypto?.randomUUID?.();
-    if(uuid)return `${prefix}-${uuid}`;
-    idSequence=(idSequence+1)%1000000;
-    return `${prefix}-${Date.now()}-${idSequence}`;
-  }
 
   function applyUpgrade(db){
     for(const[storeName,definition]of Object.entries(STORE_DEFINITIONS)){
@@ -3151,75 +2966,18 @@
     };
   }
 
-  function normalizeCampaign(raw={}){
-    const createdAt=number(raw.createdAt,Date.now());
-    return {
-      campaignId:text(raw.campaignId||raw.id)||makeId('campaign'),
-      title:text(raw.title)||'Untitled Campaign',
-      target:text(raw.target),
-      startAt:raw.startAt??null,
-      endAt:raw.endAt??null,
-      vacancyId:text(raw.vacancyId),
-      candidateIds:uniqueIds(raw.candidateIds),
-      status:text(raw.status)||'Draft',
-      metrics:{...(raw.metrics||{})},
-      notes:text(raw.notes),
-      createdAt,
-      updatedAt:number(raw.updatedAt,Date.now())
-    };
-  }
-
-  function normalizeSession(raw={}){
-    const ids=uniqueIds(raw.candidateIds);
-    return {
-      sessionId:text(raw.sessionId||raw.id)||makeId('session'),
-      title:text(raw.title)||'Recruitment Session',
-      candidateIds:ids,
-      cursor:Math.max(0,Math.min(ids.length,Math.floor(number(raw.cursor,0)))),
-      status:text(raw.status)||'Draft',
-      outcomes:Array.isArray(raw.outcomes)?raw.outcomes.map(item=>({...item})):[],
-      filters:{...(raw.filters||{})},
-      startedAt:raw.startedAt??null,
-      completedAt:raw.completedAt??null,
-      createdAt:number(raw.createdAt,Date.now()),
-      updatedAt:number(raw.updatedAt,Date.now())
-    };
-  }
-
-  function createRepositories(idb,core=CompanyCore){
-    if(!idb||!['get','getAll','put'].every(name=>typeof idb[name]==='function'))throw new Error('A compatible IndexedDB adapter is required.');
-
-    const vacancies={
-      async save(raw){const next=core.normalizeVacancy({...raw,updatedAt:Date.now()});if(!next.vacancyId)throw new Error('Vacancy ID is required.');await idb.put('companyVacancies',next);return next;},
-      async get(id){return idb.get('companyVacancies',text(id));},
-      async list(){return(await idb.getAll('companyVacancies')).map(core.normalizeVacancy).sort((a,b)=>a.name.localeCompare(b.name)||a.vacancyId.localeCompare(b.vacancyId));},
-      async listActive(){return(await vacancies.list()).filter(v=>v.status==='Open');},
-      async remove(id){if(typeof idb.delete!=='function')throw new Error('Delete is unavailable.');return idb.delete('companyVacancies',text(id));}
-    };
+  function createRepositories(idb){
+    if(!idb||!['get','put'].every(name=>typeof idb[name]==='function'))throw new Error('A compatible IndexedDB adapter is required.');
 
     const config={
       async get(){const existing=await idb.get('companyRecruitmentConfig','company');return normalizeConfig(existing||{});},
       async save(raw){const existing=await config.get();const next=normalizeConfig({...existing,...raw,key:'company',updatedAt:Date.now()});await idb.put('companyRecruitmentConfig',next);return next;}
     };
 
-    const campaigns={
-      async save(raw){const next=normalizeCampaign({...raw,updatedAt:Date.now()});await idb.put('companyCampaigns',next);return next;},
-      async get(id){return idb.get('companyCampaigns',text(id));},
-      async list(){return(await idb.getAll('companyCampaigns')).map(normalizeCampaign).sort((a,b)=>number(b.updatedAt)-number(a.updatedAt)||a.campaignId.localeCompare(b.campaignId));},
-      async remove(id){if(typeof idb.delete!=='function')throw new Error('Delete is unavailable.');return idb.delete('companyCampaigns',text(id));}
-    };
-
-    const sessions={
-      async save(raw){const next=normalizeSession({...raw,updatedAt:Date.now()});await idb.put('companyRecruitmentSessions',next);return next;},
-      async get(id){return idb.get('companyRecruitmentSessions',text(id));},
-      async list(){return(await idb.getAll('companyRecruitmentSessions')).map(normalizeSession).sort((a,b)=>number(b.updatedAt)-number(a.updatedAt)||a.sessionId.localeCompare(b.sessionId));},
-      async remove(id){if(typeof idb.delete!=='function')throw new Error('Delete is unavailable.');return idb.delete('companyRecruitmentSessions',text(id));}
-    };
-
-    return Object.freeze({vacancies:Object.freeze(vacancies),config:Object.freeze(config),campaigns:Object.freeze(campaigns),sessions:Object.freeze(sessions)});
+    return Object.freeze({config:Object.freeze(config)});
   }
 
-  return Object.freeze({DB_VERSION,STORE_DEFINITIONS,applyUpgrade,normalizeConfig,normalizeCampaign,normalizeSession,createRepositories});
+  return Object.freeze({DB_VERSION,STORE_DEFINITIONS,applyUpgrade,normalizeConfig,createRepositories});
 });
 
 /* bundled runtime: v46-company-ui.js */
@@ -3235,16 +2993,12 @@
   const {CompanyCore}=D;
   if(!CompanyCore)throw new Error('CompanyCore is required.');
   const COMPANY_STAGES=Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
-  const TERMINAL_STAGES=new Set(['Hired','Rejected']);
-  const VACANCY_STATES=Object.freeze(['Draft','Open','Paused','Filled','Archived']);
   const CRITERION_FIELDS=Object.freeze(['level','ee','fit','activity30','xanax30','refills30','attacks30','rwHits30','networth']);
   const CRITERION_OPERATORS=Object.freeze(['gte','gt','lte','lt','between','equals']);
 
   function text(value){return String(value??'').trim();}
-  function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
   function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
   function normalizeStage(value){const raw=text(value).toLowerCase();return COMPANY_STAGES.find(stage=>stage.toLowerCase()===raw)||'Not Contacted';}
-  function dateText(value){const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n).toLocaleString():'—';}
 
   function buildCandidateRows(companyRecords=[],playerRecords=[],options={}){
     const players=new Map((Array.isArray(playerRecords)?playerRecords:[]).map(player=>[text(player?.userId),player]));
@@ -3271,23 +3025,8 @@
     return rows.sort((a,b)=>a.name.localeCompare(b.name)||a.userId.localeCompare(b.userId,undefined,{numeric:true}));
   }
 
-  function buildOverviewModel(rows=[],vacancies=[]){
-    const stageCounts=Object.fromEntries(COMPANY_STAGES.map(stage=>[stage,0]));let activeCandidates=0,eligible=0,notCurrentlyEligible=0;
-    for(const row of Array.isArray(rows)?rows:[]){const stage=normalizeStage(row.pipelineStage);stageCounts[stage]++;if(!row.archived&&!TERMINAL_STAGES.has(stage))activeCandidates++;if(['Eligible','Eligible by Waiver'].includes(text(row.eligibility)))eligible++;if(text(row.eligibility)==='NOT CURRENTLY ELIGIBLE')notCurrentlyEligible++;}
-    const open=(Array.isArray(vacancies)?vacancies:[]).filter(v=>text(v?.status)==='Open');return {totalCandidates:(Array.isArray(rows)?rows:[]).length,activeCandidates,stageCounts,eligible,notCurrentlyEligible,openVacancies:open.length,openings:open.reduce((sum,v)=>sum+Math.max(0,number(v?.openings,0)),0)};
-  }
-  function buildTodayModel(rows=[],context={}){const queue=CompanyCore.buildTodayQueue(rows,context);const byId=new Map((Array.isArray(rows)?rows:[]).map(row=>[text(row.userId),row]));return queue.map(item=>{const row=byId.get(text(item.userId))||{};return{...item,name:text(row.name)||`User ${item.userId}`,availability:text(row.availability)||'Unknown',eligibility:text(row.eligibility)||'Unknown',fit:row.fit??null,desiredRole:text(row.desiredRole)};});}
-  function buildPipelineModel(rows=[]){const buckets=Object.fromEntries(COMPANY_STAGES.map(stage=>[stage,[]]));for(const row of Array.isArray(rows)?rows:[]){if(!row||text(row.companyRecord?.domain).toLowerCase()==='faction')continue;buckets[normalizeStage(row.pipelineStage)].push(row);}return buckets;}
 
-  function kpi(label,value){return `<div class="ra-kpi"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;}
-  function score(value){if(value===null||value===undefined||text(value)==='')return '—';return Number.isFinite(Number(value))?Number(value).toFixed(1):'—';}
-  function money(value){return Number.isFinite(Number(value))?`$${Math.round(Number(value)).toLocaleString()}`:'—';}
-  function stageOptions(selected){return COMPANY_STAGES.map(stage=>`<option value="${esc(stage)}" ${stage===selected?'selected':''}>${esc(stage)}</option>`).join('');}
-  function vacancyStateOptions(selected){return VACANCY_STATES.map(state=>`<option value="${state}" ${state===selected?'selected':''}>${state}</option>`).join('');}
-  function playerOptions(rows=[],selected=''){return rows.map(row=>`<option value="${esc(row.userId)}" ${text(row.userId)===text(selected)?'selected':''}>${esc(row.name)} [${esc(row.userId)}]</option>`).join('');}
 
-  function renderOverview(model={}){const counts=model.stageCounts||{};return `<div class="ra-kpis">${kpi('Active Candidates',number(model.activeCandidates))}${kpi('Eligible',number(model.eligible))}${kpi('Open Vacancies',number(model.openVacancies))}${kpi('Openings',number(model.openings))}</div><section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Recruitment</h3><p>Company-only workflow state over shared Player Intelligence.</p></div></div><div class="ra-detail-grid"><span>Not Currently Eligible<b>${number(model.notCurrentlyEligible)}</b></span><span>Replied<b>${number(counts.Replied)}</b></span><span>Shortlisted<b>${number(counts.Shortlisted)}</b></span><span>Hired<b>${number(counts.Hired)}</b></span></div><div class="ra-actions" style="margin-top:10px"><button class="ra-btn ra-primary" data-go-page="company-today">Open Today</button><button class="ra-btn" data-go-page="company-vacancies">Manage Vacancies</button><button class="ra-btn" data-go-page="company-candidates">Company Candidates</button></div></section>`;}
-  function renderToday(items=[]){const rows=(Array.isArray(items)?items:[]).map(item=>`<tr><td>${esc(item.name)}</td><td>${esc(item.pipelineStage)}</td><td>${esc((item.reasons||[]).join(' · '))}</td><td>${esc(item.eligibility)}</td><td>${score(item.fit)}</td></tr>`).join('');return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Today</h3><p>Priority work only. Viewing this queue never changes pipeline state.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Stage</th><th>Why now</th><th>Eligibility</th><th>Fit</th></tr></thead><tbody>${rows||'<tr><td colspan="5">Nothing requires attention.</td></tr>'}</tbody></table></div></section>`;}
 
   function relativeLastActive(value,now=Date.now(),onlineStatus=''){const ts=Number(value);if(!Number.isFinite(ts)||ts<=0)return text(onlineStatus)||'Unknown';const seconds=Math.max(0,Math.floor((now-ts)/1000));if(seconds<60)return 'just now';if(seconds<3600)return `${Math.floor(seconds/60)}m ago`;if(seconds<86400)return `${Math.floor(seconds/3600)}h ago`;return `${Math.floor(seconds/86400)}d ago`;}
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
@@ -3306,337 +3045,28 @@
     const profileBar=`<div class="ra-actions ra-profile-bar"><label class="ra-muted" for="ra-company-profile-select">Recruitment profile</label><select id="ra-company-profile-select" class="ra-btn">${profileOptions}</select><button type="button" class="ra-btn" id="ra-company-profile-apply" ${profiles.length?'':'disabled'}>Apply Profile</button><button type="button" class="ra-btn" id="ra-company-profile-clear" ${activeProfileId?'':'hidden'}>Clear Profile</button><details class="ra-profile-more"><summary class="ra-btn">More…</summary><div class="ra-actions"><button type="button" class="ra-btn" id="ra-company-profile-save-search" ${profiles.length?'':'disabled'}>Save Search to Profile</button><button type="button" class="ra-btn" id="ra-company-profile-manage">Manage Profiles</button></div></details></div>`;
     const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="company">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
     const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-company-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-company-recruit="${esc(row.userId)}">Message</button>`;
-    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.end)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${stat(row.activeStreak)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.end)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${stat(row.activeStreak)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
     const resultsTable=layout==='compact'
       ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Company candidates.</td></tr>'}</tbody></table>`
       : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>Employment</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="15">No matching Company candidates.</td></tr>'}</tbody></table>`;
     return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Find players, narrow the list with filters, then message the ones you want.</p></div></div>${profileBar}<div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-company-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-company-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Company</label><input id="ra-company-filter-organization" value="${esc(filters.organization||'')}" placeholder="Company name"></div><div class="ra-field"><label>Company Presence</label><select id="ra-company-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Company</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-company-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-company-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-company-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-company-search-apply">Search</button><button type="button" class="ra-btn" id="ra-company-search-clear">Clear</button><button type="button" class="ra-btn" id="ra-company-hof-discover" title="Import one bounded page of public work-stat HOF prospects without per-player enrichment">Discover Workstat Prospects</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Company candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
   }
-  function renderPipeline(model={}){return `<div class="ra-pipeline">${COMPANY_STAGES.map(stage=>`<section class="ra-stage" data-company-stage="${esc(stage)}"><div class="ra-stage-head"><b>${esc(stage)}</b><span>${(model[stage]||[]).length}</span></div><div class="ra-stage-drop">${(model[stage]||[]).map(row=>`<article class="ra-stage-card" data-context-id="${esc(row.userId)}"><b>${esc(row.name)}</b><div>${esc(row.eligibility)} · Fit ${score(row.fit)}</div><div>${esc(row.desiredRole||'No role specified')}</div><select class="ra-btn" data-company-stage-select="${esc(row.userId)}">${stageOptions(row.pipelineStage)}</select></article>`).join('')}</div></section>`).join('')}</div>`;}
 
   function renderCriterionRow(raw={},scope='baseline'){
     const req={id:text(raw.id),label:text(raw.label),field:text(raw.field)||'ee',operator:text(raw.operator)||'gte',kind:text(raw.kind)||'Preferred',value:raw.value??'',weight:Number.isFinite(Number(raw.weight))?Number(raw.weight):1};
     return `<div class="ra-formgrid" data-criterion-row data-criterion-id="${esc(req.id)}" style="grid-template-columns:1.2fr 1fr .8fr .8fr 1fr .7fr auto;align-items:end;margin:6px 0"><div class="ra-field"><label>Label</label><input data-criterion-field="label" value="${esc(req.label)}"></div><div class="ra-field"><label>Field</label><select data-criterion-field="field">${CRITERION_FIELDS.map(field=>`<option value="${field}" ${field===req.field?'selected':''}>${field}</option>`).join('')}</select></div><div class="ra-field"><label>Operator</label><select data-criterion-field="operator">${CRITERION_OPERATORS.map(op=>`<option value="${op}" ${op===req.operator?'selected':''}>${op}</option>`).join('')}</select></div><div class="ra-field"><label>Type</label><select data-criterion-field="kind"><option value="Hard" ${req.kind==='Hard'?'selected':''}>Hard</option><option value="Preferred" ${req.kind!=='Hard'?'selected':''}>Preferred</option></select></div><div class="ra-field"><label>Value</label><input data-criterion-field="value" value="${esc(req.value)}"></div><div class="ra-field"><label>Weight</label><input data-criterion-field="weight" type="number" min="0" step="0.1" value="${esc(req.weight)}"></div><button type="button" class="ra-btn ra-danger" data-remove-criterion="${esc(scope)}">×</button></div>`;
   }
-  function renderVacanciesPage({config={},vacancies=[],rows=[]}={}){
-    const baseline=config.baseline?.criteria||[];
-    const vacancyCards=(Array.isArray(vacancies)?vacancies:[]).map(v=>`<section class="ra-panel" data-vacancy-card="${esc(v.vacancyId)}"><div class="ra-panel-head"><div><h3>${esc(v.name||'Untitled Vacancy')}</h3><p>${esc(v.vacancyId)} · ${number(v.openings,1)} opening${number(v.openings,1)===1?'':'s'}</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Name</label><input data-vacancy-field="name" value="${esc(v.name)}"></div><div class="ra-field"><label>Role</label><input data-vacancy-field="role" value="${esc(v.role)}"></div><div class="ra-field"><label>Openings</label><input data-vacancy-field="openings" type="number" min="1" value="${number(v.openings,1)}"></div><div class="ra-field"><label>Status</label><select data-vacancy-field="status">${vacancyStateOptions(v.status)}</select></div><div class="ra-field"><label>Salary budget</label><input data-vacancy-field="salaryBudget" type="number" value="${esc(v.salaryBudget??'')}"></div><div class="ra-field"><label>Availability</label><select data-vacancy-field="availability"><option ${v.availability==='Unknown'?'selected':''}>Unknown</option><option ${v.availability==='Available'?'selected':''}>Available</option><option ${v.availability==='Unavailable'?'selected':''}>Unavailable</option></select></div><div class="ra-field" style="grid-column:1/-1"><label>Notes</label><textarea data-vacancy-field="notes">${esc(v.notes)}</textarea></div></div><h4>Vacancy criteria</h4><div data-criteria-host>${(v.criteria||[]).map(req=>renderCriterionRow(req,`vacancy:${v.vacancyId}`)).join('')}</div><div class="ra-actions"><button type="button" class="ra-btn" data-vacancy-add-criterion="${esc(v.vacancyId)}">Add criterion</button><button type="button" class="ra-btn ra-primary" data-vacancy-save="${esc(v.vacancyId)}">Save Vacancy</button><button type="button" class="ra-btn ra-danger" data-vacancy-delete="${esc(v.vacancyId)}">Delete</button></div></section>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Baseline</h3><p>Hard requirements block Hired unless explicitly waived. Preferred requirements influence quality only.</p></div></div><div id="ra-company-baseline-criteria" data-criteria-host>${baseline.map(req=>renderCriterionRow(req,'baseline')).join('')}</div><div class="ra-actions"><button type="button" class="ra-btn" id="ra-company-baseline-add">Add criterion</button><button type="button" class="ra-btn ra-primary" id="ra-company-baseline-save">Save Baseline</button></div></section><section class="ra-panel"><div class="ra-panel-head"><div><h3>New Vacancy</h3><p>One vacancy can represent multiple openings.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Name</label><input id="ra-company-new-vacancy-name"></div><div class="ra-field"><label>Role</label><input id="ra-company-new-vacancy-role"></div><div class="ra-field"><label>Openings</label><input id="ra-company-new-vacancy-openings" type="number" min="1" value="1"></div><div class="ra-field"><label>Status</label><select id="ra-company-new-vacancy-status">${vacancyStateOptions('Draft')}</select></div></div><div class="ra-actions" style="margin-top:8px"><button type="button" class="ra-btn ra-primary" id="ra-company-vacancy-new">Create Vacancy</button></div></section><div class="ra-note" style="margin-bottom:8px">${rows.length} Company candidate(s) are evaluated locally against every Open vacancy. No Torn API calls are made by vacancy edits or rescoring.</div>${vacancyCards||'<section class="ra-panel"><div class="ra-muted">No vacancies yet.</div></section>'}`;
+
+
+
+
+
+  function renderBaselineEditor(config={},options={}){
+    const criteria=Array.isArray(config.baseline?.criteria)?config.baseline.criteria:[];
+    return `<details class="ra-panel" id="ra-company-baseline-editor" ${options.open?'open':''}><summary><b>Eligibility baseline</b> <span class="ra-muted">${criteria.length} criteria</span></summary><p class="ra-muted">Hard criteria mark candidates as not eligible in results. Preferred criteria only affect quality.</p><div id="ra-company-baseline-criteria" data-criteria-host>${criteria.map(req=>renderCriterionRow(req,'baseline')).join('')}</div><div class="ra-actions"><button type="button" class="ra-btn" id="ra-company-baseline-add">Add criterion</button><button type="button" class="ra-btn ra-primary" id="ra-company-baseline-save">Save Baseline</button></div></details>`;
   }
-
-  function renderFollowUpsPage(rows=[],options={}){
-    const now=number(options.now,Date.now());const items=[];for(const row of rows)for(const follow of row.companyRecord?.followUps||[])items.push({row,follow});items.sort((a,b)=>number(a.follow.dueAt,Infinity)-number(b.follow.dueAt,Infinity));
-    const body=items.map(({row,follow})=>{const open=!['completed','cancelled'].includes(text(follow.state).toLowerCase());const overdue=open&&number(follow.dueAt,Infinity)<now;return `<tr><td>${esc(row.name)}</td><td>${dateText(follow.dueAt)}</td><td>${esc(follow.reason||'—')}</td><td>${esc(follow.note||'—')}</td><td>${overdue?'Overdue':esc(follow.state||'open')}</td><td>${open?`<button type="button" class="ra-btn" data-followup-complete="${esc(follow.followUpId)}" data-followup-user="${esc(row.userId)}">Complete</button>`:'—'}</td></tr>`;}).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Add Follow-up</h3><p>Due work stays local and never changes stage automatically.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-company-followup-player">${playerOptions(rows)}</select></div><div class="ra-field"><label>Due</label><input id="ra-company-followup-due" type="datetime-local"></div><div class="ra-field"><label>Reason</label><input id="ra-company-followup-reason"></div><div class="ra-field"><label>Note</label><input id="ra-company-followup-note"></div><div class="ra-field"><label>Repeat</label><select id="ra-company-followup-recurrence-unit"><option value="">None</option><option value="hours">Hours</option><option value="days">Days</option><option value="weeks">Weeks</option></select></div><div class="ra-field"><label>Every</label><input id="ra-company-followup-recurrence-interval" type="number" min="1" value="1"></div></div><div class="ra-actions" style="margin-top:8px"><button type="button" class="ra-btn ra-primary" id="ra-company-followup-add">Add Follow-up</button></div></section><section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Follow-ups</h3><p>Overdue and upcoming follow-ups across Company recruitment.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Due</th><th>Reason</th><th>Note</th><th>Status</th><th>Action</th></tr></thead><tbody>${body||'<tr><td colspan="6">No follow-ups.</td></tr>'}</tbody></table></div></section>`;
-  }
-
-  function renderContactOutcomesPage(rows=[]){
-    const outcomes=[];for(const row of rows)for(const outcome of row.companyRecord?.outcomes||[])outcomes.push({row,outcome});outcomes.sort((a,b)=>number(b.outcome.at,0)-number(a.outcome.at,0));
-    const outcomeRows=outcomes.map(({row,outcome})=>`<tr><td>${esc(row.name)}</td><td>${esc(row.pipelineStage)}</td><td>${esc(outcome.result)}</td><td>${esc(outcome.channel)}</td><td>${esc(outcome.note||'—')}</td><td>${dateText(outcome.at)}</td></tr>`).join('');
-    const dncRows=rows.map(row=>`<tr><td>${esc(row.name)}</td><td>${esc(row.pipelineStage)}</td><td>${row.doNotContact?'Do Not Contact':'Contact allowed'}</td><td>${esc(row.companyRecord?.doNotContactReason||'—')}</td><td><input data-dnc-reason="${esc(row.userId)}" value="${esc(row.companyRecord?.doNotContactReason||'')}"></td><td><button type="button" class="ra-btn ${row.doNotContact?'':'ra-danger'}" data-company-dnc="${esc(row.userId)}" data-dnc-enable="${row.doNotContact?'false':'true'}">${row.doNotContact?'Remove DNC':'Set DNC'}</button></td></tr>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Record Contact Outcome</h3><p>Outcomes do not imply or change a pipeline stage.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-company-outcome-player">${playerOptions(rows)}</select></div><div class="ra-field"><label>Result</label><select id="ra-company-outcome-result"><option>Interested</option><option>Not Interested</option><option>No Response</option><option>Needs Follow-up</option><option>Other</option></select></div><div class="ra-field"><label>Channel</label><select id="ra-company-outcome-channel"><option>Torn message</option><option>Forum</option><option>Chat</option><option>Other</option></select></div><div class="ra-field"><label>Note</label><input id="ra-company-outcome-note"></div></div><div class="ra-actions" style="margin-top:8px"><button type="button" class="ra-btn ra-primary" id="ra-company-outcome-add">Record Outcome</button></div></section><section class="ra-panel"><h3>Do Not Contact</h3><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Stage</th><th>Status</th><th>Current reason</th><th>Reason</th><th>Action</th></tr></thead><tbody>${dncRows||'<tr><td colspan="6">No candidates.</td></tr>'}</tbody></table></div></section><section class="ra-panel"><h3>Contact Outcomes</h3><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Stage</th><th>Result</th><th>Channel</th><th>Note</th><th>When</th></tr></thead><tbody>${outcomeRows||'<tr><td colspan="6">No contact outcomes.</td></tr>'}</tbody></table></div></section>`;
-  }
-
-  function renderStageAgingPage(rows=[]){const sorted=[...rows].sort((a,b)=>Number(b.aging?.stale)-Number(a.aging?.stale)||number(b.aging?.daysInStage)-number(a.aging?.daysInStage));const body=sorted.map(row=>`<tr><td>${esc(row.name)}</td><td>${esc(row.pipelineStage)}</td><td>${number(row.aging?.daysInStage)}</td><td>${number(row.aging?.thresholdDays)||'—'}</td><td>${row.aging?.stale?'<b>Stale</b>':'Within threshold'}</td></tr>`).join('');return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Stage Aging</h3><p>Warnings only. Aging never moves a candidate automatically.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Stage</th><th>Days in stage</th><th>Warning at</th><th>Status</th></tr></thead><tbody>${body||'<tr><td colspan="5">No candidates.</td></tr>'}</tbody></table></div></section>`;}
-
-  function renderTimelinePage(rows=[]){
-    const items=[];for(const row of rows){for(const event of row.companyRecord?.timelineEvents||[])items.push({row,kind:'system',at:number(event.at),entry:event});for(const note of row.companyRecord?.timelineNotes||[])items.push({row,kind:'note',at:number(note.at),entry:note});}items.sort((a,b)=>b.at-a.at);
-    const body=items.map(item=>item.kind==='system'?`<tr><td>${esc(item.row.name)}</td><td>${dateText(item.at)}</td><td>System event <span class="ra-muted">Immutable</span></td><td>${esc(item.entry.type)}</td><td>${esc(JSON.stringify(item.entry.payload||{}))}</td><td>—</td></tr>`:`<tr><td>${esc(item.row.name)}</td><td>${dateText(item.at)}</td><td>Recruiter note</td><td>Note</td><td data-timeline-note-text="${esc(item.entry.noteId)}">${esc(item.entry.text)}</td><td><button type="button" class="ra-btn" data-timeline-note-edit="${esc(item.entry.noteId)}" data-timeline-user="${esc(item.row.userId)}">Edit</button> <button type="button" class="ra-btn ra-danger" data-timeline-note-delete="${esc(item.entry.noteId)}" data-timeline-user="${esc(item.row.userId)}">Delete</button></td></tr>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Add Recruiter Timeline Note</h3><p>Recruiter notes are editable; system events are not.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-company-timeline-player">${playerOptions(rows)}</select></div><div class="ra-field"><label>Note</label><input id="ra-company-timeline-note"></div></div><div class="ra-actions" style="margin-top:8px"><button type="button" class="ra-btn ra-primary" id="ra-company-timeline-add">Add Note</button></div></section><section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Timeline</h3><p>Newest first across Company recruitment.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>When</th><th>Kind</th><th>Type</th><th>Details</th><th>Action</th></tr></thead><tbody>${body||'<tr><td colspan="6">No timeline history.</td></tr>'}</tbody></table></div></section>`;
-  }
-
-  return Object.freeze({COMPANY_STAGES,VACANCY_STATES,buildCandidateRows,buildOverviewModel,buildTodayModel,buildPipelineModel,renderOverview,renderToday,renderCandidates,renderPipeline,renderCriterionRow,renderVacanciesPage,renderFollowUpsPage,renderContactOutcomesPage,renderStageAgingPage,renderTimelinePage});
-});
-
-/* bundled runtime: v46-company-operations.js */
-(function(root,factory){
-  let CompanyCore=root&&root.RA_V46CompanyCore;
-  if(!CompanyCore&&typeof module==='object'&&module.exports)CompanyCore=require('./v46-company-core');
-  const api=factory(CompanyCore);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V46CompanyOperations=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(CompanyCore){
-  'use strict';
-  if(!CompanyCore)throw new Error('CompanyCore is required.');
-
-  const UNIT_MS=Object.freeze({hours:3600000,days:86400000,weeks:604800000});
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const cloneRecord=record=>({...record,followUps:(record.followUps||[]).map(x=>({...x,recurrence:x.recurrence?{...x.recurrence}:null})),outcomes:(record.outcomes||[]).map(x=>({...x})),timelineEvents:(record.timelineEvents||[]).map(x=>({...x,payload:x.payload?{...x.payload}:x.payload})),timelineNotes:(record.timelineNotes||[]).map(x=>({...x}))});
-  const makeId=(prefix,at)=>`${prefix}-${number(at,Date.now())}-${Math.random().toString(36).slice(2,8)}`;
-
-  function normalizeRecurrence(raw){
-    if(!raw)return null;
-    const unit=Object.hasOwn(UNIT_MS,text(raw.unit).toLowerCase())?text(raw.unit).toLowerCase():'days';
-    const interval=Math.max(1,Math.floor(number(raw.interval,1)));
-    return{unit,interval};
-  }
-
-  function addSystemEvent(record,type,payload={},at=Date.now(),eventId=''){
-    const next=cloneRecord(record||{});const when=number(at,Date.now());
-    next.timelineEvents.push({eventId:text(eventId)||makeId('event',when),type:text(type)||'event',at:when,payload:{...(payload||{})}});
-    next.updatedAt=when;return next;
-  }
-
-  function addFollowUp(record,raw={},at=Date.now()){
-    const next=cloneRecord(record||{});const when=number(at,Date.now());
-    const followUp={followUpId:text(raw.followUpId)||makeId('followup',when),dueAt:number(raw.dueAt,when),reason:text(raw.reason),note:text(raw.note),state:text(raw.state)||'open',recurrence:normalizeRecurrence(raw.recurrence),createdAt:raw.createdAt??when,updatedAt:when};
-    next.followUps.push(followUp);next.updatedAt=when;
-    return addSystemEvent(next,'follow-up-added',{followUpId:followUp.followUpId,dueAt:followUp.dueAt,reason:followUp.reason},when);
-  }
-
-  function completeFollowUp(record,followUpId,at=Date.now()){
-    const next=cloneRecord(record||{});const id=text(followUpId);const when=number(at,Date.now());const index=next.followUps.findIndex(x=>text(x.followUpId)===id);if(index<0)throw new Error('Follow-up not found.');
-    const current={...next.followUps[index],state:'completed',completedAt:when,updatedAt:when};next.followUps[index]=current;
-    if(current.recurrence){const step=UNIT_MS[current.recurrence.unit]*current.recurrence.interval;next.followUps.push({...current,followUpId:makeId('followup',when),parentFollowUpId:id,dueAt:number(current.dueAt,when)+step,state:'open',completedAt:null,createdAt:when,updatedAt:when});}
-    next.updatedAt=when;return addSystemEvent(next,'follow-up-completed',{followUpId:id},when);
-  }
-
-  function recordContactOutcome(record,raw={},at=Date.now()){
-    const next=cloneRecord(record||{});const when=number(at,Date.now());const outcome={outcomeId:text(raw.outcomeId)||makeId('outcome',when),result:text(raw.result)||'Other',channel:text(raw.channel)||'Other',note:text(raw.note),at:raw.at??when};next.outcomes.push(outcome);next.updatedAt=when;
-    return addSystemEvent(next,'contact-outcome',{outcomeId:outcome.outcomeId,result:outcome.result,channel:outcome.channel},when);
-  }
-
-  function setDoNotContact(record,enabled,reason='',at=Date.now()){
-    const next=cloneRecord(record||{});const when=number(at,Date.now());next.doNotContact=enabled===true;next.doNotContactReason=next.doNotContact?text(reason):'';next.doNotContactChangedAt=when;next.updatedAt=when;
-    return addSystemEvent(next,'dnc-changed',{enabled:next.doNotContact,reason:next.doNotContactReason},when);
-  }
-
-  function canMessage(record,override=false){return !(record?.doNotContact===true&&override!==true);}
-  function stageAging(record,thresholds={},now=Date.now()){return CompanyCore.stageAgeStatus(record,thresholds,now);}
-
-  function addTimelineNote(record,raw={},at=Date.now()){
-    const next=cloneRecord(record||{});const when=number(at,Date.now());next.timelineNotes.push({noteId:text(raw.noteId)||makeId('note',when),text:text(raw.text),at:raw.at??when,updatedAt:when});next.updatedAt=when;return next;
-  }
-  function editTimelineNote(record,noteId,value,at=Date.now()){
-    const next=cloneRecord(record||{});const id=text(noteId);if(next.timelineEvents.some(event=>text(event.eventId)===id))throw new Error('System timeline events are immutable.');const index=next.timelineNotes.findIndex(note=>text(note.noteId)===id);if(index<0)throw new Error('Timeline note not found.');const when=number(at,Date.now());next.timelineNotes[index]={...next.timelineNotes[index],text:text(value),updatedAt:when};next.updatedAt=when;return next;
-  }
-  function deleteTimelineNote(record,noteId,at=Date.now()){
-    const next=cloneRecord(record||{});const id=text(noteId);if(next.timelineEvents.some(event=>text(event.eventId)===id))throw new Error('System timeline events are immutable.');const before=next.timelineNotes.length;next.timelineNotes=next.timelineNotes.filter(note=>text(note.noteId)!==id);if(next.timelineNotes.length===before)throw new Error('Timeline note not found.');next.updatedAt=number(at,Date.now());return next;
-  }
-
-  function combinedTimeline(record={}){
-    const system=(record.timelineEvents||[]).map(event=>({...event,entryType:'system',at:number(event.at,0)}));const notes=(record.timelineNotes||[]).map(note=>({...note,entryType:'recruiter-note',at:number(note.at,0)}));return[...system,...notes].sort((a,b)=>b.at-a.at||text(a.eventId||a.noteId).localeCompare(text(b.eventId||b.noteId)));
-  }
-
-  function changeStage(record,stage,at=Date.now()){
-    const before=text(record?.pipelineStage)||'Not Contacted';const after=text(stage)||before;if(before===after)return cloneRecord(record||{});const when=number(at,Date.now());let next=cloneRecord(record||{});next.pipelineStage=after;next.stageChangedAt=when;next.updatedAt=when;next=addSystemEvent(next,'stage-changed',{from:before,to:after},when);return next;
-  }
-
-  return Object.freeze({normalizeRecurrence,addSystemEvent,addFollowUp,completeFollowUp,recordContactOutcome,setDoNotContact,canMessage,stageAging,addTimelineNote,editTimelineNote,deleteTimelineNote,combinedTimeline,changeStage});
-});
-
-/* bundled runtime: v46-company-workflow.js */
-(function(root,factory){
-  let Operations=root&&root.RA_V46CompanyOperations;
-  if(!Operations&&typeof module==='object'&&module.exports)Operations=require('./v46-company-operations');
-  const api=factory(Operations);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V46CompanyWorkflow=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(Operations){
-  'use strict';
-  if(!Operations)throw new Error('Company Operations is required.');
-
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const unique=values=>[...new Set((Array.isArray(values)?values:[]).map(text).filter(Boolean))];
-  const clone=record=>({...record,campaigns:unique(record?.campaigns),cycles:(record?.cycles||[]).map(item=>({...item})),timelineEvents:(record?.timelineEvents||[]).map(item=>({...item,payload:item?.payload?{...item.payload}:item?.payload})),timelineNotes:(record?.timelineNotes||[]).map(item=>({...item})),followUps:(record?.followUps||[]).map(item=>({...item})),outcomes:(record?.outcomes||[]).map(item=>({...item}))});
-  const sessionClone=session=>({...session,candidateIds:unique(session?.candidateIds),outcomes:(session?.outcomes||[]).map(item=>({...item})),filters:{...(session?.filters||{})}});
-  const makeId=(prefix,at)=>`${prefix}-${number(at,Date.now())}-${Math.random().toString(36).slice(2,8)}`;
-
-  function addCampaignMembership(record,campaignId,at=Date.now()){
-    const id=text(campaignId);if(!id)throw new Error('Campaign ID is required.');
-    let next=clone(record||{});next.campaigns=unique([...next.campaigns,id]);next.updatedAt=number(at,Date.now());
-    return Operations.addSystemEvent(next,'campaign-membership-added',{campaignId:id},next.updatedAt);
-  }
-
-  function removeCampaignMembership(record,campaignId,at=Date.now()){
-    const id=text(campaignId);if(!id)throw new Error('Campaign ID is required.');
-    let next=clone(record||{});next.campaigns=next.campaigns.filter(value=>value!==id);next.updatedAt=number(at,Date.now());
-    return Operations.addSystemEvent(next,'campaign-membership-removed',{campaignId:id},next.updatedAt);
-  }
-
-  function setTalentPool(record,enabled,reason='',at=Date.now()){
-    let next=clone(record||{});const when=number(at,Date.now());next.talentPool=enabled===true;next.talentPoolReason=next.talentPool?text(reason):'';next.talentPoolChangedAt=when;next.updatedAt=when;
-    return Operations.addSystemEvent(next,'talent-pool-changed',{enabled:next.talentPool,reason:next.talentPoolReason},when);
-  }
-
-  function reactivate(record,reason='',at=Date.now(),cycleId=''){
-    let next=clone(record||{});const when=number(at,Date.now());const previousStage=text(next.pipelineStage)||'Not Contacted';
-    next.cycles.push({cycleId:text(cycleId)||makeId('cycle',when),startedAt:when,reason:text(reason),previousStage});
-    next.pipelineStage='Not Contacted';next.stageChangedAt=when;next.archived=false;next.updatedAt=when;
-    return Operations.addSystemEvent(next,'reactivated',{reason:text(reason),previousStage,cycleId:next.cycles.at(-1).cycleId},when);
-  }
-
-  function currentSessionCandidate(session={}){
-    const ids=unique(session.candidateIds);const cursor=Math.max(0,Math.floor(number(session.cursor,0)));return ids[cursor]||'';
-  }
-
-  function recordSessionAction(session,raw={},at=Date.now()){
-    const next=sessionClone(session||{});const when=number(at,Date.now());const current=currentSessionCandidate(next);const userId=text(raw.userId);const action=text(raw.action);
-    if(!current)throw new Error('Recruitment session has no current candidate.');
-    if(userId!==current)throw new Error('Action must target the current session candidate.');
-    if(!action)throw new Error('An explicit session action is required.');
-    next.outcomes.push({userId,action,note:text(raw.note),at:when});
-    next.cursor=Math.min(next.candidateIds.length,Math.max(0,Math.floor(number(next.cursor,0)))+1);
-    next.status=next.cursor>=next.candidateIds.length?'Completed':'Active';
-    if(next.status==='Completed')next.completedAt=when;
-    if(!next.startedAt)next.startedAt=when;
-    next.updatedAt=when;
-    return next;
-  }
-
-  return Object.freeze({addCampaignMembership,removeCampaignMembership,setTalentPool,reactivate,currentSessionCandidate,recordSessionAction});
-});
-
-/* bundled runtime: v46-company-workflow-ui.js */
-(function(root,factory){
-  let Workflow=root&&root.RA_V46CompanyWorkflow;
-  if(!Workflow&&typeof module==='object'&&module.exports)Workflow=require('./v46-company-workflow');
-  const api=factory(Workflow);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V46CompanyWorkflowUI=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(Workflow){
-  'use strict';
-  if(!Workflow)throw new Error('Company Workflow is required.');
-
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const unique=values=>[...new Set((Array.isArray(values)?values:[]).map(text).filter(Boolean))];
-  const terminal=new Set(['Hired','Rejected']);
-  function candidateOptions(rows=[],selected='',filter=()=>true){return rows.filter(filter).map(row=>`<option value="${esc(row.userId)}" ${text(row.userId)===text(selected)?'selected':''}>${esc(row.name)} [${esc(row.userId)}]</option>`).join('');}
-  function vacancyOptions(vacancies=[],selected=''){return `<option value="">No vacancy</option>`+vacancies.map(v=>`<option value="${esc(v.vacancyId)}" ${text(v.vacancyId)===text(selected)?'selected':''}>${esc(v.name||v.role||v.vacancyId)}</option>`).join('');}
-  function rowMap(rows=[]){return new Map(rows.map(row=>[text(row.userId),row]));}
-
-  function renderCampaignsPage({campaigns=[],rows=[],vacancies=[]}={}){
-    const players=rowMap(rows);
-    const cards=campaigns.map(campaign=>{
-      const members=unique(campaign.candidateIds).map(id=>players.get(id)).filter(Boolean);
-      const available=rows.filter(row=>!unique(campaign.candidateIds).includes(text(row.userId)));
-      return `<section class="ra-panel" data-campaign-card="${esc(campaign.campaignId)}"><div class="ra-panel-head"><div><h3>${esc(campaign.title||'Untitled Campaign')}</h3><p>${esc(campaign.target||'No target specified')} · ${esc(campaign.status||'Draft')}</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Title</label><input data-campaign-field="title" value="${esc(campaign.title)}"></div><div class="ra-field"><label>Target</label><input data-campaign-field="target" value="${esc(campaign.target)}"></div><div class="ra-field"><label>Vacancy</label><select data-campaign-field="vacancyId">${vacancyOptions(vacancies,campaign.vacancyId)}</select></div><div class="ra-field"><label>Status</label><select data-campaign-field="status"><option ${campaign.status==='Draft'?'selected':''}>Draft</option><option ${campaign.status==='Active'?'selected':''}>Active</option><option ${campaign.status==='Paused'?'selected':''}>Paused</option><option ${campaign.status==='Completed'?'selected':''}>Completed</option><option ${campaign.status==='Archived'?'selected':''}>Archived</option></select></div><div class="ra-field" style="grid-column:1/-1"><label>Notes</label><textarea data-campaign-field="notes">${esc(campaign.notes)}</textarea></div></div><div class="ra-actions"><button class="ra-btn ra-primary" data-campaign-save="${esc(campaign.campaignId)}">Save Campaign</button><button class="ra-btn ra-danger" data-campaign-delete="${esc(campaign.campaignId)}">Delete</button></div><h4>Members</h4><div>${members.map(row=>`<div class="ra-actions" style="justify-content:space-between;margin:4px 0"><span>${esc(row.name)} <span class="ra-muted">[${esc(row.userId)}]</span></span><button class="ra-btn ra-danger" data-campaign-remove-member="${esc(campaign.campaignId)}" data-campaign-user="${esc(row.userId)}">Remove</button></div>`).join('')||'<div class="ra-muted">No members.</div>'}</div><div class="ra-actions" style="margin-top:8px"><select class="ra-btn" data-campaign-member-select="${esc(campaign.campaignId)}"><option value="">Add candidate…</option>${candidateOptions(available)}</select><button class="ra-btn" data-campaign-add-member="${esc(campaign.campaignId)}">Add Member</button></div></section>`;
-    }).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Create Campaign</h3><p>Campaigns organize Company recruitment work. Membership is many-to-many.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Title</label><input id="ra-company-campaign-title"></div><div class="ra-field"><label>Target</label><input id="ra-company-campaign-target"></div><div class="ra-field"><label>Vacancy</label><select id="ra-company-campaign-vacancy">${vacancyOptions(vacancies)}</select></div><div class="ra-field"><label>Status</label><select id="ra-company-campaign-status"><option>Draft</option><option>Active</option><option>Paused</option><option>Completed</option><option>Archived</option></select></div><div class="ra-field" style="grid-column:1/-1"><label>Notes</label><textarea id="ra-company-campaign-notes"></textarea></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-company-campaign-new">Create Campaign</button></div></section>${cards||'<section class="ra-panel"><div class="ra-muted">No campaigns yet.</div></section>'}`;
-  }
-
-  function renderTalentPoolPage(rows=[]){
-    const pooled=rows.filter(row=>row.talentPool===true||row.companyRecord?.talentPool===true);
-    const available=rows.filter(row=>!(row.talentPool===true||row.companyRecord?.talentPool===true));
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Add to Talent Pool</h3><p>Keep promising candidates without changing their Company pipeline stage.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-company-talent-player"><option value="">Choose candidate…</option>${candidateOptions(available)}</select></div><div class="ra-field"><label>Reason</label><input id="ra-company-talent-reason"></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-company-talent-add">Add to Talent Pool</button></div></section><section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Talent Pool</h3><p>Reusable prospects remain tied to the same Torn player identity.</p></div></div>${pooled.map(row=>`<div class="ra-actions" style="justify-content:space-between;margin:6px 0"><div><b>${esc(row.name)}</b> <span class="ra-muted">[${esc(row.userId)}]</span><div class="ra-note">${esc(row.talentPoolReason||row.companyRecord?.talentPoolReason||'No reason recorded')}</div></div><button class="ra-btn ra-danger" data-talent-remove="${esc(row.userId)}">Remove</button></div>`).join('')||'<div class="ra-muted">Talent Pool is empty.</div>'}</section><section class="ra-panel"><h3>Available Candidates</h3>${available.map(row=>`<div>${esc(row.name)} <span class="ra-muted">[${esc(row.userId)}] · ${esc(row.pipelineStage)}</span></div>`).join('')||'<div class="ra-muted">Everyone is already pooled.</div>'}</section>`;
-  }
-
-  function renderReactivationPage(rows=[]){
-    const eligible=rows.filter(row=>row.archived===true||terminal.has(text(row.pipelineStage))||row.talentPool===true||row.companyRecord?.talentPool===true);
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Reactivation</h3><p>Start a new Company recruitment cycle without creating a second player identity.</p></div></div>${eligible.map(row=>`<div class="ra-panel" style="margin:6px 0"><b>${esc(row.name)}</b> <span class="ra-muted">[${esc(row.userId)}] · ${esc(row.pipelineStage)}</span><div class="ra-formgrid" style="margin-top:6px"><div class="ra-field"><label>Reason</label><input data-reactivate-reason="${esc(row.userId)}" placeholder="Why reopen this candidate?"></div><div class="ra-field"><label>Previous cycles</label><input disabled value="${number(row.companyRecord?.cycles?.length,0)}"></div></div><div class="ra-actions" style="margin-top:6px"><button class="ra-btn ra-primary" data-reactivate-player="${esc(row.userId)}">Start New Cycle</button></div></div>`).join('')||'<div class="ra-muted">No candidates are currently eligible for reactivation.</div>'}</section>`;
-  }
-
-  function renderRecruitmentSessionsPage({sessions=[],rows=[]}={}){
-    const players=rowMap(rows);
-    const activeCandidates=rows.filter(row=>!row.archived&&!terminal.has(text(row.pipelineStage)));
-    const cards=sessions.map(session=>{
-      const currentId=Workflow.currentSessionCandidate(session);const current=players.get(text(currentId));const progress=`${Math.min(number(session.cursor,0),unique(session.candidateIds).length)}/${unique(session.candidateIds).length}`;
-      return `<section class="ra-panel" data-session-card="${esc(session.sessionId)}"><div class="ra-panel-head"><div><h3>${esc(session.title||'Recruitment Session')}</h3><p>${esc(session.status||'Draft')} · ${esc(progress)}</p></div></div>${current?`<div class="ra-kpi"><span>Current candidate</span><b>${esc(current.name)}</b><div class="ra-note">${esc(current.userId)} · ${esc(current.pipelineStage)}</div></div><div class="ra-field" style="margin-top:8px"><label>Action note</label><input data-session-note="${esc(session.sessionId)}"></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" data-session-action="${esc(session.sessionId)}" data-session-user="${esc(current.userId)}" value="Contacted">Contacted</button><button class="ra-btn" data-session-action="${esc(session.sessionId)}" data-session-user="${esc(current.userId)}" value="Shortlisted">Shortlisted</button><button class="ra-btn" data-session-action="${esc(session.sessionId)}" data-session-user="${esc(current.userId)}" value="Rejected">Rejected</button><button class="ra-btn" data-session-action="${esc(session.sessionId)}" data-session-user="${esc(current.userId)}" value="Skip">Skip</button></div>`:'<div class="ra-muted">No current candidate. Session is complete or empty.</div>'}<details style="margin-top:8px"><summary>Session history</summary>${(session.outcomes||[]).map(outcome=>`<div>${esc(outcome.userId)} · ${esc(outcome.action)}${outcome.note?` · ${esc(outcome.note)}`:''}</div>`).join('')||'<div class="ra-muted">No actions yet.</div>'}</details></section>`;
-    }).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Create Recruitment Session</h3><p>Sessions process a frozen candidate queue one explicit action at a time.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Title</label><input id="ra-company-session-title"></div><div class="ra-field"><label>Candidate source</label><select id="ra-company-session-source"><option value="active">All active Company candidates (${activeCandidates.length})</option></select></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-company-session-new">Create Session</button></div></section>${cards||'<section class="ra-panel"><div class="ra-muted">No recruitment sessions yet.</div></section>'}`;
-  }
-
-  return Object.freeze({renderCampaignsPage,renderTalentPoolPage,renderReactivationPage,renderRecruitmentSessionsPage});
-});
-
-/* bundled runtime: v46-company-opportunity-ui.js */
-(function(root,factory){
-  let CompanyCore=root&&root.RA_V46CompanyCore;
-  if(!CompanyCore&&typeof module==='object'&&module.exports)CompanyCore=require('./v46-company-core');
-  const api=factory(CompanyCore);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V46CompanyOpportunityUI=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(CompanyCore){
-  'use strict';
-  if(!CompanyCore)throw new Error('CompanyCore is required.');
-
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const hours=(now,at)=>Math.max(0,(number(now)-number(at,0))/3600000);
-  const money=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?`${Math.round(Number(value)).toLocaleString()}`:'—');
-  const metric=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toLocaleString():'—');
-  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Math.round(Number(value)):'—');
-
-  function freshness(lastScoutAt,now){
-    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Unknown';
-    const age=hours(now,lastScoutAt);
-    if(age<=24)return 'Fresh';
-    if(age<=72)return 'Aging';
-    if(age<=168)return 'Stale';
-    return 'Very stale';
-  }
-
-  function selectedVacancy(row={}){
-    const preferred=text(row.pinnedVacancyId)||text(row.suggestedVacancyId);
-    const evaluations=Array.isArray(row.vacancyEvaluations)?row.vacancyEvaluations:[];
-    const evaluation=evaluations.find(item=>text(item.vacancyId)===preferred)||[...evaluations].sort((a,b)=>number(b.matchScore)-number(a.matchScore)||text(a.vacancyId).localeCompare(text(b.vacancyId)))[0]||null;
-    const selectedId=text(evaluation?.vacancyId)||preferred;
-    const option=(Array.isArray(row.vacancyOptions)?row.vacancyOptions:[]).find(item=>text(item.vacancyId)===selectedId);
-    return{selectedVacancyId:selectedId,selectedVacancyName:text(option?.name)||selectedId||'No active vacancy',evaluation};
-  }
-
-  function followUpDue(record={},now=Date.now()){
-    return (Array.isArray(record.followUps)?record.followUps:[]).some(item=>{
-      if(['completed','cancelled'].includes(text(item.state).toLowerCase()))return false;
-      const due=Number(item.dueAt);
-      return Number.isFinite(due)&&due<=Number(now);
-    });
-  }
-
-  function buildOpportunityRows(rows=[],options={}){
-    const now=number(options.now,Date.now());
-    const weights={...(options.weights||{})};
-    return (Array.isArray(rows)?rows:[]).map(row=>{
-      const vacancy=selectedVacancy(row);
-      const input={
-        match:vacancy.evaluation?.matchScore??null,
-        fit:row.fit??null,
-        availability:text(row.availability),
-        lastActiveAgeHours:row.lastActive!==null&&row.lastActive!==undefined&&Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):null,
-        intelligenceFreshness:freshness(row.playerRecord?.lastScoutAt,now),
-        contactPenalty:row.doNotContact===true||row.companyRecord?.doNotContact===true?100:0,
-        followUpDue:followUpDue(row.companyRecord||row,now)
-      };
-      return{
-        userId:text(row.userId),name:text(row.name)||`User ${text(row.userId)}`,
-        pipelineStage:text(row.pipelineStage),eligibility:text(row.eligibility),availability:text(row.availability)||'Unknown',fit:row.fit??null,ee:row.ee??null,
-        selectedVacancyId:vacancy.selectedVacancyId,selectedVacancyName:vacancy.selectedVacancyName,
-        opportunity:CompanyCore.computeOpportunity(input,weights),
-        intelligenceFreshness:input.intelligenceFreshness,
-        companyRecord:row.companyRecord,playerRecord:row.playerRecord
-      };
-    }).sort((a,b)=>number(b.opportunity?.score)-number(a.opportunity?.score)||a.name.localeCompare(b.name)||a.userId.localeCompare(b.userId,undefined,{numeric:true}));
-  }
-
-  function renderBreakdown(opportunity={}){
-    return (opportunity.breakdown||[]).map(item=>item.known===false?`<span>${esc(item.label)}: — (excluded)</span>`:`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
-  }
-
-  function renderOpportunityPage(rows=[]){
-    const body=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td><b>${esc(row.name)}</b><div class="ra-muted">${esc(row.userId)} · ${esc(row.pipelineStage)}</div></td><td><b>${score(row.opportunity?.score)}</b></td><td>${esc(row.selectedVacancyName)}</td><td>${esc(row.eligibility||'Unknown')}</td><td>${score(row.fit)}</td><td>${esc(row.intelligenceFreshness)}</td><td><details><summary>Breakdown</summary><div class="ra-note">${renderBreakdown(row.opportunity)}</div><div class="ra-muted">${esc(row.opportunity?.explanation)}</div></details></td></tr>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Opportunity Queue</h3><p>Explainable local priority scoring. Viewing or rescoring never changes Company pipeline state.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Opportunity</th><th>Vacancy</th><th>Eligibility</th><th>Fit</th><th>Freshness</th><th>Why</th></tr></thead><tbody>${body||'<tr><td colspan="7">No Company opportunities.</td></tr>'}</tbody></table></div></section>`;
-  }
-
-  function bestVacancyName(row={}){
-    const chosen=selectedVacancy(row);
-    return chosen.selectedVacancyName;
-  }
-
-  function renderComparePage(rows=[],selectedIds=[]){
-    const selected=new Set((Array.isArray(selectedIds)?selectedIds:[]).map(text));
-    const choices=(Array.isArray(rows)?rows:[]).map(row=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:4px 10px 4px 0"><input type="checkbox" data-company-compare-select="${esc(row.userId)}" ${selected.has(text(row.userId))?'checked':''}> ${esc(row.name)} [${esc(row.userId)}]</label>`).join('');
-    const picked=(Array.isArray(rows)?rows:[]).filter(row=>selected.has(text(row.userId))).slice(0,4);
-    const cards=picked.map(row=>`<section class="ra-panel" style="min-width:240px;flex:1"><h3>${esc(row.name)}</h3><div class="ra-detail-grid"><span>Player ID<b>${esc(row.userId)}</b></span><span>Stage<b>${esc(row.pipelineStage)}</b></span><span>Eligibility<b>${esc(row.eligibility||'Unknown')}</b></span><span>Availability<b>${esc(row.availability||'Unknown')}</b></span><span>Fit<b>${score(row.fit)}</b></span><span>EE<b>${metric(row.ee)}</b></span><span>Current Company<b>${esc(row.playerRecord?.currentCompany||'—')}</b></span><span>Desired Role<b>${esc(row.desiredRole||'—')}</b></span><span>Expected Salary<b>${money(row.expectedSalary)}</b></span><span>Best Vacancy<b>${esc(bestVacancyName(row))}</b></span></div></section>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Company Compare</h3><p>Select up to four Torn players to compare shared player facts with Company-specific recruitment results.</p></div></div><div>${choices||'<span class="ra-muted">No Company players available.</span>'}</div></section><div style="display:flex;gap:10px;flex-wrap:wrap">${cards||'<section class="ra-panel"><div class="ra-muted">Select players above to compare them.</div></section>'}</div>`;
-  }
-
-  return Object.freeze({freshness,selectedVacancy,buildOpportunityRows,renderOpportunityPage,renderComparePage});
+  return Object.freeze({COMPANY_STAGES,buildCandidateRows,renderCandidates,renderCriterionRow,renderBaselineEditor});
 });
 
 /* bundled runtime: v46-company-platform.js */
@@ -3644,20 +3074,12 @@
   const deps={
     CompanyCore:root&&root.RA_V46CompanyCore,
     CompanyUI:root&&root.RA_V46CompanyUI,
-    Operations:root&&root.RA_V46CompanyOperations,
-    Workflow:root&&root.RA_V46CompanyWorkflow,
-    WorkflowUI:root&&root.RA_V46CompanyWorkflowUI,
-    OpportunityUI:root&&root.RA_V46CompanyOpportunityUI,
     Messaging:root&&root.RA_V45Messaging,
     ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.CompanyCore=require('./v46-company-core');
     deps.CompanyUI=require('./v46-company-ui');
-    deps.Operations=require('./v46-company-operations');
-    deps.Workflow=require('./v46-company-workflow');
-    deps.WorkflowUI=require('./v46-company-workflow-ui');
-    deps.OpportunityUI=require('./v46-company-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
     deps.ResultsCore=require('./results-core');
   }
@@ -3667,45 +3089,21 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {CompanyCore,CompanyUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
-  if(!CompanyCore||!CompanyUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('CompanyCore, CompanyUI, Operations, Workflow, WorkflowUI, OpportunityUI, Messaging and ResultsCore are required.');
+  const {CompanyCore,CompanyUI,Messaging,ResultsCore}=D;
+  if(!CompanyCore||!CompanyUI||!Messaging||!ResultsCore)throw new Error('CompanyCore, CompanyUI, Messaging and ResultsCore are required.');
 
-  const COMPANY_ROUTES=Object.freeze([
-    'company-overview','company-today','company-discover','company-candidates','company-pipeline',
-    'company-vacancies','company-campaigns','company-followups','company-timeline','company-stage-aging',
-    'company-contact-outcomes','company-recruitment-sessions','company-talent-pool','company-reactivation',
-    'company-opportunity','company-compare'
-  ]);
-  const IMPLEMENTED_ROUTES=new Set([
-    'company-overview','company-today','company-candidates','company-pipeline','company-vacancies',
-    'company-campaigns','company-followups','company-timeline','company-stage-aging','company-contact-outcomes',
-    'company-recruitment-sessions','company-talent-pool','company-reactivation','company-opportunity','company-compare'
-  ]);
+  const COMPANY_ROUTES=Object.freeze(['company-discover','company-candidates']);
+  const IMPLEMENTED_ROUTES=new Set(['company-candidates']);
   const META=Object.freeze({
-    'company-overview':['Company Overview','Company recruitment status and work needing attention.'],
-    'company-today':['Company Today','Prioritized Company recruitment work for today.'],
-    'company-discover':['Company Discover','Company-only recruitment discovery and enrichment.'],
-    'company-candidates':['Company Candidates','Search and manage Company recruitment candidates.'],
-    'company-pipeline':['Company Pipeline','Move Company candidates through explicit recruitment stages.'],
-    'company-vacancies':['Company Vacancies','Define and manage Company hiring needs.'],
-    'company-campaigns':['Company Campaigns','Organize Company recruitment campaigns.'],
-    'company-followups':['Company Follow-ups','Track Company candidate follow-ups.'],
-    'company-timeline':['Company Timeline','Review Company recruitment history.'],
-    'company-stage-aging':['Company Stage Aging','Review candidates aging in their current Company stage.'],
-    'company-contact-outcomes':['Company Contact Outcomes','Track Company recruitment contact outcomes independently of stage.'],
-    'company-recruitment-sessions':['Company Recruitment Sessions','Work focused Company recruitment queues.'],
-    'company-talent-pool':['Company Talent Pool','Maintain reusable Company talent prospects.'],
-    'company-reactivation':['Company Reactivation','Restart Company recruitment cycles without duplicating identity.'],
-    'company-opportunity':['Company Opportunity Queue','Review explainable Company recruitment opportunities.'],
-    'company-compare':['Company Compare','Compare Company candidates side by side.']
+    'company-discover':['Forum Discovery','Official Torn forum recruitment sources.'],
+    'company-candidates':['Company Candidates','Search and manage Company recruitment candidates.']
   });
-  const DEFAULT_OPPORTUNITY_WEIGHTS=Object.freeze({match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
 
   const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
   const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
   const RESULTS_PAGE_SIZE=100;
   const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},hofOffset:0,resultPage:0};
+  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},hofOffset:0,resultPage:0};
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   function parseThreshold(value){const raw=text(value).toLowerCase().replace(/,/g,'');if(!raw)return null;const match=raw.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([kmb])?$/);if(!match)return null;const mult={k:1e3,m:1e6,b:1e9}[match[2]]||1;const out=Number(match[1])*mult;return Number.isFinite(out)?out:null;}
@@ -3743,93 +3141,44 @@
     idSequence=(idSequence+1)%1000000;
     return `${prefix}-${Date.now()}-${idSequence}`;
   }
-  const terminalStage=stage=>['Hired','Rejected'].includes(text(stage));
 
   function isCompanyRoute(value){return COMPANY_ROUTES.includes(text(value));}
   function routeMeta(route){const [title,description]=META[text(route)]||META['company-overview'];return{title,description};}
-  function opportunityWeights(config={}){return{...DEFAULT_OPPORTUNITY_WEIGHTS,...(config.opportunityWeights||{})};}
 
   function dbGetAll(db,store){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>resolve([]);}catch{resolve([]);}});}
   function dbGet(db,store,key){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>resolve(null);}catch{resolve(null);}});}
   function dbPut(db,store,value){return new Promise((resolve,reject)=>{try{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value);tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error||new Error(`Failed to save ${store}.`));}catch(error){reject(error);}});}
-  function dbDelete(db,store,key){return new Promise((resolve,reject)=>{try{const tx=db.transaction(store,'readwrite');tx.objectStore(store).delete(key);tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error(`Failed to delete from ${store}.`));}catch(error){reject(error);}});}
 
   async function getConfig(app){if(app?._test?.companyRepositories?.config?.get)return app._test.companyRepositories.config.get();return(await dbGet(app._test.state.db,'companyRecruitmentConfig','company'))||{key:'company',baseline:{criteria:[]},stageThresholds:{},opportunityWeights:{}};}
   async function saveConfig(app,patch){if(app?._test?.companyRepositories?.config?.save)return app._test.companyRepositories.config.save(patch);const existing=await getConfig(app);const next={...existing,...patch,key:'company',updatedAt:Date.now()};await dbPut(app._test.state.db,'companyRecruitmentConfig',next);return next;}
-  async function getVacancies(app){if(app?._test?.companyRepositories?.vacancies?.list)return app._test.companyRepositories.vacancies.list();return dbGetAll(app._test.state.db,'companyVacancies');}
-  async function saveVacancy(app,vacancy){if(app?._test?.companyRepositories?.vacancies?.save)return app._test.companyRepositories.vacancies.save(vacancy);const next=CompanyCore.normalizeVacancy({...vacancy,updatedAt:Date.now()});await dbPut(app._test.state.db,'companyVacancies',next);return next;}
-  async function removeVacancy(app,vacancyId){if(app?._test?.companyRepositories?.vacancies?.remove)return app._test.companyRepositories.vacancies.remove(vacancyId);return dbDelete(app._test.state.db,'companyVacancies',text(vacancyId));}
-  async function getCampaigns(app){if(app?._test?.companyRepositories?.campaigns?.list)return app._test.companyRepositories.campaigns.list();return dbGetAll(app._test.state.db,'companyCampaigns');}
-  async function getCampaign(app,campaignId){if(app?._test?.companyRepositories?.campaigns?.get)return app._test.companyRepositories.campaigns.get(campaignId);return dbGet(app._test.state.db,'companyCampaigns',text(campaignId));}
-  async function saveCampaign(app,campaign){if(app?._test?.companyRepositories?.campaigns?.save)return app._test.companyRepositories.campaigns.save(campaign);const next={...campaign,campaignId:text(campaign.campaignId)||makeId('campaign'),candidateIds:[...new Set((campaign.candidateIds||[]).map(text).filter(Boolean))],updatedAt:Date.now()};await dbPut(app._test.state.db,'companyCampaigns',next);return next;}
-  async function removeCampaign(app,campaignId){if(app?._test?.companyRepositories?.campaigns?.remove)return app._test.companyRepositories.campaigns.remove(campaignId);return dbDelete(app._test.state.db,'companyCampaigns',text(campaignId));}
-  async function getSessions(app){if(app?._test?.companyRepositories?.sessions?.list)return app._test.companyRepositories.sessions.list();return dbGetAll(app._test.state.db,'companyRecruitmentSessions');}
-  async function getSession(app,sessionId){if(app?._test?.companyRepositories?.sessions?.get)return app._test.companyRepositories.sessions.get(sessionId);return dbGet(app._test.state.db,'companyRecruitmentSessions',text(sessionId));}
-  async function saveSession(app,session){if(app?._test?.companyRepositories?.sessions?.save)return app._test.companyRepositories.sessions.save(session);const next={...session,sessionId:text(session.sessionId)||makeId('session'),candidateIds:[...new Set((session.candidateIds||[]).map(text).filter(Boolean))],updatedAt:Date.now()};await dbPut(app._test.state.db,'companyRecruitmentSessions',next);return next;}
-  async function saveCompanyPatch(app,userId,patch){const id=text(userId);if(app?._test?.repositories?.company?.ensure)return app._test.repositories.company.ensure(id,patch,{source:'company-platform',observedAt:Date.now()});const existing=await dbGet(app._test.state.db,'companyRecruitment',id);if(!existing)throw new Error('Company candidate was not found.');const next={...existing,...patch,userId:id,domain:'company',updatedAt:Date.now()};await dbPut(app._test.state.db,'companyRecruitment',next);return next;}
 
-  function evaluateCandidateVacancies(row,vacancies=[]){
-    const open=(Array.isArray(vacancies)?vacancies:[]).filter(v=>text(v?.status)==='Open');
-    const facts={level:row.level,ee:row.ee,fit:row.fit,activity30:row.activity30,xanax30:row.xanax30,refills30:row.refills30,attacks30:row.attacks30,rwHits30:row.rwHits30,networth:row.networth,availability:row.availability,desiredRole:row.desiredRole};
-    const waivers=row.companyRecord?.waivers||[];
-    const evaluations=open.map(vacancy=>CompanyCore.evaluateVacancy(vacancy,facts,waivers));
-    const selection=CompanyCore.suggestVacancy(open,evaluations,row.companyRecord?.pinnedVacancyId||'');
-    return{evaluations,selection};
-  }
-  function canMoveToStage(row,stage){return !(text(stage)==='Hired'&&row?.hardFailed===true);}
 
   async function buildRows(app){
     const db=app._test.state.db;
-    const[companyRecords,players,candidateLocals,config,vacancies,activeProfile]=await Promise.all([dbGetAll(db,'companyRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),getVacancies(app),typeof app.getActiveMatchProfile==='function'?app.getActiveMatchProfile():Promise.resolve(null)]);
+    const[companyRecords,players,candidateLocals,config,activeProfile]=await Promise.all([dbGetAll(db,'companyRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),typeof app.getActiveMatchProfile==='function'?app.getActiveMatchProfile():Promise.resolve(null)]);
     const baseline=CompanyCore.normalizeBaseline(config.baseline||{});
     const rows=CompanyUI.buildCandidateRows(companyRecords,players,{eligibilityFor:(record,player)=>CompanyCore.evaluateCriteria(baseline.criteria,player,record.waivers||[])});
-    const vacancyMap=new Map(vacancies.map(v=>[text(v.vacancyId),v]));
     const candidateMap=new Map(candidateLocals.map(candidate=>[text(candidate?.userId??candidate?.id),candidate]));
     return rows.map(row=>{
-      const result=evaluateCandidateVacancies(row,vacancies);
-      const evaluationMap=new Map(result.evaluations.map(e=>[text(e.vacancyId),e]));
-      const options=vacancies.filter(v=>text(v.status)==='Open').map(v=>({vacancyId:text(v.vacancyId),name:text(v.name)||text(v.role)||text(v.vacancyId),matchScore:evaluationMap.get(text(v.vacancyId))?.matchScore??null,eligible:evaluationMap.get(text(v.vacancyId))?.eligible===true}));
       const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.playerRecord||{};
-      const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),talentPool:row.companyRecord?.talentPool===true,talentPoolReason:text(row.companyRecord?.talentPoolReason),vacancyEvaluations:result.evaluations,pinnedVacancyId:text(result.selection.pinnedVacancyId),suggestedVacancyId:text(result.selection.suggestedVacancyId),suggestedVacancyName:text(vacancyMap.get(text(result.selection.suggestedVacancyId))?.name),vacancyOptions:options,candidateLocal:candidate};
+      const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),candidateLocal:candidate};
       const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'company',useEligibility:false,requirements:profileRequirements(activeProfile||{})});
       return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness};
     });
   }
 
-  async function buildOpportunityRows(app,rows,now=Date.now()){
-    const config=await getConfig(app);
-    return OpportunityUI.buildOpportunityRows(rows,{weights:opportunityWeights(config),now});
-  }
 
   async function persistRoute(app,page){const state=app?._test?.state;if(!state?.db)return false;state.page=page;state.settings=state.settings||{};state.settings.activePage=page;const meta=await dbGet(state.db,'meta','global')||{key:'global',settings:{}};meta.settings={...(meta.settings||{}),activePage:page};await dbPut(state.db,'meta',meta);return true;}
   function claimRoute(app,page){const state=app?._test?.state,route=text(page);if(!state||!IMPLEMENTED_ROUTES.has(route))return false;state.page=route;state.settings=state.settings||{};state.settings.activePage=route;return true;}
   function navigate(page,persist=true){const route=text(page);if(!runtime.app||!IMPLEMENTED_ROUTES.has(route))return Promise.resolve(false);if(typeof runtime.app.navigate==='function')return Promise.resolve(runtime.app.navigate(route,persist));claimRoute(runtime.app,route);return renderPage(route,{persist});}
   function readCriteria(host){if(!host)return[];return[...host.querySelectorAll('[data-criterion-row]')].map((row,index)=>{const get=key=>row.querySelector(`[data-criterion-field="${key}"]`)?.value??'';const rawValue=get('value');const numericValue=rawValue!==''&&Number.isFinite(Number(rawValue))?Number(rawValue):rawValue;return{id:text(row.dataset.criterionId)||makeId(`criterion-${index+1}`),label:text(get('label')),field:text(get('field')),operator:text(get('operator'))||'gte',kind:text(get('kind'))==='Hard'?'Hard':'Preferred',value:numericValue,weight:Math.max(0,number(get('weight'),1))};});}
   async function rowFor(userId){const rows=await buildRows(runtime.app);const row=rows.find(item=>text(item.userId)===text(userId));if(!row)throw new Error('Company candidate was not found.');return row;}
-  async function saveOperationalRecord(userId,next){await saveCompanyPatch(runtime.app,userId,next);return next;}
 
-  async function changeCompanyStage(userId,stage){const row=await rowFor(userId);if(!canMoveToStage(row,stage))throw new Error('This candidate cannot be moved to Hired while an unwaived Company baseline Hard requirement is failing.');return saveOperationalRecord(userId,Operations.changeStage(row.companyRecord,text(stage),Date.now()));}
-  async function setVacancyPin(userId,vacancyId){await saveCompanyPatch(runtime.app,userId,{pinnedVacancyId:text(vacancyId),updatedAt:Date.now()});return true;}
-  async function addFollowUpFromUi(){const userId=text(document.getElementById('ra-company-followup-player')?.value);const row=await rowFor(userId);const dueRaw=text(document.getElementById('ra-company-followup-due')?.value);const dueAt=Date.parse(dueRaw);if(!Number.isFinite(dueAt))throw new Error('Choose a valid follow-up date and time.');const unit=text(document.getElementById('ra-company-followup-recurrence-unit')?.value);const recurrence=unit?{unit,interval:Math.max(1,number(document.getElementById('ra-company-followup-recurrence-interval')?.value,1))}:null;const next=Operations.addFollowUp(row.companyRecord,{dueAt,reason:text(document.getElementById('ra-company-followup-reason')?.value),note:text(document.getElementById('ra-company-followup-note')?.value),recurrence},Date.now());return saveOperationalRecord(userId,next);}
-  async function completeFollowUp(userId,followUpId){const row=await rowFor(userId);return saveOperationalRecord(userId,Operations.completeFollowUp(row.companyRecord,followUpId,Date.now()));}
-  async function recordOutcomeFromUi(){const userId=text(document.getElementById('ra-company-outcome-player')?.value);const row=await rowFor(userId);const next=Operations.recordContactOutcome(row.companyRecord,{result:text(document.getElementById('ra-company-outcome-result')?.value),channel:text(document.getElementById('ra-company-outcome-channel')?.value),note:text(document.getElementById('ra-company-outcome-note')?.value)},Date.now());return saveOperationalRecord(userId,next);}
-  async function toggleDnc(userId,enabled){const row=await rowFor(userId);const reason=text(document.querySelector(`[data-dnc-reason="${userId}"]`)?.value);return saveOperationalRecord(userId,Operations.setDoNotContact(row.companyRecord,enabled,reason,Date.now()));}
-  async function addTimelineNoteFromUi(){const userId=text(document.getElementById('ra-company-timeline-player')?.value);const row=await rowFor(userId);const value=text(document.getElementById('ra-company-timeline-note')?.value);if(!value)throw new Error('Timeline note cannot be empty.');return saveOperationalRecord(userId,Operations.addTimelineNote(row.companyRecord,{text:value},Date.now()));}
-  async function editTimelineNote(userId,noteId){const row=await rowFor(userId);const current=(row.companyRecord.timelineNotes||[]).find(note=>text(note.noteId)===text(noteId));if(!current)throw new Error('Timeline note not found.');const value=text(globalThis.prompt?.('Edit recruiter timeline note:',current.text));if(!value)return false;return saveOperationalRecord(userId,Operations.editTimelineNote(row.companyRecord,noteId,value,Date.now()));}
-  async function deleteTimelineNote(userId,noteId){if(typeof globalThis.confirm==='function'&&!globalThis.confirm('Delete this recruiter timeline note?'))return false;const row=await rowFor(userId);return saveOperationalRecord(userId,Operations.deleteTimelineNote(row.companyRecord,noteId,Date.now()));}
-  async function recruitPlayer(userId,override=false){const row=await rowFor(userId);if(!Operations.canMessage(row.companyRecord,override))throw new Error('This candidate is marked Do Not Contact. Use the explicit override only when you deliberately intend to contact them.');if(override){if(typeof globalThis.confirm!=='function')throw new Error('Do Not Contact override confirmation is unavailable. Recruitment stopped.');if(!globalThis.confirm('This candidate is marked Do Not Contact. Override it for this recruitment chat only?'))return false;}if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');return runtime.app.recruitCandidate?.('company',text(userId),row.name,{overrideDnc:override,dncConfirmed:override});}
+  async function recruitPlayer(userId,override=false){const row=await rowFor(userId);if(row.companyRecord?.doNotContact===true&&override!==true)throw new Error('This candidate is marked Do Not Contact. Use the explicit override only when you deliberately intend to contact them.');if(override){if(typeof globalThis.confirm!=='function')throw new Error('Do Not Contact override confirmation is unavailable. Recruitment stopped.');if(!globalThis.confirm('This candidate is marked Do Not Contact. Override it for this recruitment chat only?'))return false;}if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');return runtime.app.recruitCandidate?.('company',text(userId),row.name,{overrideDnc:override,dncConfirmed:override});}
 
-  async function createCampaignFromUi(){return saveCampaign(runtime.app,{campaignId:makeId('campaign'),title:text(document.getElementById('ra-company-campaign-title')?.value)||'Untitled Campaign',target:text(document.getElementById('ra-company-campaign-target')?.value),vacancyId:text(document.getElementById('ra-company-campaign-vacancy')?.value),status:text(document.getElementById('ra-company-campaign-status')?.value)||'Draft',notes:text(document.getElementById('ra-company-campaign-notes')?.value),candidateIds:[],createdAt:Date.now()});}
-  async function saveCampaignFromCard(campaignId,card){const existing=await getCampaign(runtime.app,campaignId)||{campaignId,candidateIds:[]};const field=key=>card?.querySelector(`[data-campaign-field="${key}"]`)?.value??'';return saveCampaign(runtime.app,{...existing,campaignId,title:text(field('title'))||existing.title,target:text(field('target')),vacancyId:text(field('vacancyId')),status:text(field('status'))||existing.status,notes:text(field('notes'))});}
-  async function changeCampaignMembership(campaignId,userId,add){const campaign=await getCampaign(runtime.app,campaignId);if(!campaign)throw new Error('Company campaign was not found.');const row=await rowFor(userId);const ids=[...new Set((campaign.candidateIds||[]).map(text).filter(Boolean))];campaign.candidateIds=add?[...new Set([...ids,text(userId)])]:ids.filter(id=>id!==text(userId));const nextRecord=add?Workflow.addCampaignMembership(row.companyRecord,campaignId,Date.now()):Workflow.removeCampaignMembership(row.companyRecord,campaignId,Date.now());await Promise.all([saveCampaign(runtime.app,campaign),saveOperationalRecord(userId,nextRecord)]);return true;}
-  async function setTalentPoolFromUi(enabled,userId=''){const id=text(userId)||text(document.getElementById('ra-company-talent-player')?.value);if(!id)throw new Error('Choose a Company candidate.');const row=await rowFor(id);const reason=enabled?text(document.getElementById('ra-company-talent-reason')?.value):'';return saveOperationalRecord(id,Workflow.setTalentPool(row.companyRecord,enabled,reason,Date.now()));}
-  async function reactivateFromUi(userId){const row=await rowFor(userId);const reason=text(document.querySelector(`[data-reactivate-reason="${userId}"]`)?.value);if(!reason)throw new Error('A reactivation reason is required.');return saveOperationalRecord(userId,Workflow.reactivate(row.companyRecord,reason,Date.now()));}
-  async function createSessionFromUi(){const rows=await buildRows(runtime.app);const candidateIds=rows.filter(row=>!row.archived&&!terminalStage(row.pipelineStage)).map(row=>text(row.userId));if(!candidateIds.length)throw new Error('No active Company candidates are available for this session.');return saveSession(runtime.app,{sessionId:makeId('session'),title:text(document.getElementById('ra-company-session-title')?.value)||'Recruitment Session',candidateIds,cursor:0,status:'Active',outcomes:[],filters:{source:text(document.getElementById('ra-company-session-source')?.value)||'active'},startedAt:Date.now(),createdAt:Date.now()});}
-  async function recordSessionActionFromUi(sessionId,userId,action){const session=await getSession(runtime.app,sessionId);if(!session)throw new Error('Recruitment session was not found.');const note=text(document.querySelector(`[data-session-note="${sessionId}"]`)?.value);return saveSession(runtime.app,Workflow.recordSessionAction(session,{userId,action,note},Date.now()));}
 
   function readVisibleSearchFilters(){return {search:text(document.getElementById('ra-company-filter-search')?.value),minEnd:text(document.getElementById('ra-company-filter-end')?.value),minMan:text(document.getElementById('ra-company-filter-man')?.value),minInt:text(document.getElementById('ra-company-filter-int')?.value),onlineStatus:text(document.getElementById('ra-company-filter-status')?.value),organization:text(document.getElementById('ra-company-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-company-filter-organization-presence')?.value)||'any'};}
-  function bindContentControls(currentPage){
-    const page=text(currentPage||runtime.app?._test?.state?.page);
+  function bindContentControls(){
     document.getElementById('ra-company-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters=readVisibleSearchFilters();try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('company',runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);renderPage('company-candidates',{persist:false}).catch(reportError);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
     document.getElementById('ra-company-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('company-candidates',{persist:false}).catch(reportError);});
     document.getElementById('ra-company-profile-apply')?.addEventListener('click',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');const profile=await runtime.app.setActiveMatchProfile(id);runtime.resultPage=0;runtime.searchFilters=profileSearchFilters(profile);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
@@ -3839,35 +3188,10 @@
     document.getElementById('ra-company-hof-discover')?.addEventListener('click',async event=>{const button=event?.currentTarget;try{if(button){button.disabled=true;button.textContent=runtime.hofOffset>0?'Loading next 100…':'Discovering…';}if(typeof runtime.app?.discoverWorkstatProspects!=='function')throw new Error('Work-stat HOF discovery is unavailable.');const result=await runtime.app.discoverWorkstatProspects({limit:100,offset:runtime.hofOffset});runtime.hofOffset=Math.max(runtime.hofOffset,Number(result?.nextOffset||runtime.hofOffset));await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent=runtime.hofOffset>0?'Discover Next 100':'Discover Workstat Prospects';}}});
     document.querySelectorAll('#ra-content [data-company-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.companySort);renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('company',link.dataset.playerCard);};});
     document.querySelectorAll('#ra-content [data-go-page]').forEach(button=>{if(!isCompanyRoute(button.dataset.goPage))return;button.onclick=event=>{event?.preventDefault?.();navigate(button.dataset.goPage,true).catch(reportError);};});
-    document.querySelectorAll('#ra-content [data-company-stage-select]').forEach(select=>{select.onchange=()=>changeCompanyStage(select.dataset.companyStageSelect,select.value).then(()=>renderPage(page,{persist:false})).catch(error=>{reportError(error);renderPage(page,{persist:false}).catch(reportError);});});
-    document.querySelectorAll('#ra-content [data-company-vacancy-pin]').forEach(select=>{select.onchange=()=>setVacancyPin(select.dataset.companyVacancyPin,select.value).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);});
+    const baselineEditor=document.getElementById('ra-company-baseline-editor');
+    if(baselineEditor){baselineEditor.ontoggle=()=>{runtime.baselineEditorOpen=baselineEditor.open;};baselineEditor.onclick=event=>{const target=event.target;if(target?.closest?.('[data-remove-criterion]')){target.closest('[data-criterion-row]')?.remove();return;}if(target?.id==='ra-company-baseline-add'){document.getElementById('ra-company-baseline-criteria')?.insertAdjacentHTML('beforeend',CompanyUI.renderCriterionRow({id:makeId('baseline')},'baseline'));return;}if(target?.id==='ra-company-baseline-save'){runtime.baselineEditorOpen=true;saveConfig(runtime.app,{baseline:{criteria:readCriteria(document.getElementById('ra-company-baseline-criteria'))}}).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);}};}
     document.querySelectorAll('#ra-content [data-company-recruit]').forEach(button=>{button.onclick=()=>recruitPlayer(button.dataset.companyRecruit,false).catch(reportError);});
     document.querySelectorAll('#ra-content [data-company-recruit-override]').forEach(button=>{button.onclick=()=>recruitPlayer(button.dataset.companyRecruitOverride,true).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-remove-criterion]').forEach(button=>{button.onclick=()=>button.closest('[data-criterion-row]')?.remove();});
-    document.getElementById('ra-company-baseline-add')?.addEventListener('click',()=>document.getElementById('ra-company-baseline-criteria')?.insertAdjacentHTML('beforeend',CompanyUI.renderCriterionRow({id:makeId('baseline')},'baseline')));
-    document.getElementById('ra-company-baseline-save')?.addEventListener('click',()=>saveConfig(runtime.app,{baseline:{criteria:readCriteria(document.getElementById('ra-company-baseline-criteria'))}}).then(()=>renderPage('company-vacancies',{persist:false})).catch(reportError));
-    document.getElementById('ra-company-vacancy-new')?.addEventListener('click',()=>{const vacancy={vacancyId:makeId('vacancy'),name:text(document.getElementById('ra-company-new-vacancy-name')?.value)||'Untitled Vacancy',role:text(document.getElementById('ra-company-new-vacancy-role')?.value),openings:Math.max(1,Math.floor(number(document.getElementById('ra-company-new-vacancy-openings')?.value,1))),status:text(document.getElementById('ra-company-new-vacancy-status')?.value)||'Draft',criteria:[]};saveVacancy(runtime.app,vacancy).then(()=>renderPage('company-vacancies',{persist:false})).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-vacancy-add-criterion]').forEach(button=>{button.onclick=()=>button.closest('[data-vacancy-card]')?.querySelector('[data-criteria-host]')?.insertAdjacentHTML('beforeend',CompanyUI.renderCriterionRow({id:makeId('vacancy-criterion')},`vacancy:${button.dataset.vacancyAddCriterion}`));});
-    document.querySelectorAll('#ra-content [data-vacancy-save]').forEach(button=>{button.onclick=()=>{const card=button.closest('[data-vacancy-card]');if(!card)return;const field=key=>card.querySelector(`[data-vacancy-field="${key}"]`)?.value??'';const vacancy={vacancyId:button.dataset.vacancySave,name:text(field('name')),role:text(field('role')),openings:Math.max(1,Math.floor(number(field('openings'),1))),status:text(field('status'))||'Draft',salaryBudget:field('salaryBudget')===''?null:number(field('salaryBudget')),availability:text(field('availability'))||'Unknown',notes:text(field('notes')),criteria:readCriteria(card.querySelector('[data-criteria-host]'))};saveVacancy(runtime.app,vacancy).then(()=>renderPage('company-vacancies',{persist:false})).catch(reportError);};});
-    document.querySelectorAll('#ra-content [data-vacancy-delete]').forEach(button=>{button.onclick=()=>{if(typeof globalThis.confirm==='function'&&!globalThis.confirm('Delete this Company vacancy?'))return;removeVacancy(runtime.app,button.dataset.vacancyDelete).then(()=>renderPage('company-vacancies',{persist:false})).catch(reportError);};});
-    document.getElementById('ra-company-followup-add')?.addEventListener('click',()=>addFollowUpFromUi().then(()=>renderPage('company-followups',{persist:false})).catch(reportError));
-    document.querySelectorAll('#ra-content [data-followup-complete]').forEach(button=>{button.onclick=()=>completeFollowUp(button.dataset.followupUser,button.dataset.followupComplete).then(()=>renderPage('company-followups',{persist:false})).catch(reportError);});
-    document.getElementById('ra-company-outcome-add')?.addEventListener('click',()=>recordOutcomeFromUi().then(()=>renderPage('company-contact-outcomes',{persist:false})).catch(reportError));
-    document.querySelectorAll('#ra-content [data-company-dnc]').forEach(button=>{button.onclick=()=>toggleDnc(button.dataset.companyDnc,button.dataset.dncEnable==='true').then(()=>renderPage('company-contact-outcomes',{persist:false})).catch(reportError);});
-    document.getElementById('ra-company-timeline-add')?.addEventListener('click',()=>addTimelineNoteFromUi().then(()=>renderPage('company-timeline',{persist:false})).catch(reportError));
-    document.querySelectorAll('#ra-content [data-timeline-note-edit]').forEach(button=>{button.onclick=()=>editTimelineNote(button.dataset.timelineUser,button.dataset.timelineNoteEdit).then(()=>renderPage('company-timeline',{persist:false})).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-timeline-note-delete]').forEach(button=>{button.onclick=()=>deleteTimelineNote(button.dataset.timelineUser,button.dataset.timelineNoteDelete).then(()=>renderPage('company-timeline',{persist:false})).catch(reportError);});
-    document.getElementById('ra-company-campaign-new')?.addEventListener('click',()=>createCampaignFromUi().then(()=>renderPage('company-campaigns',{persist:false})).catch(reportError));
-    document.querySelectorAll('#ra-content [data-campaign-save]').forEach(button=>{button.onclick=()=>saveCampaignFromCard(button.dataset.campaignSave,button.closest('[data-campaign-card]')).then(()=>renderPage('company-campaigns',{persist:false})).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-campaign-delete]').forEach(button=>{button.onclick=()=>{if(typeof globalThis.confirm==='function'&&!globalThis.confirm('Delete this Company campaign?'))return;removeCampaign(runtime.app,button.dataset.campaignDelete).then(()=>renderPage('company-campaigns',{persist:false})).catch(reportError);};});
-    document.querySelectorAll('#ra-content [data-campaign-add-member]').forEach(button=>{button.onclick=()=>{const id=text(document.querySelector(`[data-campaign-member-select="${button.dataset.campaignAddMember}"]`)?.value);if(!id)return;changeCampaignMembership(button.dataset.campaignAddMember,id,true).then(()=>renderPage('company-campaigns',{persist:false})).catch(reportError);};});
-    document.querySelectorAll('#ra-content [data-campaign-remove-member]').forEach(button=>{button.onclick=()=>changeCampaignMembership(button.dataset.campaignRemoveMember,button.dataset.campaignUser,false).then(()=>renderPage('company-campaigns',{persist:false})).catch(reportError);});
-    document.getElementById('ra-company-talent-add')?.addEventListener('click',()=>setTalentPoolFromUi(true).then(()=>renderPage('company-talent-pool',{persist:false})).catch(reportError));
-    document.querySelectorAll('#ra-content [data-talent-remove]').forEach(button=>{button.onclick=()=>setTalentPoolFromUi(false,button.dataset.talentRemove).then(()=>renderPage('company-talent-pool',{persist:false})).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-reactivate-player]').forEach(button=>{button.onclick=()=>reactivateFromUi(button.dataset.reactivatePlayer).then(()=>renderPage('company-reactivation',{persist:false})).catch(reportError);});
-    document.getElementById('ra-company-session-new')?.addEventListener('click',()=>createSessionFromUi().then(()=>renderPage('company-recruitment-sessions',{persist:false})).catch(reportError));
-    document.querySelectorAll('#ra-content [data-session-action]').forEach(button=>{button.onclick=()=>recordSessionActionFromUi(button.dataset.sessionAction,button.dataset.sessionUser,button.value).then(()=>renderPage('company-recruitment-sessions',{persist:false})).catch(reportError);});
-    document.querySelectorAll('#ra-content [data-company-compare-select]').forEach(input=>{input.onchange=()=>{const id=text(input.dataset.companyCompareSelect);if(input.checked){if(runtime.compareSelection.size>=4){input.checked=false;reportError(new Error('Compare supports up to four players.'));return;}runtime.compareSelection.add(id);}else runtime.compareSelection.delete(id);renderPage('company-compare',{persist:false}).catch(reportError);};});
   }
 
   function syncActiveNav(page){document.querySelectorAll('#ra-nav [data-page]').forEach(button=>button.classList.toggle('active',button.dataset.page===page));}
@@ -3881,37 +3205,18 @@
     if(!title||!desc||!content)throw new Error('Recruitment Agency shell is not mounted.');
     const rows=await buildRows(app);
     let html='';
-    if(page==='company-overview')html=CompanyUI.renderOverview(CompanyUI.buildOverviewModel(rows,await getVacancies(app)));
-    else if(page==='company-today'){
-      const config=await getConfig(app),now=Date.now();
-      const opportunityRows=OpportunityUI.buildOpportunityRows(rows,{weights:opportunityWeights(config),now});
-      const opportunities=Object.fromEntries(opportunityRows.map(row=>[row.userId,row.opportunity.score]));
-      html=CompanyUI.renderToday(CompanyUI.buildTodayModel(rows,{now,stageThresholds:config.stageThresholds||{},opportunities}));
-    }
-    else if(page==='company-candidates'){const selected=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const selectedId=text(selected?.profileId);const selectedVersion=text(selected?.updatedAt);if(!runtime.profileFiltersInitialized||runtime.profileFiltersId!==selectedId||runtime.profileFiltersVersion!==selectedVersion){const saved=runtime.profileFiltersInitialized?null:savedResultsView(app);if(saved)runtime.sort=saved.sort;if(saved&&saved.profileId===selectedId&&saved.profileVersion===selectedVersion){runtime.searchFilters=saved.filters;runtime.resultPage=saved.resultPage;}else{runtime.searchFilters=selected?profileSearchFilters(selected):{...DEFAULT_SEARCH_FILTERS};runtime.resultPage=0;}runtime.profileFiltersInitialized=true;runtime.profileFiltersId=selectedId;runtime.profileFiltersVersion=selectedVersion;}const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];const activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);await persistResultsView(app).catch(error=>console.warn('[RA] Results view was not saved.',error));html=CompanyUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:activeProfile?.profileId||'',pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}});}
-    else if(page==='company-pipeline')html=CompanyUI.renderPipeline(CompanyUI.buildPipelineModel(rows));
-    else if(page==='company-vacancies')html=CompanyUI.renderVacanciesPage({config:await getConfig(app),vacancies:await getVacancies(app),rows});
-    else if(page==='company-followups')html=CompanyUI.renderFollowUpsPage(rows,{now:Date.now()});
-    else if(page==='company-contact-outcomes')html=CompanyUI.renderContactOutcomesPage(rows);
-    else if(page==='company-stage-aging'){const config=await getConfig(app);html=CompanyUI.renderStageAgingPage(rows.map(row=>({...row,aging:Operations.stageAging(row.companyRecord,config.stageThresholds||{},Date.now())})));}
-    else if(page==='company-timeline')html=CompanyUI.renderTimelinePage(rows);
-    else if(page==='company-campaigns')html=WorkflowUI.renderCampaignsPage({campaigns:await getCampaigns(app),rows,vacancies:await getVacancies(app)});
-    else if(page==='company-talent-pool')html=WorkflowUI.renderTalentPoolPage(rows);
-    else if(page==='company-reactivation')html=WorkflowUI.renderReactivationPage(rows);
-    else if(page==='company-recruitment-sessions')html=WorkflowUI.renderRecruitmentSessionsPage({sessions:await getSessions(app),rows});
-    else if(page==='company-opportunity')html=OpportunityUI.renderOpportunityPage(await buildOpportunityRows(app,rows,Date.now()));
-    else if(page==='company-compare')html=OpportunityUI.renderComparePage(rows,[...runtime.compareSelection]);
+    if(page==='company-candidates'){const selected=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const selectedId=text(selected?.profileId);const selectedVersion=text(selected?.updatedAt);if(!runtime.profileFiltersInitialized||runtime.profileFiltersId!==selectedId||runtime.profileFiltersVersion!==selectedVersion){const saved=runtime.profileFiltersInitialized?null:savedResultsView(app);if(saved)runtime.sort=saved.sort;if(saved&&saved.profileId===selectedId&&saved.profileVersion===selectedVersion){runtime.searchFilters=saved.filters;runtime.resultPage=saved.resultPage;}else{runtime.searchFilters=selected?profileSearchFilters(selected):{...DEFAULT_SEARCH_FILTERS};runtime.resultPage=0;}runtime.profileFiltersInitialized=true;runtime.profileFiltersId=selectedId;runtime.profileFiltersVersion=selectedVersion;}const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];const activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);await persistResultsView(app).catch(error=>console.warn('[RA] Results view was not saved.',error));const baselineHtml=CompanyUI.renderBaselineEditor(await getConfig(app),{open:runtime.baselineEditorOpen===true});html=CompanyUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:activeProfile?.profileId||'',pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}})+baselineHtml;}
     if(typeof app.navigate==='function'&&text(app._test.state.page)!==page)return false;
     const meta=routeMeta(page);title.textContent=meta.title;desc.textContent=meta.description;content.innerHTML=html;
-    syncActiveNav(page);bindContentControls(page);if(options.persist!==false)await persistRoute(app,page);return true;
+    syncActiveNav(page);bindContentControls();if(options.persist!==false)await persistRoute(app,page);return true;
   }
 
   function bindNav(){if(!runtime.app)return;document.querySelectorAll('#ra-nav [data-page]').forEach(button=>{const page=text(button.dataset.page);if(!IMPLEMENTED_ROUTES.has(page))return;if(!runtime.originalHandlers.has(button))runtime.originalHandlers.set(button,button.onclick||null);button.onclick=event=>{event?.preventDefault?.();navigate(page,true).catch(reportError);};});}
   function syncNavigation(){bindNav();return true;}
   function install(app,options={}){if(!app?._test?.state?.db)throw new Error('A mounted Recruitment Agency app with DB state is required.');uninstall();runtime.app=app;runtime.installed=true;runtime.profileFiltersInitialized=false;runtime.savedResultsViewKey='';runtime.profileFiltersId='';runtime.profileFiltersVersion='';bindNav();const nav=document.getElementById('ra-nav');if(nav&&typeof MutationObserver==='function'){runtime.observer=new MutationObserver(()=>bindNav());runtime.observer.observe(nav,{childList:true,subtree:true});}const page=text(app._test.state.page||app._test.state.settings?.activePage);if(options.renderInitial!==false&&IMPLEMENTED_ROUTES.has(page))renderPage(page,{persist:false}).catch(reportError);return true;}
-  function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.compareSelection.clear();runtime.app=null;runtime.installed=false;}
+  function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.app=null;runtime.installed=false;}
 
-  return Object.freeze({COMPANY_ROUTES,isCompanyRoute,routeMeta,install,uninstall,renderPage,syncNavigation,_test:{buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,evaluateCandidateVacancies,canMoveToStage,readCriteria,getCampaigns,getSessions,opportunityWeights,filterRows,sortRows,toggleSort,profileRequirements,profileSearchFilters,organizationInfo,RESULTS_PAGE_SIZE,IMPLEMENTED_ROUTES}});
+  return Object.freeze({COMPANY_ROUTES,isCompanyRoute,routeMeta,install,uninstall,renderPage,syncNavigation,_test:{buildRows,persistRoute,dbGetAll,dbGet,dbPut,readCriteria,filterRows,sortRows,toggleSort,profileRequirements,profileSearchFilters,organizationInfo,RESULTS_PAGE_SIZE,IMPLEMENTED_ROUTES}});
 });
 
 /* bundled runtime: v47-faction-core.js */
@@ -3927,7 +3232,6 @@
   ]);
   const PROFILE_STATES=Object.freeze(['Draft','Active','Paused','Archived']);
   const REQUIREMENT_KINDS=Object.freeze(['Hard','Preferred']);
-  const DAY_MS=86400000;
 
   function text(value){return String(value??'').trim();}
   function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
@@ -4092,101 +3396,10 @@
     };
   }
 
-  function opportunityComponent(label,value,weight){
-    const w=Math.max(0,number(weight));
-    const known=value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));
-    return {label,value:known?clamp(value):null,weight:w,known,contribution:0};
-  }
 
-  function computeOpportunity(input={},weights={}){
-    const availabilityText=text(input.availability).toLowerCase();
-    const availability=availabilityText==='available'?100:availabilityText==='unavailable'?0:null;
-    const ageKnown=input.lastActiveAgeHours!==null&&input.lastActiveAgeHours!==undefined&&text(input.lastActiveAgeHours)!==''&&Number.isFinite(Number(input.lastActiveAgeHours));
-    const age=ageKnown?Math.max(0,Number(input.lastActiveAgeHours)):null;
-    const activity=age===null?null:(age<=6?100:age<=24?80:age<=72?55:age<=168?30:10);
-    const freshMap={fresh:100,aging:70,stale:40,'very stale':15};
-    const freshness=freshMap[text(input.intelligenceFreshness).toLowerCase()]??null;
-    const rows=[
-      opportunityComponent('Match',input.match,weights.match),
-      opportunityComponent('Fit',input.fit,weights.fit),
-      opportunityComponent('Availability',availability,weights.availability),
-      opportunityComponent('Activity',activity,weights.activity),
-      opportunityComponent('Freshness',freshness,weights.freshness),
-      opportunityComponent('Follow-up',input.followUpDue?100:0,weights.followUp),
-      {label:'Contact penalty',value:clamp(input.contactPenalty),weight:Math.max(0,number(weights.contactPenalty)),known:true,contribution:0}
-    ];
-    const scoredRows=rows.slice(0,6);
-    const primaryRows=rows.slice(0,5);
-    const hasPrimaryEvidence=primaryRows.some(row=>row.known&&row.weight>0);
-    const availableWeight=scoredRows.reduce((sum,row)=>sum+(row.known?row.weight:0),0);
-    for(const row of scoredRows)row.contribution=row.known&&availableWeight>0?Math.round((row.value*row.weight/availableWeight)*100)/100:0;
-    const rawScore=hasPrimaryEvidence?Math.round(scoredRows.reduce((sum,row)=>sum+row.contribution,0)*100)/100:null;
-    const penalty=Math.round(clamp(input.contactPenalty)*Math.max(0,number(weights.contactPenalty)))/100;
-    const score=rawScore===null?null:Math.round(clamp(rawScore-penalty));
-    const explanation=rows.slice(0,6)
-      .map(row=>row.known?`${row.label}: ${row.value} × ${row.weight}/${availableWeight} = ${row.contribution}`:`${row.label}: Unknown (excluded)`)
-      .join('; ')+(penalty?`; Contact penalty: -${penalty}`:'');
-    return {score,rawScore,penalty,breakdown:rows,explanation};
-  }
 
-  function stageAgeStatus(record={},thresholds={},now=Date.now()){
-    const changed=number(record.stageChangedAt??record.updatedAt,now);
-    const daysInStage=Math.max(0,Math.floor((number(now)-changed)/DAY_MS));
-    const threshold=Math.max(0,number(thresholds?.[record.pipelineStage],0));
-    return {
-      pipelineStage:text(record.pipelineStage),
-      daysInStage,
-      thresholdDays:threshold,
-      stale:threshold>0&&daysInStage>=threshold
-    };
-  }
 
-  function followUpTimestamp(followUp){
-    if(Number.isFinite(Number(followUp?.dueAt)))return Number(followUp.dueAt);
-    const raw=text(followUp?.date)+(text(followUp?.time)?`T${text(followUp.time)}`:'T23:59:59');
-    const parsed=Date.parse(raw);
-    return Number.isFinite(parsed)?parsed:Infinity;
-  }
 
-  function buildTodayQueue(records=[],context={}){
-    const now=number(context.now,Date.now());
-    const opportunities=context.opportunities||{};
-    const out=[];
-    for(const record of Array.isArray(records)?records:[]){
-      if(record?.archived===true)continue;
-      const reasons=[];
-      let priority=0;
-      if(text(record.pipelineStage)==='Replied'){
-        reasons.push('Reply waiting');
-        priority=Math.max(priority,100);
-      }
-      const overdue=(Array.isArray(record.followUps)?record.followUps:[])
-        .filter(followUp=>!['completed','cancelled'].includes(text(followUp.state).toLowerCase())&&followUpTimestamp(followUp)<now);
-      if(overdue.length){
-        reasons.push(`Overdue follow-up (${overdue.length})`);
-        priority=Math.max(priority,85);
-      }
-      const aging=stageAgeStatus(record,context.stageThresholds||{},now);
-      if(aging.stale){
-        reasons.push('Stale stage');
-        priority=Math.max(priority,75);
-      }
-      if(number(record.newlyEligibleAt,0)>0&&now-number(record.newlyEligibleAt)<=DAY_MS){
-        reasons.push('Newly eligible');
-        priority=Math.max(priority,70);
-      }
-      if(number(record.newlyDiscoveredAt,0)>0&&now-number(record.newlyDiscoveredAt)<=DAY_MS){
-        reasons.push('Newly discovered');
-        priority=Math.max(priority,60);
-      }
-      if(number(opportunities?.[record.userId],0)>=80){
-        reasons.push('High opportunity');
-        priority=Math.max(priority,55);
-      }
-      if(reasons.length)out.push({userId:text(record.userId),pipelineStage:text(record.pipelineStage),priority,reasons});
-    }
-    return out.sort((a,b)=>b.priority-a.priority||a.userId.localeCompare(b.userId,undefined,{numeric:true}));
-  }
 
   return Object.freeze({
     FACTION_STAGES,
@@ -4197,10 +3410,7 @@
     normalizeSpecialistProfile,
     evaluateCriteria,
     evaluateSpecialistProfile,
-    suggestSpecialistProfile,
-    computeOpportunity,
-    stageAgeStatus,
-    buildTodayQueue
+    suggestSpecialistProfile
   });
 });
 
@@ -4235,14 +3445,6 @@
 
   function text(value){return String(value??'').trim();}
   function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
-  function uniqueIds(values){return [...new Set((Array.isArray(values)?values:[]).map(text).filter(value=>/^\d+$/.test(value)&&Number(value)>0))];}
-  let idSequence=0;
-  function makeId(prefix){
-    const uuid=globalThis.crypto?.randomUUID?.();
-    if(uuid)return `${prefix}-${uuid}`;
-    idSequence=(idSequence+1)%1000000;
-    return `${prefix}-${Date.now()}-${idSequence}`;
-  }
 
   function applyUpgrade(db){
     if(!db||!db.objectStoreNames||typeof db.createObjectStore!=='function')throw new Error('A compatible IndexedDB database is required.');
@@ -4267,41 +3469,6 @@
       stageThresholds:thresholds,
       opportunityWeights:weights,
       activeResultsProfileId:text(raw.activeResultsProfileId),
-      updatedAt:number(raw.updatedAt,Date.now())
-    };
-  }
-
-  function normalizeCampaign(raw={}){
-    const createdAt=number(raw.createdAt,Date.now());
-    return {
-      campaignId:text(raw.campaignId||raw.id)||makeId('faction-campaign'),
-      title:text(raw.title)||'Untitled Campaign',
-      target:text(raw.target),
-      startAt:raw.startAt??null,
-      endAt:raw.endAt??null,
-      profileId:text(raw.profileId),
-      candidateIds:uniqueIds(raw.candidateIds),
-      status:text(raw.status)||'Draft',
-      metrics:{...(raw.metrics||{})},
-      notes:text(raw.notes),
-      createdAt,
-      updatedAt:number(raw.updatedAt,Date.now())
-    };
-  }
-
-  function normalizeSession(raw={}){
-    const ids=uniqueIds(raw.candidateIds);
-    return {
-      sessionId:text(raw.sessionId||raw.id)||makeId('faction-session'),
-      title:text(raw.title)||'Recruitment Session',
-      candidateIds:ids,
-      cursor:Math.max(0,Math.min(ids.length,Math.floor(number(raw.cursor,0)))),
-      status:text(raw.status)||'Draft',
-      outcomes:Array.isArray(raw.outcomes)?raw.outcomes.map(item=>({...item})):[],
-      filters:{...(raw.filters||{})},
-      startedAt:raw.startedAt??null,
-      completedAt:raw.completedAt??null,
-      createdAt:number(raw.createdAt,Date.now()),
       updatedAt:number(raw.updatedAt,Date.now())
     };
   }
@@ -4336,25 +3503,9 @@
       }
     };
 
-    const campaigns={
-      async save(raw){const next=normalizeCampaign({...raw,updatedAt:Date.now()});await idb.put('factionCampaigns',next);return next;},
-      async get(id){return idb.get('factionCampaigns',text(id));},
-      async list(){return(await idb.getAll('factionCampaigns')).map(normalizeCampaign).sort((a,b)=>number(b.updatedAt)-number(a.updatedAt)||a.campaignId.localeCompare(b.campaignId));},
-      async remove(id){if(typeof idb.delete!=='function')throw new Error('Delete is unavailable.');return idb.delete('factionCampaigns',text(id));}
-    };
-
-    const sessions={
-      async save(raw){const next=normalizeSession({...raw,updatedAt:Date.now()});await idb.put('factionRecruitmentSessions',next);return next;},
-      async get(id){return idb.get('factionRecruitmentSessions',text(id));},
-      async list(){return(await idb.getAll('factionRecruitmentSessions')).map(normalizeSession).sort((a,b)=>number(b.updatedAt)-number(a.updatedAt)||a.sessionId.localeCompare(b.sessionId));},
-      async remove(id){if(typeof idb.delete!=='function')throw new Error('Delete is unavailable.');return idb.delete('factionRecruitmentSessions',text(id));}
-    };
-
     return Object.freeze({
       profiles:Object.freeze(profiles),
-      config:Object.freeze(config),
-      campaigns:Object.freeze(campaigns),
-      sessions:Object.freeze(sessions)
+      config:Object.freeze(config)
     });
   }
 
@@ -4363,8 +3514,6 @@
     STORE_DEFINITIONS,
     applyUpgrade,
     normalizeConfig,
-    normalizeCampaign,
-    normalizeSession,
     createRepositories
   });
 });
@@ -4381,16 +3530,12 @@
   if(!FactionCore)throw new Error('FactionCore is required.');
 
   const FACTION_STAGES=FactionCore.FACTION_STAGES;
-  const TERMINAL_STAGES=new Set(['Joined','Rejected']);
   const CRITERION_FIELDS=Object.freeze(['level','ee','fit','activity30','xanax30','refills30','attacks30','rwHits30','networth']);
   const CRITERION_OPERATORS=Object.freeze(['gte','gt','lte','lt','between','equals']);
   const PROFILE_STATES=FactionCore.PROFILE_STATES;
 
   const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toFixed(0):'—');
-  const dateText=value=>{const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n).toLocaleString():'—';};
 
   function normalizeStage(value){const raw=text(value).toLowerCase();return FACTION_STAGES.find(stage=>stage.toLowerCase()===raw)||'Prospect';}
 
@@ -4465,52 +3610,11 @@
     return rows.sort((a,b)=>a.name.localeCompare(b.name)||a.userId.localeCompare(b.userId,undefined,{numeric:true}));
   }
 
-  function buildOverviewModel(rows=[],profiles=[]){
-    const stageCounts=Object.fromEntries(FACTION_STAGES.map(stage=>[stage,0]));
-    let activeCandidates=0,eligible=0,notCurrentlyEligible=0;
-    for(const row of Array.isArray(rows)?rows:[]){
-      const stage=normalizeStage(row.pipelineStage);stageCounts[stage]++;
-      if(!row.archived&&!TERMINAL_STAGES.has(stage))activeCandidates++;
-      if(['Eligible','Eligible by Waiver'].includes(text(row.baselineEligibility)))eligible++;
-      if(text(row.baselineEligibility)==='NOT CURRENTLY ELIGIBLE')notCurrentlyEligible++;
-    }
-    return {
-      totalCandidates:(Array.isArray(rows)?rows:[]).length,
-      activeCandidates,
-      eligible,
-      notCurrentlyEligible,
-      activeProfiles:(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile).filter(profile=>profile.status==='Active').length,
-      stageCounts
-    };
-  }
 
-  function buildTodayModel(rows=[],context={}){
-    const queue=FactionCore.buildTodayQueue(rows,context);
-    const byId=new Map((Array.isArray(rows)?rows:[]).map(row=>[text(row.userId),row]));
-    return queue.map(item=>{
-      const row=byId.get(text(item.userId))||{};
-      return {...item,name:text(row.name)||`User ${item.userId}`,baselineEligibility:text(row.baselineEligibility)||'Unknown',fit:row.fit??null,suggestedProfileId:text(row.suggestedProfileId),pinnedSpecialistProfileId:text(row.pinnedSpecialistProfileId)};
-    });
-  }
 
-  function buildPipelineModel(rows=[]){
-    const buckets=Object.fromEntries(FACTION_STAGES.map(stage=>[stage,[]]));
-    for(const row of Array.isArray(rows)?rows:[]){if(!row||text(row.factionRecord?.domain).toLowerCase()==='company')continue;buckets[normalizeStage(row.pipelineStage)].push(row);}
-    return buckets;
-  }
 
-  function kpi(label,value){return `<div class="ra-kpi"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;}
-  function stageOptions(selected){return FACTION_STAGES.map(stage=>`<option value="${esc(stage)}" ${stage===selected?'selected':''}>${esc(stage)}</option>`).join('');}
 
-  function renderOverview(model={}){
-    const counts=model.stageCounts||{};
-    return `<div class="ra-kpis">${kpi('Active Candidates',number(model.activeCandidates))}${kpi('Baseline Eligible',number(model.eligible))}${kpi('Active Profiles',number(model.activeProfiles))}${kpi('Invite Ready',number(counts['Invite Ready']))}</div><section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Recruitment</h3><p>Faction-only workflow state over shared Player Intelligence.</p></div></div><div class="ra-detail-grid"><span>Not Currently Eligible<b>${number(model.notCurrentlyEligible)}</b></span><span>Replied<b>${number(counts.Replied)}</b></span><span>Evaluating<b>${number(counts.Evaluating)}</b></span><span>Joined<b>${number(counts.Joined)}</b></span></div><div class="ra-actions" style="margin-top:10px"><button class="ra-btn ra-primary" data-go-page="faction-today">Open Today</button><button class="ra-btn" data-go-page="faction-requirements">Requirements &amp; Profiles</button><button class="ra-btn" data-go-page="faction-candidates">Faction Candidates</button></div></section>`;
-  }
 
-  function renderToday(items=[]){
-    const body=(Array.isArray(items)?items:[]).map(item=>`<tr><td>${esc(item.name)}</td><td>${esc(item.pipelineStage)}</td><td>${esc((item.reasons||[]).join(' · '))}</td><td>${esc(item.baselineEligibility)}</td><td>${score(item.fit)}</td></tr>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Today</h3><p>Priority Faction recruitment work. Viewing never changes stage.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Stage</th><th>Why now</th><th>Baseline</th><th>Fit</th></tr></thead><tbody>${body||'<tr><td colspan="5">Nothing requires attention.</td></tr>'}</tbody></table></div></section>`;
-  }
 
   function relativeLastActive(value,now=Date.now(),onlineStatus=''){const ts=Number(value);if(!Number.isFinite(ts)||ts<=0)return text(onlineStatus)||'Unknown';const seconds=Math.max(0,Math.floor((now-ts)/1000));if(seconds<60)return 'just now';if(seconds<3600)return `${Math.floor(seconds/60)}m ago`;if(seconds<86400)return `${Math.floor(seconds/3600)}h ago`;return `${Math.floor(seconds/86400)}d ago`;}
   function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
@@ -4530,15 +3634,12 @@
     const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="faction">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
     const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">Message</button>`;
     const battle=row=>{const attackKnown=row.attacks30!==null&&row.attacks30!==undefined&&text(row.attacks30)!==''&&Number.isFinite(Number(row.attacks30));const rwKnown=row.rwHits30!==null&&row.rwHits30!==undefined&&text(row.rwHits30)!==''&&Number.isFinite(Number(row.rwHits30));if(!attackKnown&&!rwKnown)return '—';return `${attackKnown?Number(row.attacks30).toLocaleString():'—'} / ${rwKnown?Number(row.rwHits30).toLocaleString():'—'}`;};
-    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.networth)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${battle(row)}</td><td>${stat(row.activeStreak)}</td><td>${stat(row.xanax30)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr data-context-id="${esc(row.userId)}"><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.networth)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${battle(row)}</td><td>${stat(row.activeStreak)}</td><td>${stat(row.xanax30)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
+    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
     const resultsTable=layout==='compact'
       ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Faction candidates.</td></tr>'}</tbody></table>`
       : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('networth','Net Worth',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>Battle / RW</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>${sortHeader('xanax30','Xanax 30d',sort)}</th><th>Faction</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="18">No matching Faction candidates.</td></tr>'}</tbody></table>`;
     return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Find players, narrow the list with filters, then message the ones you want.</p></div><div class="ra-actions"><select id="ra-faction-results-profile" class="ra-btn" aria-label="Faction recruitment profile">${profileOptions}</select><button type="button" class="ra-btn" id="ra-faction-profile-apply">Apply Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-clear" ${activeProfileId?'':'hidden'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-save-search" ${activeProfileId?'':'hidden'}>Save Search</button></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-faction-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-faction-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Faction</label><input id="ra-faction-filter-organization" value="${esc(filters.organization||'')}" placeholder="Faction name or ID"></div><div class="ra-field"><label>Faction Presence</label><select id="ra-faction-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Faction</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-faction-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-faction-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-faction-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-search-apply">Search</button><button type="button" class="ra-btn" id="ra-faction-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Faction candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
-  }
-  function renderPipeline(model={}){
-    return `<div class="ra-pipeline">${FACTION_STAGES.map(stage=>`<section class="ra-stage" data-faction-stage="${esc(stage)}"><div class="ra-stage-head"><b>${esc(stage)}</b><span>${(model[stage]||[]).length}</span></div><div class="ra-stage-drop">${(model[stage]||[]).map(row=>`<article class="ra-stage-card" data-context-id="${esc(row.userId)}"><b>${esc(row.name)}</b><div>${esc(row.baselineEligibility)} · Fit ${score(row.fit)}</div><div>${esc(row.pinnedSpecialistProfileId||row.suggestedProfileId||'No specialist profile')}</div><select class="ra-btn" data-faction-stage-select="${esc(row.userId)}">${stageOptions(row.pipelineStage)}</select></article>`).join('')}</div></section>`).join('')}</div>`;
   }
 
   function renderCriterionRow(raw={},scope='baseline'){
@@ -4547,44 +3648,12 @@
   }
 
 
-  function renderWaiverManagement({baseline={},profiles=[],rows=[]}={}){
-    const normalizedBaseline=FactionCore.normalizeBaseline(baseline||{});
-    const normalizedProfiles=(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile);
-    const candidateRows=Array.isArray(rows)?rows:[];
-    const playerOptions=candidateRows.map(row=>'<option value="'+esc(row.userId)+'">'+esc(row.name||('User '+row.userId))+' · '+esc(row.userId)+' · '+esc(row.baselineEligibility||'Unknown')+'</option>').join('');
-    const profileOptions=normalizedProfiles.map(profile=>'<option value="'+esc(profile.profileId)+'">'+esc(profile.name||profile.profileId)+'</option>').join('');
-    const requirementOptions=[
-      ...normalizedBaseline.criteria.map(req=>'<option value="'+esc(req.id)+'" data-waiver-context="baseline" data-waiver-profile="">Baseline · '+esc(req.label||req.id)+'</option>'),
-      ...normalizedProfiles.flatMap(profile=>(profile.criteria||[]).map(req=>'<option value="'+esc(req.id)+'" data-waiver-context="specialist" data-waiver-profile="'+esc(profile.profileId)+'">Specialist · '+esc(profile.name||profile.profileId)+' · '+esc(req.label||req.id)+'</option>'))
-    ].join('');
-    const candidateStatus=candidateRows.map(row=>'<tr><td>'+esc(row.name||('User '+row.userId))+' <small class="ra-muted">'+esc(row.userId)+'</small></td><td>'+esc(row.baselineEligibility||'Unknown')+'</td><td>'+number((row.waivers||[]).filter(item=>text(item.state)==='Active').length)+'</td></tr>').join('');
-    const history=candidateRows.flatMap(row=>(Array.isArray(row.waivers)?row.waivers:[]).map(waiver=>({row,waiver}))).sort((a,b)=>number(b.waiver.grantedAt)-number(a.waiver.grantedAt)).map(({row,waiver})=>{
-      const context=text(waiver.context).toLowerCase()==='specialist'?'specialist':'baseline';
-      const profile=context==='specialist'?normalizedProfiles.find(item=>text(item.profileId)===text(waiver.profileId)):null;
-      const criteria=context==='specialist'?(profile?.criteria||[]):normalizedBaseline.criteria;
-      const requirement=criteria.find(item=>text(item.id)===text(waiver.requirementId));
-      const requirementLabel=text(requirement?.label)||text(waiver.requirementId)||'Unknown requirement';
-      const contextLabel=context==='specialist'?('Specialist · '+(profile?.name||waiver.profileId||'Unknown profile')):'Baseline';
-      const active=text(waiver.state)==='Active';
-      const resolveButton=active?'<button type="button" class="ra-btn" data-faction-waiver-resolve="'+esc(waiver.waiverId)+'" data-faction-waiver-player="'+esc(row.userId)+'">Resolve</button>':'';
-      return '<tr><td>'+esc(row.name||('User '+row.userId))+'</td><td>'+esc(requirementLabel)+'</td><td>'+esc(contextLabel)+'</td><td>'+esc(waiver.reason)+'</td><td>'+esc(waiver.state||'Unknown')+'</td><td>'+esc(dateText(waiver.reviewAt))+'</td><td>'+esc(waiver.resolvedReason||'')+'</td><td>'+resolveButton+'</td></tr>';
-    }).join('');
-    return '<section class="ra-panel"><div class="ra-panel-head"><div><h3>Waiver Management</h3><p>Grant an individual exception without changing the underlying Player Intelligence fact or requirement. Resolved waivers remain in history.</p></div></div>'+
-      '<div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-faction-waiver-player"><option value="">Choose candidate</option>'+playerOptions+'</select></div>'+
-      '<div class="ra-field"><label>Context</label><select id="ra-faction-waiver-context"><option value="baseline">Baseline</option><option value="specialist">Specialist</option></select></div>'+
-      '<div class="ra-field"><label>Specialist Profile</label><select id="ra-faction-waiver-profile"><option value="">Choose profile</option>'+profileOptions+'</select></div>'+
-      '<div class="ra-field"><label>Requirement</label><select id="ra-faction-waiver-requirement"><option value="">Choose requirement</option>'+requirementOptions+'</select></div>'+
-      '<div class="ra-field"><label>Review</label><input id="ra-faction-waiver-review" type="datetime-local"></div>'+
-      '<div class="ra-field" style="grid-column:1/-1"><label>Reason</label><textarea id="ra-faction-waiver-reason" placeholder="Why is this individual exception approved?"></textarea></div></div>'+
-      '<div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-waiver-grant">Grant Waiver</button></div>'+
-      '<div class="ra-table-wrap" style="margin-top:12px"><table class="ra-table"><thead><tr><th>Candidate</th><th>Baseline status</th><th>Active waivers</th></tr></thead><tbody>'+(candidateStatus||'<tr><td colspan="3">No Faction candidates.</td></tr>')+'</tbody></table></div>'+
-      '<div class="ra-table-wrap" style="margin-top:12px"><table class="ra-table"><thead><tr><th>Candidate</th><th>Requirement</th><th>Context</th><th>Reason</th><th>State</th><th>Review</th><th>Resolution</th><th>Action</th></tr></thead><tbody>'+(history||'<tr><td colspan="8">No waiver history.</td></tr>')+'</tbody></table></div></section>';
-  }
 
-  function renderRequirementsPage({config={},profiles=[],rows=[]}={}){
+  function renderProfileEditor({config={},profiles=[],open=false}={}){
     const baseline=FactionCore.normalizeBaseline(config.baseline||{});
-    const profileCards=(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile).map(profile=>`<section class="ra-panel" data-faction-profile-card="${esc(profile.profileId)}"><div class="ra-panel-head"><div><h3>${esc(profile.name||profile.profileId||'Specialist Profile')}</h3><p>Specialist matching context. Hard failures affect this profile only.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Name</label><input data-faction-profile-field="name" value="${esc(profile.name)}"></div><div class="ra-field"><label>Status</label><select data-faction-profile-field="status">${PROFILE_STATES.map(state=>`<option value="${state}" ${state===profile.status?'selected':''}>${state}</option>`).join('')}</select></div><div class="ra-field" style="grid-column:1/-1"><label>Notes</label><textarea data-faction-profile-field="notes">${esc(profile.notes)}</textarea></div></div><div data-faction-profile-criteria>${profile.criteria.map(req=>renderCriterionRow(req,`profile:${profile.profileId}`)).join('')}</div><div class="ra-actions"><button class="ra-btn" data-faction-profile-add-criterion="${esc(profile.profileId)}">Add criterion</button><button class="ra-btn ra-primary" data-faction-profile-save="${esc(profile.profileId)}">Save Profile</button><button class="ra-btn ra-danger" data-faction-profile-delete="${esc(profile.profileId)}">Delete</button></div></section>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Baseline</h3><p>Hard requirements gate Invite Ready unless individually waived. Preferred requirements affect score only.</p></div></div><div id="ra-faction-baseline-criteria">${baseline.criteria.map(req=>renderCriterionRow(req,'baseline')).join('')}</div><div class="ra-actions"><button class="ra-btn" id="ra-faction-baseline-add">Add Requirement</button><button class="ra-btn ra-primary" id="ra-faction-baseline-save">Save Faction Baseline</button></div></section><section class="ra-panel"><div class="ra-panel-head"><div><h3>Specialist Profiles</h3><p>Draft, Active, Paused and Archived profiles are separate from Faction Baseline eligibility.</p></div></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-faction-profile-new">Create Specialist Profile</button></div></section>${profileCards||'<section class="ra-panel"><div class="ra-muted">No specialist profiles yet.</div></section>'}${renderWaiverManagement({baseline,profiles,rows})}`;
+    const list=(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile);
+    const cards=list.map(profile=>`<section class="ra-panel" data-faction-profile-card="${esc(profile.profileId)}"><div class="ra-formgrid"><div class="ra-field"><label>Name</label><input data-faction-profile-field="name" value="${esc(profile.name)}"></div><div class="ra-field"><label>Status</label><select data-faction-profile-field="status">${PROFILE_STATES.map(state=>`<option value="${state}" ${state===profile.status?'selected':''}>${state}</option>`).join('')}</select></div><div class="ra-field" style="grid-column:1/-1"><label>Notes</label><textarea data-faction-profile-field="notes">${esc(profile.notes)}</textarea></div></div><div data-faction-profile-criteria>${profile.criteria.map(req=>renderCriterionRow(req,`profile:${profile.profileId}`)).join('')}</div><div class="ra-actions"><button type="button" class="ra-btn" data-faction-profile-add-criterion="${esc(profile.profileId)}">Add criterion</button><button type="button" class="ra-btn ra-primary" data-faction-profile-save="${esc(profile.profileId)}">Save Profile</button><button type="button" class="ra-btn ra-danger" data-faction-profile-delete="${esc(profile.profileId)}">Delete</button></div></section>`).join('');
+    return `<details class="ra-panel" id="ra-faction-profile-editor" ${open?'open':''}><summary><b>Requirements &amp; Specialist Profiles</b> <span class="ra-muted">${list.length} profile(s)</span></summary><h4>Faction Baseline</h4><p class="ra-muted">Hard requirements gate eligibility; Preferred requirements only affect score.</p><div id="ra-faction-baseline-criteria">${baseline.criteria.map(req=>renderCriterionRow(req,'baseline')).join('')}</div><div class="ra-actions"><button type="button" class="ra-btn" id="ra-faction-baseline-add">Add requirement</button><button type="button" class="ra-btn ra-primary" id="ra-faction-baseline-save">Save Baseline</button></div><h4>Specialist Profiles</h4>${cards||'<p class="ra-muted">No specialist profiles yet.</p>'}<div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-profile-new">Create Specialist Profile</button></div></details>`;
   }
 
   return Object.freeze({
@@ -4593,590 +3662,9 @@
     CRITERION_FIELDS,
     CRITERION_OPERATORS,
     buildCandidateRows,
-    buildOverviewModel,
-    buildTodayModel,
-    buildPipelineModel,
-    renderOverview,
-    renderToday,
     renderCandidates,
-    renderPipeline,
     renderCriterionRow,
-    renderRequirementsPage,
-    dateText
-  });
-});
-
-/* bundled runtime: v47-faction-operations.js */
-(function(root,factory){
-  let FactionCore=root&&root.RA_V47FactionCore;
-  if(!FactionCore&&typeof module==='object'&&module.exports)FactionCore=require('./v47-faction-core');
-  const api=factory(FactionCore);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V47FactionOperations=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(FactionCore){
-  'use strict';
-  if(!FactionCore)throw new Error('FactionCore is required.');
-
-  const UNIT_MS=Object.freeze({hours:3600000,days:86400000,weeks:604800000});
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const makeId=(prefix,at)=>`${prefix}-${number(at,Date.now())}-${Math.random().toString(36).slice(2,8)}`;
-  const cloneValue=value=>Array.isArray(value)?value.map(cloneValue):(value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,nested])=>[key,cloneValue(nested)])):value);
-  const cloneRecord=record=>({
-    ...(record||{}),
-    followUps:cloneValue(record?.followUps||[]),
-    outcomes:cloneValue(record?.outcomes||[]),
-    timelineEvents:cloneValue(record?.timelineEvents||[]),
-    timelineNotes:cloneValue(record?.timelineNotes||[]),
-    waivers:cloneValue(record?.waivers||[]),
-    campaigns:[...(record?.campaigns||[])],
-    cycles:cloneValue(record?.cycles||[])
-  });
-
-  function normalizeRecurrence(raw){
-    if(!raw)return null;
-    const requested=text(raw.unit).toLowerCase();
-    const unit=Object.hasOwn(UNIT_MS,requested)?requested:'days';
-    return {unit,interval:Math.max(1,Math.floor(number(raw.interval,1)))};
-  }
-
-  function addSystemEvent(record,type,payload={},at=Date.now(),eventId=''){
-    const next=cloneRecord(record);const when=number(at,Date.now());
-    next.timelineEvents.push({eventId:text(eventId)||makeId('event',when),type:text(type)||'event',at:when,payload:cloneValue(payload||{})});
-    next.updatedAt=when;
-    return next;
-  }
-
-  function addFollowUp(record,raw={},at=Date.now()){
-    const next=cloneRecord(record);const when=number(at,Date.now());
-    const followUp={
-      followUpId:text(raw.followUpId)||makeId('followup',when),
-      dueAt:number(raw.dueAt,when),
-      reason:text(raw.reason),
-      note:text(raw.note),
-      state:text(raw.state)||'open',
-      recurrence:normalizeRecurrence(raw.recurrence),
-      createdAt:raw.createdAt??when,
-      completedAt:raw.completedAt??null,
-      updatedAt:when
-    };
-    next.followUps.push(followUp);next.updatedAt=when;
-    return addSystemEvent(next,'follow-up-added',{followUpId:followUp.followUpId,dueAt:followUp.dueAt,reason:followUp.reason},when);
-  }
-
-  function completeFollowUp(record,followUpId,at=Date.now()){
-    const next=cloneRecord(record);const id=text(followUpId);const when=number(at,Date.now());
-    const index=next.followUps.findIndex(item=>text(item.followUpId)===id);
-    if(index<0)throw new Error('Follow-up not found.');
-    const current={...next.followUps[index],state:'completed',completedAt:when,updatedAt:when};
-    next.followUps[index]=current;
-    if(current.recurrence){
-      const recurrence=normalizeRecurrence(current.recurrence);
-      const step=UNIT_MS[recurrence.unit]*recurrence.interval;
-      next.followUps.push({
-        ...current,
-        recurrence,
-        followUpId:makeId('followup',when),
-        parentFollowUpId:id,
-        dueAt:number(current.dueAt,when)+step,
-        state:'open',
-        completedAt:null,
-        createdAt:when,
-        updatedAt:when
-      });
-    }
-    next.updatedAt=when;
-    return addSystemEvent(next,'follow-up-completed',{followUpId:id},when);
-  }
-
-  function recordContactOutcome(record,raw={},at=Date.now()){
-    const next=cloneRecord(record);const when=number(at,Date.now());
-    const outcome={outcomeId:text(raw.outcomeId)||makeId('outcome',when),result:text(raw.result)||'Other',channel:text(raw.channel)||'Other',note:text(raw.note),at:raw.at??when};
-    next.outcomes.push(outcome);next.updatedAt=when;
-    return addSystemEvent(next,'contact-outcome',{outcomeId:outcome.outcomeId,result:outcome.result,channel:outcome.channel},when);
-  }
-
-  function setDoNotContact(record,enabled,reason='',at=Date.now()){
-    const next=cloneRecord(record);const when=number(at,Date.now());
-    next.doNotContact=enabled===true;
-    next.doNotContactReason=next.doNotContact?text(reason):'';
-    next.doNotContactChangedAt=when;
-    next.updatedAt=when;
-    return addSystemEvent(next,'dnc-changed',{enabled:next.doNotContact,reason:next.doNotContactReason},when);
-  }
-
-  function canMessage(record,explicitOverride=false){return !(record?.doNotContact===true&&explicitOverride!==true);}
-  function stageAging(record,thresholds={},now=Date.now()){return FactionCore.stageAgeStatus(record,thresholds,now);}
-
-  function addTimelineNote(record,raw={},at=Date.now()){
-    const next=cloneRecord(record);const when=number(at,Date.now());
-    next.timelineNotes.push({noteId:text(raw.noteId)||makeId('note',when),text:text(raw.text),at:raw.at??when,updatedAt:when});
-    next.updatedAt=when;
-    return next;
-  }
-
-  function editTimelineNote(record,noteId,value,at=Date.now()){
-    const next=cloneRecord(record);const id=text(noteId);
-    if(next.timelineEvents.some(event=>text(event.eventId)===id))throw new Error('System timeline events are immutable.');
-    const index=next.timelineNotes.findIndex(note=>text(note.noteId)===id);
-    if(index<0)throw new Error('Timeline note not found.');
-    const when=number(at,Date.now());
-    next.timelineNotes[index]={...next.timelineNotes[index],text:text(value),updatedAt:when};next.updatedAt=when;
-    return next;
-  }
-
-  function deleteTimelineNote(record,noteId,at=Date.now()){
-    const next=cloneRecord(record);const id=text(noteId);
-    if(next.timelineEvents.some(event=>text(event.eventId)===id))throw new Error('System timeline events are immutable.');
-    const before=next.timelineNotes.length;
-    next.timelineNotes=next.timelineNotes.filter(note=>text(note.noteId)!==id);
-    if(next.timelineNotes.length===before)throw new Error('Timeline note not found.');
-    next.updatedAt=number(at,Date.now());
-    return next;
-  }
-
-  function combinedTimeline(record={}){
-    const system=(record.timelineEvents||[]).map(event=>({...cloneValue(event),entryType:'system',at:number(event.at,0)}));
-    const notes=(record.timelineNotes||[]).map(note=>({...cloneValue(note),entryType:'recruiter-note',at:number(note.at,0)}));
-    return [...system,...notes].sort((a,b)=>b.at-a.at||text(a.eventId||a.noteId).localeCompare(text(b.eventId||b.noteId)));
-  }
-
-  function grantWaiver(record,raw={},at=Date.now()){
-    const next=cloneRecord(record);const when=number(at,Date.now());
-    const requirementId=text(raw.requirementId);
-    if(!requirementId)throw new Error('Requirement ID is required.');
-    const context=text(raw.context).toLowerCase()==='specialist'?'specialist':'baseline';
-    const profileId=context==='specialist'?text(raw.profileId):'';
-    if(context==='specialist'&&!profileId)throw new Error('Specialist waiver requires a profile ID.');
-    const waiver={
-      waiverId:text(raw.waiverId)||makeId('waiver',when),
-      requirementId,
-      profileId,
-      context,
-      reason:text(raw.reason),
-      state:'Active',
-      grantedAt:when,
-      reviewAt:raw.reviewAt==null?null:number(raw.reviewAt,null),
-      resolvedAt:null,
-      resolvedReason:''
-    };
-    next.waivers.push(waiver);next.updatedAt=when;
-    return addSystemEvent(next,'waiver-granted',{waiverId:waiver.waiverId,requirementId,profileId,context},when);
-  }
-
-  function resolveWaiver(record,waiverId,reason='',at=Date.now()){
-    const next=cloneRecord(record);const id=text(waiverId);const when=number(at,Date.now());
-    const index=next.waivers.findIndex(waiver=>text(waiver.waiverId)===id);
-    if(index<0)throw new Error('Waiver not found.');
-    next.waivers[index]={...next.waivers[index],state:'Resolved',resolvedAt:when,resolvedReason:text(reason)};
-    next.updatedAt=when;
-    return addSystemEvent(next,'waiver-resolved',{waiverId:id,reason:text(reason)},when);
-  }
-
-  return Object.freeze({
-    normalizeRecurrence,
-    addSystemEvent,
-    addFollowUp,
-    completeFollowUp,
-    recordContactOutcome,
-    setDoNotContact,
-    canMessage,
-    stageAging,
-    addTimelineNote,
-    editTimelineNote,
-    deleteTimelineNote,
-    combinedTimeline,
-    grantWaiver,
-    resolveWaiver
-  });
-});
-
-/* bundled runtime: v47-faction-workflow.js */
-(function(root,factory){
-  let FactionCore=root&&root.RA_V47FactionCore;
-  let Operations=root&&root.RA_V47FactionOperations;
-  if(typeof module==='object'&&module.exports){
-    if(!FactionCore)FactionCore=require('./v47-faction-core');
-    if(!Operations)Operations=require('./v47-faction-operations');
-  }
-  const api=factory(FactionCore,Operations);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V47FactionWorkflow=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(FactionCore,Operations){
-  'use strict';
-  if(!FactionCore)throw new Error('FactionCore is required.');
-  if(!Operations)throw new Error('Faction Operations is required.');
-
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const unique=values=>[...new Set((Array.isArray(values)?values:[]).map(text).filter(Boolean))];
-  const cloneValue=value=>Array.isArray(value)?value.map(cloneValue):(value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,nested])=>[key,cloneValue(nested)])):value);
-  const clone=record=>({
-    ...(record||{}),
-    campaigns:unique(record?.campaigns),
-    cycles:cloneValue(record?.cycles||[]),
-    timelineEvents:cloneValue(record?.timelineEvents||[]),
-    timelineNotes:cloneValue(record?.timelineNotes||[]),
-    followUps:cloneValue(record?.followUps||[]),
-    outcomes:cloneValue(record?.outcomes||[]),
-    waivers:cloneValue(record?.waivers||[])
-  });
-  const sessionClone=session=>({...session,candidateIds:unique(session?.candidateIds),outcomes:cloneValue(session?.outcomes||[]),filters:cloneValue(session?.filters||{})});
-  const makeId=(prefix,at)=>`${prefix}-${number(at,Date.now())}-${Math.random().toString(36).slice(2,8)}`;
-
-  function assertStage(stage){
-    const normalized=text(stage);
-    if(!FactionCore.FACTION_STAGES.includes(normalized))throw new Error(`Invalid Faction stage: ${normalized||'(empty)'}.`);
-    return normalized;
-  }
-
-  function changeStage(record,stage,options={}){
-    const after=assertStage(stage);
-    if(after==='Invite Ready'&&options.baselineHardFailed===true)throw new Error('Invite Ready is blocked by an unwaived Faction baseline Hard requirement.');
-    const before=text(record?.pipelineStage)||'Prospect';
-    if(before===after)return clone(record);
-    const when=number(options.now,Date.now());
-    let next=clone(record);next.pipelineStage=after;next.stageChangedAt=when;next.updatedAt=when;
-    return Operations.addSystemEvent(next,'stage-changed',{from:before,to:after},when);
-  }
-
-  function addCampaignMembership(record,campaignId,at=Date.now()){
-    const id=text(campaignId);if(!id)throw new Error('Campaign ID is required.');
-    let next=clone(record);const when=number(at,Date.now());
-    next.campaigns=unique([...next.campaigns,id]);next.updatedAt=when;
-    return Operations.addSystemEvent(next,'campaign-membership-added',{campaignId:id},when);
-  }
-
-  function removeCampaignMembership(record,campaignId,at=Date.now()){
-    const id=text(campaignId);if(!id)throw new Error('Campaign ID is required.');
-    let next=clone(record);const when=number(at,Date.now());
-    next.campaigns=next.campaigns.filter(value=>value!==id);next.updatedAt=when;
-    return Operations.addSystemEvent(next,'campaign-membership-removed',{campaignId:id},when);
-  }
-
-  function reactivate(record,reason='',at=Date.now(),cycleId=''){
-    let next=clone(record);const when=number(at,Date.now());const previousStage=text(next.pipelineStage)||'Prospect';
-    next.cycles.push({cycleId:text(cycleId)||makeId('cycle',when),startedAt:when,reason:text(reason),previousStage});
-    next.pipelineStage='Prospect';next.stageChangedAt=when;next.archived=false;next.updatedAt=when;
-    return Operations.addSystemEvent(next,'reactivated',{reason:text(reason),previousStage,cycleId:next.cycles.at(-1).cycleId},when);
-  }
-
-  function currentSessionCandidate(session={}){
-    const ids=unique(session.candidateIds);const cursor=Math.max(0,Math.floor(number(session.cursor,0)));return ids[cursor]||'';
-  }
-
-  function recordSessionAction(session,raw={},at=Date.now()){
-    const next=sessionClone(session);const when=number(at,Date.now());const current=currentSessionCandidate(next);const userId=text(raw.userId);const action=text(raw.action);
-    if(!current)throw new Error('Recruitment session has no current candidate.');
-    if(userId!==current)throw new Error('Action must target the current session candidate.');
-    if(!action)throw new Error('An explicit session action is required.');
-    next.outcomes.push({userId,action,note:text(raw.note),at:when});
-    next.cursor=Math.min(next.candidateIds.length,Math.max(0,Math.floor(number(next.cursor,0)))+1);
-    next.status=next.cursor>=next.candidateIds.length?'Completed':'Active';
-    if(!next.startedAt)next.startedAt=when;
-    if(next.status==='Completed')next.completedAt=when;
-    next.updatedAt=when;
-    return next;
-  }
-
-  return Object.freeze({
-    changeStage,
-    addCampaignMembership,
-    removeCampaignMembership,
-    reactivate,
-    currentSessionCandidate,
-    recordSessionAction,
-    advanceSession:recordSessionAction
-  });
-});
-
-/* bundled runtime: v47-faction-workflow-ui.js */
-(function(root,factory){
-  let Workflow=root&&root.RA_V47FactionWorkflow;
-  if(!Workflow&&typeof module==='object'&&module.exports)Workflow=require('./v47-faction-workflow');
-  const api=factory(Workflow);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V47FactionWorkflowUI=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(Workflow){
-  'use strict';
-  if(!Workflow)throw new Error('Faction Workflow is required.');
-
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const unique=values=>[...new Set((Array.isArray(values)?values:[]).map(text).filter(Boolean))];
-  const terminal=new Set(['Joined','Rejected']);
-  const dateText=value=>{const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n).toLocaleString():'—';};
-  const candidateOptions=(rows=[],selected='',filter=()=>true)=>rows.filter(filter).map(row=>`<option value="${esc(row.userId)}" ${text(row.userId)===text(selected)?'selected':''}>${esc(row.name)} [${esc(row.userId)}]</option>`).join('');
-  const profileOptions=(profiles=[],selected='')=>`<option value="">No specialist profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${text(profile.profileId)===text(selected)?'selected':''}>${esc(profile.name||profile.profileId)}</option>`).join('');
-  const rowMap=rows=>new Map((rows||[]).map(row=>[text(row.userId),row]));
-
-  function renderCampaignsPage({campaigns=[],rows=[],profiles=[]}={}){
-    const players=rowMap(rows);
-    const cards=(campaigns||[]).map(campaign=>{
-      const ids=unique(campaign.candidateIds);const members=ids.map(id=>players.get(id)).filter(Boolean);const available=rows.filter(row=>!ids.includes(text(row.userId)));
-      return `<section class="ra-panel" data-faction-campaign-card="${esc(campaign.campaignId)}"><div class="ra-panel-head"><div><h3>${esc(campaign.title||'Untitled Campaign')}</h3><p>${esc(campaign.target||'No target specified')} · ${esc(campaign.status||'Draft')}</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Title</label><input data-faction-campaign-field="title" value="${esc(campaign.title)}"></div><div class="ra-field"><label>Target</label><input data-faction-campaign-field="target" value="${esc(campaign.target)}"></div><div class="ra-field"><label>Specialist Profile</label><select data-faction-campaign-field="profileId">${profileOptions(profiles,campaign.profileId)}</select></div><div class="ra-field"><label>Status</label><select data-faction-campaign-field="status"><option ${campaign.status==='Draft'?'selected':''}>Draft</option><option ${campaign.status==='Active'?'selected':''}>Active</option><option ${campaign.status==='Paused'?'selected':''}>Paused</option><option ${campaign.status==='Completed'?'selected':''}>Completed</option><option ${campaign.status==='Archived'?'selected':''}>Archived</option></select></div><div class="ra-field" style="grid-column:1/-1"><label>Notes</label><textarea data-faction-campaign-field="notes">${esc(campaign.notes)}</textarea></div></div><div class="ra-actions"><button class="ra-btn ra-primary" data-faction-campaign-save="${esc(campaign.campaignId)}">Save Campaign</button><button class="ra-btn ra-danger" data-faction-campaign-delete="${esc(campaign.campaignId)}">Delete</button></div><h4>Members</h4><div>${members.map(row=>`<div class="ra-actions" style="justify-content:space-between;margin:4px 0"><span>${esc(row.name)} <span class="ra-muted">[${esc(row.userId)}]</span></span><button class="ra-btn ra-danger" data-faction-campaign-remove-member="${esc(campaign.campaignId)}" data-faction-campaign-user="${esc(row.userId)}">Remove</button></div>`).join('')||'<div class="ra-muted">No members.</div>'}</div><div class="ra-actions" style="margin-top:8px"><select class="ra-btn" data-faction-campaign-member-select="${esc(campaign.campaignId)}"><option value="">Add candidate…</option>${candidateOptions(available)}</select><button class="ra-btn" data-faction-campaign-add-member="${esc(campaign.campaignId)}">Add Member</button></div></section>`;
-    }).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Create Faction Campaign</h3><p>Campaign membership is many-to-many and may optionally target one specialist profile.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Title</label><input id="ra-faction-campaign-title"></div><div class="ra-field"><label>Target</label><input id="ra-faction-campaign-target"></div><div class="ra-field"><label>Specialist Profile</label><select id="ra-faction-campaign-profile">${profileOptions(profiles)}</select></div><div class="ra-field"><label>Status</label><select id="ra-faction-campaign-status"><option>Draft</option><option>Active</option><option>Paused</option><option>Completed</option><option>Archived</option></select></div><div class="ra-field" style="grid-column:1/-1"><label>Notes</label><textarea id="ra-faction-campaign-notes"></textarea></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-faction-campaign-new">Create Campaign</button></div></section>${cards||'<section class="ra-panel"><div class="ra-muted">No Faction campaigns yet.</div></section>'}`;
-  }
-
-  function renderFollowUpsPage(rows=[]){
-    const pending=[];
-    for(const row of rows||[])for(const item of row.followUps||[])if(!['completed','cancelled'].includes(text(item.state).toLowerCase()))pending.push({row,item});
-    pending.sort((a,b)=>number(a.item.dueAt,Infinity)-number(b.item.dueAt,Infinity));
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Add Faction Follow-up</h3><p>Follow-ups are workflow reminders, not stage changes.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-faction-followup-player"><option value="">Choose candidate…</option>${candidateOptions(rows)}</select></div><div class="ra-field"><label>Due</label><input id="ra-faction-followup-due" type="datetime-local"></div><div class="ra-field"><label>Reason</label><input id="ra-faction-followup-reason"></div><div class="ra-field"><label>Note</label><input id="ra-faction-followup-note"></div><div class="ra-field"><label>Recurrence</label><select id="ra-faction-followup-recurrence-unit"><option value="">None</option><option value="days">Days</option><option value="weeks">Weeks</option></select></div><div class="ra-field"><label>Every</label><input id="ra-faction-followup-recurrence-interval" type="number" min="1" value="1"></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-faction-followup-add">Add Follow-up</button></div></section><section class="ra-panel"><h3>Pending Follow-ups</h3>${pending.map(({row,item})=>`<div class="ra-actions" style="justify-content:space-between;margin:6px 0"><div><b>${esc(row.name)}</b> · ${esc(dateText(item.dueAt))}<div class="ra-note">${esc(item.reason||'No reason')}${item.note?` · ${esc(item.note)}`:''}</div></div><button class="ra-btn" data-faction-followup-complete="${esc(item.followUpId)}" data-faction-followup-user="${esc(row.userId)}">Complete</button></div>`).join('')||'<div class="ra-muted">No pending follow-ups.</div>'}</section>`;
-  }
-
-  function renderTimelinePage(rows=[]){
-    const options=candidateOptions(rows);
-    const panels=rows.map(row=>{
-      const events=(row.factionRecord?.timelineEvents||[]).map(event=>`<div class="ra-panel" style="margin:6px 0"><b>System event</b> · ${esc(event.type)} · ${esc(dateText(event.at))}<div class="ra-note">${esc(JSON.stringify(event.payload||{}))}</div></div>`).join('');
-      const notes=(row.factionRecord?.timelineNotes||[]).map(note=>`<div class="ra-panel" style="margin:6px 0"><b>Recruiter note</b> · ${esc(dateText(note.at))}<div class="ra-note">${esc(note.text)}</div><div class="ra-actions"><button class="ra-btn" data-faction-note-edit="${esc(note.noteId)}" data-faction-note-user="${esc(row.userId)}">Edit</button><button class="ra-btn ra-danger" data-faction-note-delete="${esc(note.noteId)}" data-faction-note-user="${esc(row.userId)}">Delete</button></div></div>`).join('');
-      return `<section class="ra-panel"><h3>${esc(row.name)}</h3>${events}${notes||(!events?'<div class="ra-muted">No timeline entries.</div>':'')}</section>`;
-    }).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Timeline</h3><p>System events are immutable. Recruiter notes may be edited or deleted.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-faction-timeline-player"><option value="">Choose candidate…</option>${options}</select></div><div class="ra-field"><label>Recruiter note</label><input id="ra-faction-timeline-note"></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-faction-timeline-add">Add Recruiter Note</button></div></section>${panels}`;
-  }
-
-  function renderContactOutcomesPage(rows=[]){
-    const outcomeRows=[];
-    for(const row of rows||[])for(const outcome of row.outcomes||[])outcomeRows.push({row,outcome});
-    const dncRows=rows.map(row=>{
-      const enabled=row.doNotContact===true||row.factionRecord?.doNotContact===true;
-      const reason=text(row.doNotContactReason||row.factionRecord?.doNotContactReason);
-      return `<div class="ra-panel" style="margin:6px 0"><b>${esc(row.name)}</b> · ${enabled?'Do Not Contact':'Contact permitted'}<div class="ra-note">${esc(reason||'No DNC reason')}</div><div class="ra-actions"><input data-faction-dnc-reason="${esc(row.userId)}" value="${esc(reason)}" placeholder="Reason"><button class="ra-btn ${enabled?'':'ra-danger'}" data-faction-dnc-toggle="${esc(row.userId)}" data-faction-dnc-enabled="${enabled?'false':'true'}">${enabled?'Clear DNC':'Set Do Not Contact'}</button>${enabled?'<span class="ra-muted">Override messaging remains deliberate and manual.</span>':''}</div></div>`;
-    }).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Contact Outcomes</h3><p>Contact result and Do Not Contact are independent from Faction pipeline stage.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Candidate</label><select id="ra-faction-outcome-player"><option value="">Choose candidate…</option>${candidateOptions(rows)}</select></div><div class="ra-field"><label>Result</label><select id="ra-faction-outcome-result"><option>Interested</option><option>Maybe later</option><option>Not interested</option><option>No response</option><option>Other</option></select></div><div class="ra-field"><label>Channel</label><select id="ra-faction-outcome-channel"><option>Mail</option><option>Chat</option><option>Forum</option><option>Other</option></select></div><div class="ra-field"><label>Note</label><input id="ra-faction-outcome-note"></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-faction-outcome-add">Record Outcome</button></div></section><section class="ra-panel"><h3>Do Not Contact</h3>${dncRows}</section><section class="ra-panel"><h3>Contact Outcomes</h3>${outcomeRows.map(({row,outcome})=>`<div>${esc(row.name)} · ${esc(outcome.result)} · ${esc(outcome.channel)} · ${esc(dateText(outcome.at))}</div>`).join('')||'<div class="ra-muted">No outcomes recorded.</div>'}</section>`;
-  }
-
-  function renderStageAgingPage(rows=[]){
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Stage Aging</h3><p>Warning-only review. Aging never moves a candidate automatically.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Stage</th><th>Age</th><th>Threshold</th><th>Status</th></tr></thead><tbody>${rows.map(row=>{const a=row.stageAging||{};return`<tr><td>${esc(row.name)}</td><td>${esc(row.pipelineStage)}</td><td>${number(a.daysInStage)} days</td><td>${number(a.thresholdDays)} days</td><td>${a.stale?'Stale':'Within threshold'}</td></tr>`;}).join('')||'<tr><td colspan="5">No candidates.</td></tr>'}</tbody></table></div></section>`;
-  }
-
-  function renderReactivationPage(rows=[]){
-    const eligible=rows.filter(row=>row.archived===true||terminal.has(text(row.pipelineStage)));
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Reactivation</h3><p>Start a new Faction recruitment cycle without creating another player identity.</p></div></div>${eligible.map(row=>`<div class="ra-panel" style="margin:6px 0"><b>${esc(row.name)}</b> <span class="ra-muted">[${esc(row.userId)}] · ${esc(row.pipelineStage)}</span><div class="ra-formgrid" style="margin-top:6px"><div class="ra-field"><label>Reason</label><input data-faction-reactivate-reason="${esc(row.userId)}" placeholder="Why reopen this candidate?"></div><div class="ra-field"><label>Previous cycles</label><input disabled value="${number(row.factionRecord?.cycles?.length,0)}"></div></div><div class="ra-actions" style="margin-top:6px"><button class="ra-btn ra-primary" data-faction-reactivate-player="${esc(row.userId)}">Start New Cycle</button></div></div>`).join('')||'<div class="ra-muted">No candidates are currently eligible for reactivation.</div>'}</section>`;
-  }
-
-  function renderRecruitmentSessionsPage({sessions=[],rows=[]}={}){
-    const players=rowMap(rows);const activeCandidates=rows.filter(row=>!row.archived&&!terminal.has(text(row.pipelineStage)));
-    const cards=(sessions||[]).map(session=>{
-      const currentId=Workflow.currentSessionCandidate(session);const current=players.get(text(currentId));const progress=`${Math.min(number(session.cursor,0),unique(session.candidateIds).length)}/${unique(session.candidateIds).length}`;
-      return `<section class="ra-panel" data-faction-session-card="${esc(session.sessionId)}"><div class="ra-panel-head"><div><h3>${esc(session.title||'Recruitment Session')}</h3><p>${esc(session.status||'Draft')} · ${esc(progress)}</p></div></div>${current?`<div class="ra-kpi"><span>Current candidate</span><b>${esc(current.name)}</b><div class="ra-note">${esc(current.userId)} · ${esc(current.pipelineStage)}</div></div><div class="ra-field" style="margin-top:8px"><label>Action note</label><input data-faction-session-note="${esc(session.sessionId)}"></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" data-faction-session-action="${esc(session.sessionId)}" data-faction-session-user="${esc(current.userId)}" value="Contacted">Contacted</button><button class="ra-btn" data-faction-session-action="${esc(session.sessionId)}" data-faction-session-user="${esc(current.userId)}" value="Evaluating">Evaluating</button><button class="ra-btn" data-faction-session-action="${esc(session.sessionId)}" data-faction-session-user="${esc(current.userId)}" value="Deferred">Deferred</button><button class="ra-btn" data-faction-session-action="${esc(session.sessionId)}" data-faction-session-user="${esc(current.userId)}" value="Skip">Skip</button></div>`:'<div class="ra-muted">No current candidate. Session is complete or empty.</div>'}<details style="margin-top:8px"><summary>Session history</summary>${(session.outcomes||[]).map(outcome=>`<div>${esc(outcome.userId)} · ${esc(outcome.action)}${outcome.note?` · ${esc(outcome.note)}`:''}</div>`).join('')||'<div class="ra-muted">No actions yet.</div>'}</details></section>`;
-    }).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Create Faction Recruitment Session</h3><p>Sessions process a frozen Faction candidate queue one explicit action at a time.</p></div></div><div class="ra-formgrid"><div class="ra-field"><label>Title</label><input id="ra-faction-session-title"></div><div class="ra-field"><label>Candidate source</label><select id="ra-faction-session-source"><option value="active">All active Faction candidates (${activeCandidates.length})</option></select></div></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn ra-primary" id="ra-faction-session-new">Create Session</button></div></section>${cards||'<section class="ra-panel"><div class="ra-muted">No recruitment sessions yet.</div></section>'}`;
-  }
-
-  return Object.freeze({
-    renderCampaignsPage,
-    renderFollowUpsPage,
-    renderTimelinePage,
-    renderContactOutcomesPage,
-    renderStageAgingPage,
-    renderReactivationPage,
-    renderRecruitmentSessionsPage
-  });
-});
-
-/* bundled runtime: v47-faction-opportunity-ui.js */
-(function(root,factory){
-  let FactionCore=root&&root.RA_V47FactionCore;
-  if(!FactionCore&&typeof module==='object'&&module.exports)FactionCore=require('./v47-faction-core');
-  const api=factory(FactionCore);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V47FactionOpportunityUI=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(FactionCore){
-  'use strict';
-  if(!FactionCore)throw new Error('FactionCore is required.');
-
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const hours=(now,at)=>Math.max(0,(number(now)-number(at,0))/3600000);
-  const metric=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Number(value).toLocaleString():'—');
-  const score=value=>value===null||value===undefined||text(value)===''?'—':(Number.isFinite(Number(value))?Math.round(Number(value)):'—');
-
-  function freshness(lastScoutAt,now){
-    if(!Number.isFinite(Number(lastScoutAt))||Number(lastScoutAt)<=0)return 'Unknown';
-    const age=hours(now,lastScoutAt);
-    if(age<=24)return 'Fresh';
-    if(age<=72)return 'Aging';
-    if(age<=168)return 'Stale';
-    return 'Very stale';
-  }
-
-  function followUpDue(record={},now=Date.now()){
-    return (Array.isArray(record.followUps)?record.followUps:[]).some(item=>{
-      if(['completed','cancelled'].includes(text(item.state).toLowerCase()))return false;
-      const due=Number(item.dueAt);
-      return Number.isFinite(due)&&due<=Number(now);
-    });
-  }
-
-  function profileName(row,profileId){
-    const option=(Array.isArray(row?.profileOptions)?row.profileOptions:[]).find(item=>text(item.profileId)===text(profileId));
-    return text(option?.name)||text(profileId);
-  }
-
-  function selectedMatch(row={}){
-    const evaluations=Array.isArray(row.profileEvaluations)?row.profileEvaluations:[];
-    const pinnedId=text(row.pinnedSpecialistProfileId);
-    const pinned=pinnedId?evaluations.find(item=>text(item.profileId)===pinnedId&&item?.eligible===true):null;
-    if(pinned){
-      return {
-        selectedMatchSource:'Pinned specialist',
-        selectedProfileId:pinnedId,
-        selectedProfileName:profileName(row,pinnedId),
-        selectedMatchScore:pinned.matchScore??null,
-        evaluation:pinned
-      };
-    }
-
-    const suggestedId=text(row.suggestedProfileId);
-    const suggested=suggestedId?evaluations.find(item=>text(item.profileId)===suggestedId&&item?.eligible===true):null;
-    if(suggested){
-      return {
-        selectedMatchSource:'Suggested specialist',
-        selectedProfileId:suggestedId,
-        selectedProfileName:profileName(row,suggestedId),
-        selectedMatchScore:suggested.matchScore??null,
-        evaluation:suggested
-      };
-    }
-
-    const best=[...evaluations]
-      .filter(item=>item?.eligible===true)
-      .sort((a,b)=>number(b.matchScore)-number(a.matchScore)||text(a.profileId).localeCompare(text(b.profileId)))[0]||null;
-    if(best){
-      const profileId=text(best.profileId);
-      return {
-        selectedMatchSource:'Suggested specialist',
-        selectedProfileId:profileId,
-        selectedProfileName:profileName(row,profileId),
-        selectedMatchScore:best.matchScore??null,
-        evaluation:best
-      };
-    }
-
-    return {
-      selectedMatchSource:'Faction Baseline',
-      selectedProfileId:'',
-      selectedProfileName:'',
-      selectedMatchScore:row.baselineScore??null,
-      evaluation:null
-    };
-  }
-
-  function buildOpportunityRows(rows=[],options={}){
-    const now=number(options.now,Date.now());
-    const weights={...(options.weights||{})};
-    return (Array.isArray(rows)?rows:[]).map(row=>{
-      const chosen=selectedMatch(row);
-      const factionRecord=row.factionRecord||{};
-      const player=row.player||{};
-      const input={
-        match:chosen.selectedMatchScore,
-        fit:row.fit??null,
-        availability:text(row.availability),
-        lastActiveAgeHours:row.lastActive!==null&&row.lastActive!==undefined&&Number.isFinite(Number(row.lastActive))?hours(now,row.lastActive):null,
-        intelligenceFreshness:freshness(player.lastScoutAt,now),
-        contactPenalty:row.doNotContact===true||factionRecord.doNotContact===true?100:0,
-        followUpDue:followUpDue(factionRecord,now)
-      };
-      return {
-        userId:text(row.userId),
-        name:text(row.name)||`User ${text(row.userId)}`,
-        pipelineStage:text(row.pipelineStage),
-        baselineEligibility:text(row.baselineEligibility)||'Unknown',
-        baselineScore:row.baselineScore??null,
-        availability:text(row.availability)||'Unknown',
-        fit:row.fit??null,
-        ee:row.ee??null,
-        level:row.level??null,
-        selectedMatchSource:chosen.selectedMatchSource,
-        selectedProfileId:chosen.selectedProfileId,
-        selectedProfileName:chosen.selectedProfileName,
-        selectedMatchScore:chosen.selectedMatchScore,
-        opportunity:FactionCore.computeOpportunity(input,weights),
-        intelligenceFreshness:input.intelligenceFreshness,
-        doNotContact:row.doNotContact===true||factionRecord.doNotContact===true,
-        pinnedSpecialistProfileId:text(row.pinnedSpecialistProfileId),
-        suggestedProfileId:text(row.suggestedProfileId),
-        profileEvaluations:Array.isArray(row.profileEvaluations)?row.profileEvaluations.map(item=>({...item})):[],
-        profileOptions:Array.isArray(row.profileOptions)?row.profileOptions.map(item=>({...item})):[],
-        factionRecord,
-        player
-      };
-    }).sort((a,b)=>number(b.opportunity?.score)-number(a.opportunity?.score)||a.name.localeCompare(b.name)||a.userId.localeCompare(b.userId,undefined,{numeric:true}));
-  }
-
-  function renderBreakdown(opportunity={}){
-    return (opportunity.breakdown||[]).map(item=>item.known===false?`<span>${esc(item.label)}: — (excluded)</span>`:`<span>${esc(item.label)}: ${score(item.value)} × ${score(item.weight)}%${item.label==='Contact penalty'?'':` = ${esc(item.contribution)}`}</span>`).join('<br>');
-  }
-
-  function renderOpportunityPage(rows=[]){
-    const body=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td><b>${esc(row.name)}</b><div class="ra-muted">${esc(row.userId)} · ${esc(row.pipelineStage)}</div></td><td><b>${score(row.opportunity?.score)}</b></td><td>${esc(row.selectedMatchSource)}${row.selectedProfileName?`<div class="ra-muted">${esc(row.selectedProfileName)} · Match ${score(row.selectedMatchScore)}%</div>`:`<div class="ra-muted">Baseline ${score(row.selectedMatchScore)}%</div>`}</td><td>${esc(row.baselineEligibility)}</td><td>${score(row.fit)}</td><td>${esc(row.intelligenceFreshness)}</td><td><details><summary>Breakdown</summary><div class="ra-note">${renderBreakdown(row.opportunity)}</div><div class="ra-muted">${esc(row.opportunity?.explanation)}</div></details></td></tr>`).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Opportunity Queue</h3><p>Explainable local priority scoring. Specialist Match ranks work; it never changes Faction Baseline eligibility or pipeline stage.</p></div></div><div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Opportunity</th><th>Match Source</th><th>Faction Baseline</th><th>Fit</th><th>Freshness</th><th>Why</th></tr></thead><tbody>${body||'<tr><td colspan="7">No Faction opportunities.</td></tr>'}</tbody></table></div></section>`;
-  }
-
-  function buildCompareRows(rows=[],selectedIds=[]){
-    const ids=[];
-    for(const value of Array.isArray(selectedIds)?selectedIds:[]){
-      const id=text(value);
-      if(id&&!ids.includes(id))ids.push(id);
-      if(ids.length>=4)break;
-    }
-    const byId=new Map((Array.isArray(rows)?rows:[]).map(row=>[text(row.userId),row]));
-    return ids.map(id=>byId.get(id)).filter(Boolean).map(row=>({
-      userId:text(row.userId),
-      name:text(row.name)||`User ${text(row.userId)}`,
-      pipelineStage:text(row.pipelineStage),
-      baselineEligibility:text(row.baselineEligibility)||'Unknown',
-      baselineScore:row.baselineScore??null,
-      availability:text(row.availability)||'Unknown',
-      fit:row.fit??null,
-      ee:row.ee??null,
-      level:row.level??null,
-      activity30:row.activity30??null,
-      xanax30:row.xanax30??null,
-      refills30:row.refills30??null,
-      attacks30:row.attacks30??null,
-      rwHits30:row.rwHits30??null,
-      networth:row.networth??null,
-      lastActive:row.lastActive??null,
-      doNotContact:row.doNotContact===true||row.factionRecord?.doNotContact===true,
-      pinnedSpecialistProfileId:text(row.pinnedSpecialistProfileId),
-      suggestedProfileId:text(row.suggestedProfileId),
-      profileEvaluations:Array.isArray(row.profileEvaluations)?row.profileEvaluations.map(item=>({...item})):[],
-      profileOptions:Array.isArray(row.profileOptions)?row.profileOptions.map(item=>({...item})):[]
-    }));
-  }
-
-  function displayProfile(row={}){
-    const chosen=selectedMatch(row);
-    if(chosen.selectedProfileName)return `${chosen.selectedProfileName} (${score(chosen.selectedMatchScore)}%)`;
-    return `Faction Baseline (${score(chosen.selectedMatchScore)}%)`;
-  }
-
-  function renderComparePage(rows=[],selectedIds=[]){
-    const selected=new Set(buildCompareRows(rows,selectedIds).map(row=>row.userId));
-    const choices=(Array.isArray(rows)?rows:[]).map(row=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:4px 10px 4px 0"><input type="checkbox" data-faction-compare-select="${esc(row.userId)}" ${selected.has(text(row.userId))?'checked':''}> ${esc(row.name)} [${esc(row.userId)}]</label>`).join('');
-    const picked=buildCompareRows(rows,selectedIds);
-    const sourceById=new Map((Array.isArray(rows)?rows:[]).map(row=>[text(row.userId),row]));
-    const cards=picked.map(row=>{
-      const source=sourceById.get(row.userId)||row;
-      return `<section class="ra-panel" style="min-width:240px;flex:1"><h3>${esc(row.name)}</h3><div class="ra-detail-grid"><span>Player ID<b>${esc(row.userId)}</b></span><span>Stage<b>${esc(row.pipelineStage)}</b></span><span>Faction Baseline<b>${esc(row.baselineEligibility)} · ${score(row.baselineScore)}%</b></span><span>Availability<b>${esc(row.availability)}</b></span><span>Fit<b>${score(row.fit)}</b></span><span>EE<b>${metric(row.ee)}</b></span><span>Level<b>${metric(row.level)}</b></span><span>Activity 30d<b>${metric(row.activity30)}</b></span><span>RW Hits 30d<b>${metric(row.rwHits30)}</b></span><span>Attacks 30d<b>${metric(row.attacks30)}</b></span><span>Specialist Profile<b>${esc(displayProfile(source))}</b></span><span>Do Not Contact<b>${row.doNotContact?'Yes':'No'}</b></span></div></section>`;
-    }).join('');
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Compare</h3><p>Select up to four Torn players to compare shared facts with Faction-specific recruitment results.</p></div></div><div>${choices||'<span class="ra-muted">No Faction players available.</span>'}</div></section><div style="display:flex;gap:10px;flex-wrap:wrap">${cards||'<section class="ra-panel"><div class="ra-muted">Select players above to compare them.</div></section>'}</div>`;
-  }
-
-  return Object.freeze({
-    freshness,
-    followUpDue,
-    selectedMatch,
-    buildOpportunityRows,
-    renderOpportunityPage,
-    buildCompareRows,
-    renderComparePage
+    renderProfileEditor
   });
 });
 
@@ -5185,20 +3673,12 @@
   const deps={
     FactionCore:root&&root.RA_V47FactionCore,
     FactionUI:root&&root.RA_V47FactionUI,
-    Operations:root&&root.RA_V47FactionOperations,
-    Workflow:root&&root.RA_V47FactionWorkflow,
-    WorkflowUI:root&&root.RA_V47FactionWorkflowUI,
-    OpportunityUI:root&&root.RA_V47FactionOpportunityUI,
     Messaging:root&&root.RA_V45Messaging,
     ResultsCore:root&&root.RA_ResultsCore
   };
   if(typeof module==='object'&&module.exports){
     deps.FactionCore=require('./v47-faction-core');
     deps.FactionUI=require('./v47-faction-ui');
-    deps.Operations=require('./v47-faction-operations');
-    deps.Workflow=require('./v47-faction-workflow');
-    deps.WorkflowUI=require('./v47-faction-workflow-ui');
-    deps.OpportunityUI=require('./v47-faction-opportunity-ui');
     deps.Messaging=require('./v45-messaging');
     deps.ResultsCore=require('./results-core');
   }
@@ -5208,38 +3688,19 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {FactionCore,FactionUI,Operations,Workflow,WorkflowUI,OpportunityUI,Messaging,ResultsCore}=D;
-  if(!FactionCore||!FactionUI||!Operations||!Workflow||!WorkflowUI||!OpportunityUI||!Messaging||!ResultsCore)throw new Error('Faction platform dependencies are required.');
+  const {FactionCore,FactionUI,Messaging,ResultsCore}=D;
+  if(!FactionCore||!FactionUI||!Messaging||!ResultsCore)throw new Error('Faction platform dependencies are required.');
 
-  const FACTION_ROUTES=Object.freeze([
-    'faction-overview','faction-today','faction-discover','faction-candidates','faction-pipeline',
-    'faction-requirements','faction-campaigns','faction-followups','faction-timeline','faction-stage-aging',
-    'faction-contact-outcomes','faction-recruitment-sessions','faction-reactivation','faction-opportunity','faction-compare'
-  ]);
+  const FACTION_ROUTES=Object.freeze(['faction-candidates']);
   const IMPLEMENTED_ROUTES=new Set(FACTION_ROUTES);
   const META=Object.freeze({
-    'faction-overview':['Faction Overview','Faction recruitment status and work needing attention.'],
-    'faction-today':['Faction Today','Prioritized Faction recruitment work for today.'],
-    'faction-discover':['Faction Discover','Add and review Faction recruitment prospects without creating Company workflow state.'],
-    'faction-candidates':['Faction Candidates','Search and manage Faction recruitment candidates.'],
-    'faction-pipeline':['Faction Pipeline','Move Faction candidates through explicit recruitment stages.'],
-    'faction-requirements':['Faction Requirements','Manage Faction Baseline requirements and specialist profiles.'],
-    'faction-campaigns':['Faction Campaigns','Organize Faction recruitment campaigns.'],
-    'faction-followups':['Faction Follow-ups','Track Faction candidate follow-ups.'],
-    'faction-timeline':['Faction Timeline','Review immutable Faction history and recruiter notes.'],
-    'faction-stage-aging':['Faction Stage Aging','Review candidates aging in their current Faction stage.'],
-    'faction-contact-outcomes':['Faction Contact Outcomes','Track contact outcomes and Do Not Contact independently of stage.'],
-    'faction-recruitment-sessions':['Faction Recruitment Sessions','Work focused Faction recruitment queues one explicit action at a time.'],
-    'faction-reactivation':['Faction Reactivation','Restart Faction recruitment cycles without duplicating identity.'],
-    'faction-opportunity':['Faction Opportunity Queue','Review explainable Faction recruitment opportunities.'],
-    'faction-compare':['Faction Compare','Compare Faction candidates side by side.']
+    'faction-candidates':['Faction Candidates','Search and manage Faction recruitment candidates.']
   });
-  const DEFAULT_OPPORTUNITY_WEIGHTS=Object.freeze({match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
   const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
   const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
   const RESULTS_PAGE_SIZE=100;
   const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,compareSelection:new Set(),searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},resultPage:0};
+  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},resultPage:0};
 
   const text=value=>String(value??'').trim();
   const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
@@ -5253,7 +3714,6 @@
   function normalizeResultsView(raw={}){const src=raw&&typeof raw.filters==='object'&&raw.filters?raw.filters:{};const filters={...DEFAULT_SEARCH_FILTERS};for(const key of Object.keys(DEFAULT_SEARCH_FILTERS))if(src[key]!==undefined&&src[key]!==null)filters[key]=text(src[key]);if(!['any','has','none'].includes(filters.organizationPresence))filters.organizationPresence='any';const key=SORT_KEYS.has(text(raw?.sort?.key))?text(raw.sort.key):DEFAULT_SORT.key;return{filters,sort:{key,direction:raw?.sort?.direction==='desc'?'desc':'asc'},resultPage:Math.max(0,Math.floor(number(raw?.resultPage,0))),profileId:text(raw?.profileId),profileVersion:text(raw?.profileVersion)};}
   function savedResultsView(app){const raw=app?._test?.state?.settings?.candidates?.resultsView?.faction;return raw&&typeof raw==='object'?normalizeResultsView(raw):null;}
   async function persistResultsView(app){if(typeof app?.saveResultsView!=='function')return;const view=normalizeResultsView({filters:runtime.searchFilters,sort:runtime.sort,resultPage:runtime.resultPage,profileId:runtime.profileFiltersId,profileVersion:runtime.profileFiltersVersion});const key=JSON.stringify(view);if(key===runtime.savedResultsViewKey)return;runtime.savedResultsViewKey=key;await app.saveResultsView('faction',view);}
-  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   let idSequence=0;
   function makeId(prefix){
     const uuid=globalThis.crypto?.randomUUID?.();
@@ -5261,12 +3721,9 @@
     idSequence=(idSequence+1)%1000000;
     return `${prefix}-${Date.now()}-${idSequence}`;
   }
-  const unique=values=>[...new Set((Array.isArray(values)?values:[]).map(text).filter(Boolean))];
-  const terminalStage=stage=>['Joined','Rejected'].includes(text(stage));
 
   function isFactionRoute(value){return FACTION_ROUTES.includes(text(value));}
   function routeMeta(route){const [title,description]=META[text(route)]||META['faction-overview'];return{title,description};}
-  function opportunityWeights(config={}){return{...DEFAULT_OPPORTUNITY_WEIGHTS,...(config.opportunityWeights||{})};}
   function profileSearchFilters(profile={}){
     const saved=FactionCore.normalizeFactionSearchFilters(profile?.searchFilters||{});
     const out={...DEFAULT_SEARCH_FILTERS,...saved};
@@ -5292,35 +3749,8 @@
   async function getProfiles(app){if(app?._test?.factionRepositories?.profiles?.list)return app._test.factionRepositories.profiles.list();return dbGetAll(app._test.state.db,'factionSpecialistProfiles');}
   async function saveProfile(app,profile){if(app?._test?.factionRepositories?.profiles?.save)return app._test.factionRepositories.profiles.save(profile);const next=FactionCore.normalizeSpecialistProfile({...profile,profileId:text(profile.profileId)||makeId('profile'),updatedAt:Date.now()});await dbPut(app._test.state.db,'factionSpecialistProfiles',next);return next;}
   async function removeProfile(app,profileId){if(app?._test?.factionRepositories?.profiles?.remove)return app._test.factionRepositories.profiles.remove(profileId);return dbDelete(app._test.state.db,'factionSpecialistProfiles',text(profileId));}
-  async function getCampaigns(app){if(app?._test?.factionRepositories?.campaigns?.list)return app._test.factionRepositories.campaigns.list();return dbGetAll(app._test.state.db,'factionCampaigns');}
-  async function getCampaign(app,campaignId){if(app?._test?.factionRepositories?.campaigns?.get)return app._test.factionRepositories.campaigns.get(campaignId);return dbGet(app._test.state.db,'factionCampaigns',text(campaignId));}
-  async function saveCampaign(app,campaign){if(app?._test?.factionRepositories?.campaigns?.save)return app._test.factionRepositories.campaigns.save(campaign);const next={...campaign,campaignId:text(campaign.campaignId)||makeId('faction-campaign'),candidateIds:unique(campaign.candidateIds),updatedAt:Date.now()};await dbPut(app._test.state.db,'factionCampaigns',next);return next;}
-  async function removeCampaign(app,campaignId){if(app?._test?.factionRepositories?.campaigns?.remove)return app._test.factionRepositories.campaigns.remove(campaignId);return dbDelete(app._test.state.db,'factionCampaigns',text(campaignId));}
-  async function getSessions(app){if(app?._test?.factionRepositories?.sessions?.list)return app._test.factionRepositories.sessions.list();return dbGetAll(app._test.state.db,'factionRecruitmentSessions');}
-  async function getSession(app,sessionId){if(app?._test?.factionRepositories?.sessions?.get)return app._test.factionRepositories.sessions.get(sessionId);return dbGet(app._test.state.db,'factionRecruitmentSessions',text(sessionId));}
-  async function saveSession(app,session){if(app?._test?.factionRepositories?.sessions?.save)return app._test.factionRepositories.sessions.save(session);const next={...session,sessionId:text(session.sessionId)||makeId('faction-session'),candidateIds:unique(session.candidateIds),updatedAt:Date.now()};await dbPut(app._test.state.db,'factionRecruitmentSessions',next);return next;}
 
-  async function saveFactionPatch(app,userId,patch){
-    const id=text(userId);
-    if(!/^\d+$/.test(id))throw new Error('A valid Torn player ID is required.');
-    if(app?._test?.repositories?.faction?.ensure)return app._test.repositories.faction.ensure(id,patch,{source:'faction-platform',observedAt:Date.now()});
-    const existing=await dbGet(app._test.state.db,'factionRecruitment',id);
-    if(!existing)throw new Error('Faction candidate was not found.');
-    const next={...existing,...patch,userId:id,domain:'faction',updatedAt:Date.now()};
-    await dbPut(app._test.state.db,'factionRecruitment',next);
-    return next;
-  }
 
-  async function ensureFactionCandidate(app,userId){
-    const id=text(userId);
-    if(!/^\d+$/.test(id)||Number(id)<=0)throw new Error('Enter a valid Torn player ID.');
-    const existing=await dbGet(app._test.state.db,'factionRecruitment',id);
-    const sources=unique([...(existing?.discoverySources||[]),'FACTION MANUAL']);
-    if(app?._test?.repositories?.faction?.ensure)return app._test.repositories.faction.ensure(id,{pipelineStage:existing?.pipelineStage||'Prospect',discoverySources:sources,newlyDiscoveredAt:existing?.newlyDiscoveredAt||Date.now()},{source:'faction-manual',observedAt:Date.now()});
-    const next={...(existing||{}),userId:id,domain:'faction',pipelineStage:existing?.pipelineStage||'Prospect',availability:existing?.availability||'Unknown',discoverySources:sources,newlyDiscoveredAt:existing?.newlyDiscoveredAt||Date.now(),createdAt:existing?.createdAt||Date.now(),updatedAt:Date.now()};
-    await dbPut(app._test.state.db,'factionRecruitment',next);
-    return next;
-  }
 
   async function buildRows(app){
     const db=app._test.state.db;
@@ -5330,10 +3760,6 @@
     return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};const selectedEvaluation=activeProfile?(row.profileEvaluations||[]).find(item=>text(item.profileId)===activeProfile.profileId):null;const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),candidateLocal:candidate,eligibilityScore:selectedEvaluation?.matchScore??null,eligibility:selectedEvaluation?.eligibility??null};const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'faction',useEligibility:Boolean(activeProfile)});return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness,activeRecruitmentProfileId:activeProfile?.profileId||'',activeRecruitmentProfileName:activeProfile?.name||''};});
   }
 
-  async function buildOpportunityRows(app,rows,now=Date.now()){
-    const config=await getConfig(app);
-    return OpportunityUI.buildOpportunityRows(rows,{weights:opportunityWeights(config),now});
-  }
 
   async function persistRoute(app,page){
     const state=app?._test?.state;if(!state?.db)return false;
@@ -5357,77 +3783,16 @@
   }
 
   async function rowFor(userId){const rows=await buildRows(runtime.app);const row=rows.find(item=>text(item.userId)===text(userId));if(!row)throw new Error('Faction candidate was not found.');return row;}
-  async function saveOperationalRecord(userId,next){await saveFactionPatch(runtime.app,userId,next);return next;}
 
-  async function changeFactionStage(userId,stage){
-    const row=await rowFor(userId);
-    const next=Workflow.changeStage(row.factionRecord,text(stage),{baselineHardFailed:row.hardFailed===true,now:Date.now()});
-    return saveOperationalRecord(userId,next);
-  }
-  async function setProfilePin(userId,profileId){await saveFactionPatch(runtime.app,userId,{pinnedSpecialistProfileId:text(profileId),updatedAt:Date.now()});return true;}
 
-  async function addFollowUpFromUi(){
-    const userId=text(document.getElementById('ra-faction-followup-player')?.value);const row=await rowFor(userId);
-    const dueAt=Date.parse(text(document.getElementById('ra-faction-followup-due')?.value));if(!Number.isFinite(dueAt))throw new Error('Choose a valid follow-up date and time.');
-    const unit=text(document.getElementById('ra-faction-followup-recurrence-unit')?.value);const recurrence=unit?{unit,interval:Math.max(1,number(document.getElementById('ra-faction-followup-recurrence-interval')?.value,1))}:null;
-    return saveOperationalRecord(userId,Operations.addFollowUp(row.factionRecord,{dueAt,reason:text(document.getElementById('ra-faction-followup-reason')?.value),note:text(document.getElementById('ra-faction-followup-note')?.value),recurrence},Date.now()));
-  }
-  async function completeFollowUp(userId,followUpId){const row=await rowFor(userId);return saveOperationalRecord(userId,Operations.completeFollowUp(row.factionRecord,followUpId,Date.now()));}
-  async function recordOutcomeFromUi(){const userId=text(document.getElementById('ra-faction-outcome-player')?.value);const row=await rowFor(userId);return saveOperationalRecord(userId,Operations.recordContactOutcome(row.factionRecord,{result:text(document.getElementById('ra-faction-outcome-result')?.value),channel:text(document.getElementById('ra-faction-outcome-channel')?.value),note:text(document.getElementById('ra-faction-outcome-note')?.value)},Date.now()));}
-  async function toggleDnc(userId,enabled){const row=await rowFor(userId);const reason=text(document.querySelector(`[data-faction-dnc-reason="${userId}"]`)?.value);return saveOperationalRecord(userId,Operations.setDoNotContact(row.factionRecord,enabled,reason,Date.now()));}
-  async function addTimelineNoteFromUi(){const userId=text(document.getElementById('ra-faction-timeline-player')?.value);const row=await rowFor(userId);const value=text(document.getElementById('ra-faction-timeline-note')?.value);if(!value)throw new Error('Timeline note cannot be empty.');return saveOperationalRecord(userId,Operations.addTimelineNote(row.factionRecord,{text:value},Date.now()));}
-  async function editTimelineNote(userId,noteId){const row=await rowFor(userId);const current=(row.factionRecord.timelineNotes||[]).find(note=>text(note.noteId)===text(noteId));if(!current)throw new Error('Timeline note not found.');const value=globalThis.prompt?.('Edit recruiter note',text(current.text));if(value==null)return false;return saveOperationalRecord(userId,Operations.editTimelineNote(row.factionRecord,noteId,value,Date.now()));}
-  async function deleteTimelineNote(userId,noteId){const row=await rowFor(userId);if(globalThis.confirm&&!globalThis.confirm('Delete this recruiter note?'))return false;return saveOperationalRecord(userId,Operations.deleteTimelineNote(row.factionRecord,noteId,Date.now()));}
-  async function reactivatePlayer(userId){const row=await rowFor(userId);const reason=text(document.querySelector(`[data-faction-reactivate-reason="${userId}"]`)?.value);return saveOperationalRecord(userId,Workflow.reactivate(row.factionRecord,reason,Date.now()));}
 
-  async function createCampaignFromUi(){return saveCampaign(runtime.app,{campaignId:makeId('faction-campaign'),title:text(document.getElementById('ra-faction-campaign-title')?.value)||'Untitled Campaign',target:text(document.getElementById('ra-faction-campaign-target')?.value),profileId:text(document.getElementById('ra-faction-campaign-profile')?.value),status:text(document.getElementById('ra-faction-campaign-status')?.value)||'Draft',notes:text(document.getElementById('ra-faction-campaign-notes')?.value),candidateIds:[]});}
-  async function saveCampaignFromCard(campaignId){const card=document.querySelector(`[data-faction-campaign-card="${campaignId}"]`);const existing=await getCampaign(runtime.app,campaignId);if(!existing||!card)throw new Error('Faction campaign was not found.');const get=field=>card.querySelector(`[data-faction-campaign-field="${field}"]`)?.value??'';return saveCampaign(runtime.app,{...existing,title:text(get('title')),target:text(get('target')),profileId:text(get('profileId')),status:text(get('status'))||'Draft',notes:text(get('notes'))});}
-  async function addCampaignMember(campaignId){const campaign=await getCampaign(runtime.app,campaignId);if(!campaign)throw new Error('Faction campaign was not found.');const userId=text(document.querySelector(`[data-faction-campaign-member-select="${campaignId}"]`)?.value);if(!userId)throw new Error('Choose a candidate first.');await saveCampaign(runtime.app,{...campaign,candidateIds:unique([...(campaign.candidateIds||[]),userId])});const row=await rowFor(userId);await saveOperationalRecord(userId,Workflow.addCampaignMembership(row.factionRecord,campaignId,Date.now()));}
-  async function removeCampaignMember(campaignId,userId){const campaign=await getCampaign(runtime.app,campaignId);if(!campaign)throw new Error('Faction campaign was not found.');await saveCampaign(runtime.app,{...campaign,candidateIds:(campaign.candidateIds||[]).filter(id=>text(id)!==text(userId))});const row=await rowFor(userId);await saveOperationalRecord(userId,Workflow.removeCampaignMembership(row.factionRecord,campaignId,Date.now()));}
 
-  async function createSessionFromUi(){const rows=await buildRows(runtime.app);const candidateIds=rows.filter(row=>!row.archived&&!terminalStage(row.pipelineStage)).map(row=>row.userId);return saveSession(runtime.app,{sessionId:makeId('faction-session'),title:text(document.getElementById('ra-faction-session-title')?.value)||'Recruitment Session',candidateIds,cursor:0,status:candidateIds.length?'Draft':'Completed',outcomes:[],filters:{source:'active'}});}
-  async function runSessionAction(sessionId,userId,action){const session=await getSession(runtime.app,sessionId);if(!session)throw new Error('Faction recruitment session was not found.');const note=text(document.querySelector(`[data-faction-session-note="${sessionId}"]`)?.value);if(action!=='Skip'&&FactionCore.FACTION_STAGES.includes(action))await changeFactionStage(userId,action);const next=Workflow.recordSessionAction(session,{userId,action,note},Date.now());return saveSession(runtime.app,next);}
 
   async function saveBaselineFromUi(){const host=document.getElementById('ra-faction-baseline-criteria');return saveConfig(runtime.app,{baseline:{criteria:readCriteria(host)}});}
   async function createProfile(){return saveProfile(runtime.app,{profileId:makeId('profile'),name:'New Specialist Profile',status:'Draft',criteria:[],notes:''});}
   async function saveProfileFromCard(profileId){const card=document.querySelector(`[data-faction-profile-card="${profileId}"]`);if(!card)throw new Error('Specialist profile was not found.');const profiles=await getProfiles(runtime.app);const existing=profiles.find(profile=>text(profile.profileId)===text(profileId));if(!existing)throw new Error('Specialist profile was not found.');const criteriaHost=card.querySelector('[data-faction-profile-criteria]');return saveProfile(runtime.app,{...existing,name:text(card.querySelector('[data-faction-profile-field="name"]')?.value),status:text(card.querySelector('[data-faction-profile-field="status"]')?.value)||'Draft',notes:text(card.querySelector('[data-faction-profile-field="notes"]')?.value),criteria:readCriteria(criteriaHost)});}
 
-  async function grantWaiverFromUi(){
-    const userId=text(document.getElementById('ra-faction-waiver-player')?.value);
-    if(!userId)throw new Error('Choose a Faction candidate.');
-    const row=await rowFor(userId);
-    const context=text(document.getElementById('ra-faction-waiver-context')?.value).toLowerCase()==='specialist'?'specialist':'baseline';
-    const profileId=context==='specialist'?text(document.getElementById('ra-faction-waiver-profile')?.value):'';
-    if(context==='specialist'&&!profileId)throw new Error('Choose a specialist profile for this waiver.');
-    const requirementId=text(document.getElementById('ra-faction-waiver-requirement')?.value);
-    if(!requirementId)throw new Error('Choose a requirement to waive.');
-    const reason=text(document.getElementById('ra-faction-waiver-reason')?.value);
-    if(!reason)throw new Error('A waiver reason is required.');
-    const[config,profiles]=await Promise.all([getConfig(runtime.app),getProfiles(runtime.app)]);
-    const baseline=FactionCore.normalizeBaseline(config.baseline||{});
-    const profile=context==='specialist'?profiles.map(FactionCore.normalizeSpecialistProfile).find(item=>text(item.profileId)===profileId):null;
-    if(context==='specialist'&&!profile)throw new Error('Specialist profile was not found.');
-    const criteria=context==='specialist'?(profile.criteria||[]):baseline.criteria;
-    if(!criteria.some(item=>text(item.id)===requirementId))throw new Error('The selected requirement does not belong to the selected waiver context.');
-    const duplicate=(row.factionRecord.waivers||[]).some(item=>text(item.state)==='Active'&&text(item.requirementId)===requirementId&&text(item.context)===context&&text(item.profileId)===profileId);
-    if(duplicate)throw new Error('This requirement already has an active waiver for the candidate.');
-    const reviewRaw=text(document.getElementById('ra-faction-waiver-review')?.value);
-    let reviewAt=null;
-    if(reviewRaw){reviewAt=Date.parse(reviewRaw);if(!Number.isFinite(reviewAt))throw new Error('Choose a valid waiver review date and time.');}
-    const next=Operations.grantWaiver(row.factionRecord,{requirementId,context,profileId,reason,reviewAt},Date.now());
-    return saveOperationalRecord(userId,next);
-  }
 
-  async function resolveWaiverFromUi(userId,waiverId){
-    const row=await rowFor(userId);
-    const waiver=(row.factionRecord.waivers||[]).find(item=>text(item.waiverId)===text(waiverId));
-    if(!waiver)throw new Error('Waiver not found.');
-    if(text(waiver.state)!=='Active')throw new Error('Only an active waiver can be resolved.');
-    const answer=globalThis.prompt?globalThis.prompt('Resolution reason (optional)',''):'';
-    if(answer==null)return false;
-    const next=Operations.resolveWaiver(row.factionRecord,waiverId,text(answer),Date.now());
-    return saveOperationalRecord(userId,next);
-  }
 
   function recruitPlayer(row,override=false){
     if(row.doNotContact&&!override)throw new Error('This player is marked Do Not Contact. Use the deliberate override control if contact is still required.');
@@ -5436,40 +3801,30 @@
     return runtime.app.recruitCandidate?.('faction',row.userId,row.name,{overrideDnc:override,dncConfirmed:override});
   }
 
-  function renderDiscover(rows=[]){
-    const manual=rows.filter(row=>(row.factionRecord?.discoverySources||[]).some(source=>text(source).toUpperCase().includes('FACTION')));
-    return `<section class="ra-panel"><div class="ra-panel-head"><div><h3>Faction Discover</h3><p>Add a Torn player ID directly to the Faction workflow. This does not create or change a Company recruitment record.</p></div></div><div class="ra-actions"><input id="ra-faction-discover-id" inputmode="numeric" placeholder="Torn player ID"><button class="ra-btn ra-primary" id="ra-faction-discover-add">Add Faction Prospect</button></div></section><section class="ra-panel"><h3>Faction discovery provenance</h3>${manual.map(row=>`<div>${esc(row.name)} <span class="ra-muted">[${esc(row.userId)}] · ${esc((row.factionRecord.discoverySources||[]).join(', '))}</span></div>`).join('')||'<div class="ra-muted">No Faction discovery records yet.</div>'}</section>`;
-  }
 
   function syncActiveNav(page){document.querySelectorAll('#ra-nav [data-page]').forEach(button=>button.classList.toggle('active',button.dataset.page===page));}
   function reportError(error){console.error('[RA v4.7 Faction]',error);try{globalThis.alert?.(`Faction Recruitment failed: ${error?.message||error}`);}catch{}}
 
-  function addCriterionRow(host,scope){if(!host)return;host.insertAdjacentHTML('beforeend',FactionUI.renderCriterionRow({id:makeId('criterion'),field:'level',operator:'gte',kind:'Preferred',weight:1},scope));bindContentControls();}
-
-  function syncWaiverControls(){
-    const contextSelect=document.getElementById('ra-faction-waiver-context');
-    const profileSelect=document.getElementById('ra-faction-waiver-profile');
-    const requirementSelect=document.getElementById('ra-faction-waiver-requirement');
-    if(!contextSelect||!profileSelect||!requirementSelect)return;
-    const context=text(contextSelect.value).toLowerCase()==='specialist'?'specialist':'baseline';
-    const profileId=text(profileSelect.value);
-    profileSelect.disabled=context!=='specialist';
-    let first='';let currentAllowed=false;
-    [...requirementSelect.options].forEach(option=>{
-      if(!option.value)return;
-      const optionContext=text(option.dataset.waiverContext)||'baseline';
-      const optionProfile=text(option.dataset.waiverProfile);
-      const allowed=optionContext===context&&(context!=='specialist'||!profileId||optionProfile===profileId);
-      option.hidden=!allowed;option.disabled=!allowed;
-      if(allowed&&!first)first=option.value;
-      if(allowed&&option.value===requirementSelect.value)currentAllowed=true;
-    });
-    if(!currentAllowed)requirementSelect.value=first;
+  function addCriterionRow(host,scope){if(!host)return;host.insertAdjacentHTML('beforeend',FactionUI.renderCriterionRow({id:makeId('criterion'),field:'level',operator:'gte',kind:'Preferred',weight:1},scope));}
+  function bindProfileEditor(){
+    const editor=document.getElementById('ra-faction-profile-editor');if(!editor)return;
+    const rerender=async work=>{try{runtime.profileEditorOpen=true;await work();await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}};
+    editor.ontoggle=()=>{runtime.profileEditorOpen=editor.open;};
+    editor.onclick=event=>{
+      const target=event.target?.closest?.('button');if(!target)return;const data=target.dataset;
+      if(data.factionRemoveCriterion!==undefined)target.closest('[data-faction-criterion-row]')?.remove();
+      else if(target.id==='ra-faction-baseline-add')addCriterionRow(document.getElementById('ra-faction-baseline-criteria'),'baseline');
+      else if(target.id==='ra-faction-baseline-save')rerender(saveBaselineFromUi);
+      else if(target.id==='ra-faction-profile-new')rerender(createProfile);
+      else if(data.factionProfileAddCriterion)addCriterionRow(document.querySelector(`[data-faction-profile-card="${data.factionProfileAddCriterion}"] [data-faction-profile-criteria]`),`profile:${data.factionProfileAddCriterion}`);
+      else if(data.factionProfileSave)rerender(()=>saveProfileFromCard(data.factionProfileSave));
+      else if(data.factionProfileDelete){if(globalThis.confirm&&!globalThis.confirm('Delete this specialist profile?'))return;rerender(()=>removeProfile(runtime.app,data.factionProfileDelete));}
+    };
   }
 
+
   function readVisibleSearchFilters(){return {search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};}
-  function bindContentControls(currentPage){
-    const page=text(currentPage||runtime.app?._test?.state?.page);
+  function bindContentControls(){
     document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters=readVisibleSearchFilters();try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);renderPage('faction-candidates',{persist:false}).catch(reportError);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
     document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
     document.getElementById('ra-faction-profile-apply')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);const profiles=await getProfiles(runtime.app);const profile=profileId?profiles.find(item=>text(item.profileId)===profileId):null;if(profileId&&!profile)throw new Error('Faction specialist profile was not found.');await saveConfig(runtime.app,{activeResultsProfileId:profileId});runtime.resultPage=0;runtime.searchFilters=profile?profileSearchFilters(profile):{...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
@@ -5477,48 +3832,18 @@
     document.getElementById('ra-faction-profile-save-search')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);if(!profileId)throw new Error('Choose a Faction specialist profile first.');const profiles=await getProfiles(runtime.app);const profile=profiles.find(item=>text(item.profileId)===profileId);if(!profile)throw new Error('Faction specialist profile was not found.');runtime.searchFilters=readVisibleSearchFilters();await saveProfile(runtime.app,{...profile,searchFilters:runtime.searchFilters,searchFiltersCustom:true});await saveConfig(runtime.app,{activeResultsProfileId:profileId});await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
     document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('faction-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('faction',link.dataset.playerCard);};});
     document.querySelectorAll('[data-go-page]').forEach(button=>{const route=text(button.dataset.goPage);if(isFactionRoute(route))button.onclick=event=>{event?.preventDefault?.();navigate(route,true).catch(reportError);};});
-    document.querySelectorAll('[data-faction-stage-select]').forEach(select=>select.onchange=async()=>{try{await changeFactionStage(select.dataset.factionStageSelect,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);await renderPage(page,{persist:false});}});
-    document.querySelectorAll('[data-faction-profile-pin]').forEach(select=>select.onchange=async()=>{try{await setProfilePin(select.dataset.factionProfilePin,select.value);await renderPage(page,{persist:false});}catch(error){reportError(error);}});
+    bindProfileEditor();
     document.querySelectorAll('[data-faction-recruit]').forEach(button=>button.onclick=()=>rowFor(button.dataset.factionRecruit).then(row=>recruitPlayer(row,false)).catch(reportError));
     document.querySelectorAll('[data-faction-recruit-override]').forEach(button=>button.onclick=()=>rowFor(button.dataset.factionRecruitOverride).then(row=>recruitPlayer(row,true)).catch(reportError));
 
-    const discover=document.getElementById('ra-faction-discover-add');if(discover)discover.onclick=async()=>{try{await ensureFactionCandidate(runtime.app,document.getElementById('ra-faction-discover-id')?.value);await renderPage('faction-discover',{persist:false});}catch(error){reportError(error);}};
 
-    const baselineAdd=document.getElementById('ra-faction-baseline-add');if(baselineAdd)baselineAdd.onclick=()=>addCriterionRow(document.getElementById('ra-faction-baseline-criteria'),'baseline');
-    const baselineSave=document.getElementById('ra-faction-baseline-save');if(baselineSave)baselineSave.onclick=async()=>{try{await saveBaselineFromUi();await renderPage('faction-requirements',{persist:false});}catch(error){reportError(error);}};
-    const profileNew=document.getElementById('ra-faction-profile-new');if(profileNew)profileNew.onclick=async()=>{try{await createProfile();await renderPage('faction-requirements',{persist:false});}catch(error){reportError(error);}};
-    document.querySelectorAll('[data-faction-profile-save]').forEach(button=>button.onclick=async()=>{try{await saveProfileFromCard(button.dataset.factionProfileSave);await renderPage('faction-requirements',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('[data-faction-profile-delete]').forEach(button=>button.onclick=async()=>{try{if(globalThis.confirm&&!globalThis.confirm('Delete this specialist profile?'))return;await removeProfile(runtime.app,button.dataset.factionProfileDelete);await renderPage('faction-requirements',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('[data-faction-profile-add-criterion]').forEach(button=>button.onclick=()=>{const card=document.querySelector(`[data-faction-profile-card="${button.dataset.factionProfileAddCriterion}"]`);addCriterionRow(card?.querySelector('[data-faction-profile-criteria]'),`profile:${button.dataset.factionProfileAddCriterion}`);});
-    document.querySelectorAll('[data-faction-remove-criterion]').forEach(button=>button.onclick=()=>button.closest('[data-faction-criterion-row]')?.remove());
 
-    const waiverContext=document.getElementById('ra-faction-waiver-context');if(waiverContext)waiverContext.onchange=syncWaiverControls;
-    const waiverProfile=document.getElementById('ra-faction-waiver-profile');if(waiverProfile)waiverProfile.onchange=syncWaiverControls;
-    syncWaiverControls();
-    const waiverGrant=document.getElementById('ra-faction-waiver-grant');if(waiverGrant)waiverGrant.onclick=async()=>{try{await grantWaiverFromUi();await renderPage('faction-requirements',{persist:false});}catch(error){reportError(error);}};
-    document.querySelectorAll('[data-faction-waiver-resolve]').forEach(button=>button.onclick=async()=>{try{const changed=await resolveWaiverFromUi(button.dataset.factionWaiverPlayer,button.dataset.factionWaiverResolve);if(changed!==false)await renderPage('faction-requirements',{persist:false});}catch(error){reportError(error);}});
 
-    const campaignNew=document.getElementById('ra-faction-campaign-new');if(campaignNew)campaignNew.onclick=async()=>{try{await createCampaignFromUi();await renderPage('faction-campaigns',{persist:false});}catch(error){reportError(error);}};
-    document.querySelectorAll('[data-faction-campaign-save]').forEach(button=>button.onclick=async()=>{try{await saveCampaignFromCard(button.dataset.factionCampaignSave);await renderPage('faction-campaigns',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('[data-faction-campaign-delete]').forEach(button=>button.onclick=async()=>{try{if(globalThis.confirm&&!globalThis.confirm('Delete this Faction campaign?'))return;await removeCampaign(runtime.app,button.dataset.factionCampaignDelete);await renderPage('faction-campaigns',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('[data-faction-campaign-add-member]').forEach(button=>button.onclick=async()=>{try{await addCampaignMember(button.dataset.factionCampaignAddMember);await renderPage('faction-campaigns',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('[data-faction-campaign-remove-member]').forEach(button=>button.onclick=async()=>{try{await removeCampaignMember(button.dataset.factionCampaignRemoveMember,button.dataset.factionCampaignUser);await renderPage('faction-campaigns',{persist:false});}catch(error){reportError(error);}});
 
-    const followupAdd=document.getElementById('ra-faction-followup-add');if(followupAdd)followupAdd.onclick=async()=>{try{await addFollowUpFromUi();await renderPage('faction-followups',{persist:false});}catch(error){reportError(error);}};
-    document.querySelectorAll('[data-faction-followup-complete]').forEach(button=>button.onclick=async()=>{try{await completeFollowUp(button.dataset.factionFollowupUser,button.dataset.factionFollowupComplete);await renderPage('faction-followups',{persist:false});}catch(error){reportError(error);}});
 
-    const noteAdd=document.getElementById('ra-faction-timeline-add');if(noteAdd)noteAdd.onclick=async()=>{try{await addTimelineNoteFromUi();await renderPage('faction-timeline',{persist:false});}catch(error){reportError(error);}};
-    document.querySelectorAll('[data-faction-note-edit]').forEach(button=>button.onclick=async()=>{try{await editTimelineNote(button.dataset.factionNoteUser,button.dataset.factionNoteEdit);await renderPage('faction-timeline',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('[data-faction-note-delete]').forEach(button=>button.onclick=async()=>{try{await deleteTimelineNote(button.dataset.factionNoteUser,button.dataset.factionNoteDelete);await renderPage('faction-timeline',{persist:false});}catch(error){reportError(error);}});
 
-    const outcomeAdd=document.getElementById('ra-faction-outcome-add');if(outcomeAdd)outcomeAdd.onclick=async()=>{try{await recordOutcomeFromUi();await renderPage('faction-contact-outcomes',{persist:false});}catch(error){reportError(error);}};
-    document.querySelectorAll('[data-faction-dnc-toggle]').forEach(button=>button.onclick=async()=>{try{await toggleDnc(button.dataset.factionDncToggle,button.dataset.factionDncEnabled==='true');await renderPage('faction-contact-outcomes',{persist:false});}catch(error){reportError(error);}});
 
-    const sessionNew=document.getElementById('ra-faction-session-new');if(sessionNew)sessionNew.onclick=async()=>{try{await createSessionFromUi();await renderPage('faction-recruitment-sessions',{persist:false});}catch(error){reportError(error);}};
-    document.querySelectorAll('[data-faction-session-action]').forEach(button=>button.onclick=async()=>{try{await runSessionAction(button.dataset.factionSessionAction,button.dataset.factionSessionUser,button.value);await renderPage('faction-recruitment-sessions',{persist:false});}catch(error){reportError(error);}});
 
-    document.querySelectorAll('[data-faction-reactivate-player]').forEach(button=>button.onclick=async()=>{try{await reactivatePlayer(button.dataset.factionReactivatePlayer);await renderPage('faction-reactivation',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('[data-faction-compare-select]').forEach(input=>input.onchange=async()=>{const id=text(input.dataset.factionCompareSelect);if(input.checked){if(runtime.compareSelection.size>=4){input.checked=false;globalThis.alert?.('Faction Compare supports up to four players.');return;}runtime.compareSelection.add(id);}else runtime.compareSelection.delete(id);await renderPage('faction-compare',{persist:false});});
   }
 
   async function renderPage(page,options={}){
@@ -5529,29 +3854,11 @@
     if(!title||!desc||!content)throw new Error('Recruitment Agency shell is not mounted.');
     const rows=await buildRows(app);
     let html='';
-    const[config,profiles,campaigns,sessions]=await Promise.all([getConfig(app),getProfiles(app),getCampaigns(app),getSessions(app)]);
 
-    if(page==='faction-overview')html=FactionUI.renderOverview(FactionUI.buildOverviewModel(rows,profiles));
-    else if(page==='faction-today'){
-      const opportunities=await buildOpportunityRows(app,rows,Date.now());
-      html=FactionUI.renderToday(FactionUI.buildTodayModel(rows,{now:Date.now(),stageThresholds:config.stageThresholds||{},opportunities:Object.fromEntries(opportunities.map(item=>[item.userId,item.opportunity.score]))}));
-    }
-    else if(page==='faction-discover')html=renderDiscover(rows);
-    else if(page==='faction-candidates'){const [config,profiles]=await Promise.all([getConfig(app),getProfiles(app)]);const selected=activeResultsProfile(config,profiles);const selectedId=text(selected?.profileId);const selectedVersion=text(selected?.updatedAt);if(!runtime.profileFiltersInitialized||runtime.profileFiltersId!==selectedId||runtime.profileFiltersVersion!==selectedVersion){const saved=runtime.profileFiltersInitialized?null:savedResultsView(app);if(saved)runtime.sort=saved.sort;if(saved&&saved.profileId===selectedId&&saved.profileVersion===selectedVersion){runtime.searchFilters=saved.filters;runtime.resultPage=saved.resultPage;}else{runtime.searchFilters=selected?profileSearchFilters(selected):{...DEFAULT_SEARCH_FILTERS};runtime.resultPage=0;}runtime.profileFiltersInitialized=true;runtime.profileFiltersId=selectedId;runtime.profileFiltersVersion=selectedVersion;}const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);await persistResultsView(app).catch(error=>console.warn('[RA] Results view was not saved.',error));html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:text(config.activeResultsProfileId),pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}});}
-    else if(page==='faction-pipeline')html=FactionUI.renderPipeline(FactionUI.buildPipelineModel(rows));
-    else if(page==='faction-requirements')html=FactionUI.renderRequirementsPage({config,profiles,rows});
-    else if(page==='faction-campaigns')html=WorkflowUI.renderCampaignsPage({campaigns,rows,profiles});
-    else if(page==='faction-followups')html=WorkflowUI.renderFollowUpsPage(rows);
-    else if(page==='faction-timeline')html=WorkflowUI.renderTimelinePage(rows);
-    else if(page==='faction-stage-aging')html=WorkflowUI.renderStageAgingPage(rows.map(row=>({...row,stageAging:Operations.stageAging(row.factionRecord,config.stageThresholds||{},Date.now())})));
-    else if(page==='faction-contact-outcomes')html=WorkflowUI.renderContactOutcomesPage(rows);
-    else if(page==='faction-recruitment-sessions')html=WorkflowUI.renderRecruitmentSessionsPage({sessions,rows});
-    else if(page==='faction-reactivation')html=WorkflowUI.renderReactivationPage(rows);
-    else if(page==='faction-opportunity')html=OpportunityUI.renderOpportunityPage(await buildOpportunityRows(app,rows,Date.now()));
-    else if(page==='faction-compare')html=OpportunityUI.renderComparePage(rows,[...runtime.compareSelection]);
+    if(page==='faction-candidates'){const [config,profiles]=await Promise.all([getConfig(app),getProfiles(app)]);const selected=activeResultsProfile(config,profiles);const selectedId=text(selected?.profileId);const selectedVersion=text(selected?.updatedAt);if(!runtime.profileFiltersInitialized||runtime.profileFiltersId!==selectedId||runtime.profileFiltersVersion!==selectedVersion){const saved=runtime.profileFiltersInitialized?null:savedResultsView(app);if(saved)runtime.sort=saved.sort;if(saved&&saved.profileId===selectedId&&saved.profileVersion===selectedVersion){runtime.searchFilters=saved.filters;runtime.resultPage=saved.resultPage;}else{runtime.searchFilters=selected?profileSearchFilters(selected):{...DEFAULT_SEARCH_FILTERS};runtime.resultPage=0;}runtime.profileFiltersInitialized=true;runtime.profileFiltersId=selectedId;runtime.profileFiltersVersion=selectedVersion;}const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);await persistResultsView(app).catch(error=>console.warn('[RA] Results view was not saved.',error));html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:text(config.activeResultsProfileId),pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}})+FactionUI.renderProfileEditor({config,profiles,open:runtime.profileEditorOpen===true});}
     if(typeof app.navigate==='function'&&text(app._test.state.page)!==page)return false;
     const meta=routeMeta(page);title.textContent=meta.title;desc.textContent=meta.description;content.innerHTML=html;
-    syncActiveNav(page);bindContentControls(page);if(options.persist!==false)await persistRoute(app,page);return true;
+    syncActiveNav(page);bindContentControls();if(options.persist!==false)await persistRoute(app,page);return true;
   }
 
   function bindNav(){
@@ -5570,7 +3877,7 @@
     const page=text(app._test.state.page||app._test.state.settings?.activePage);if(options.renderInitial!==false&&IMPLEMENTED_ROUTES.has(page))renderPage(page,{persist:false}).catch(reportError);
     return true;
   }
-  function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.compareSelection.clear();runtime.app=null;runtime.installed=false;}
+  function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.app=null;runtime.installed=false;}
 
   return Object.freeze({
     FACTION_ROUTES,
@@ -5580,7 +3887,7 @@
     uninstall,
     renderPage,
     syncNavigation,
-    _test:{IMPLEMENTED_ROUTES,buildRows,buildOpportunityRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,getCampaigns,getSessions,readCriteria,ensureFactionCandidate,changeFactionStage,setProfilePin,opportunityWeights,profileSearchFilters,activeResultsProfile,filterRows,sortRows,toggleSort,organizationInfo,RESULTS_PAGE_SIZE}
+    _test:{IMPLEMENTED_ROUTES,buildRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,readCriteria,profileSearchFilters,activeResultsProfile,filterRows,sortRows,toggleSort,organizationInfo,RESULTS_PAGE_SIZE}
   });
 });
 
@@ -5601,15 +3908,10 @@
     V46Navigation: root && root.RA_V46Navigation,
     V46CompanyCore: root && root.RA_V46CompanyCore,
     V46CompanyStorage: root && root.RA_V46CompanyStorage,
-    V46CompanyWorkflow: root && root.RA_V46CompanyWorkflow,
     V46CompanyPlatform: root && root.RA_V46CompanyPlatform,
     V47FactionCore: root && root.RA_V47FactionCore,
     V47FactionStorage: root && root.RA_V47FactionStorage,
     V47FactionUI: root && root.RA_V47FactionUI,
-    V47FactionOperations: root && root.RA_V47FactionOperations,
-    V47FactionWorkflow: root && root.RA_V47FactionWorkflow,
-    V47FactionWorkflowUI: root && root.RA_V47FactionWorkflowUI,
-    V47FactionOpportunityUI: root && root.RA_V47FactionOpportunityUI,
     V47FactionPlatform: root && root.RA_V47FactionPlatform
   };
   if (typeof module === 'object' && module.exports) {
@@ -5627,15 +3929,10 @@
     deps.V46Navigation = require('./v46-navigation');
     deps.V46CompanyCore = require('./v46-company-core');
     deps.V46CompanyStorage = require('./v46-company-storage');
-    deps.V46CompanyWorkflow = require('./v46-company-workflow');
     deps.V46CompanyPlatform = require('./v46-company-platform');
     deps.V47FactionCore = require('./v47-faction-core');
     deps.V47FactionStorage = require('./v47-faction-storage');
     deps.V47FactionUI = require('./v47-faction-ui');
-    deps.V47FactionOperations = require('./v47-faction-operations');
-    deps.V47FactionWorkflow = require('./v47-faction-workflow');
-    deps.V47FactionWorkflowUI = require('./v47-faction-workflow-ui');
-    deps.V47FactionOpportunityUI = require('./v47-faction-opportunity-ui');
     deps.V47FactionPlatform = require('./v47-faction-platform');
   }
   const api = factory(deps);
@@ -5644,8 +3941,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (D) {
   'use strict';
 
-  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform} = D;
-  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyWorkflow,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionOperations,V47FactionWorkflow,V47FactionWorkflowUI,V47FactionOpportunityUI,V47FactionPlatform].every(Boolean)) {
+  const {ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionPlatform} = D;
+  if (![ScoutCore,ResultsCore,GlobalCore,MatchCore,ForumCore,Runtime,Candidates,Discovery,Messaging,V46Domain,V46Storage,V46Navigation,V46CompanyCore,V46CompanyStorage,V46CompanyPlatform,V47FactionCore,V47FactionStorage,V47FactionUI,V47FactionPlatform].every(Boolean)) {
     throw new Error('Recruitment Agency v4.5 core modules are required.');
   }
 
@@ -5660,12 +3957,8 @@
   const SCOUT_STAT_LIST = 'xantaken,useractivity,refills,statenhancersused,attackswon,attackslost,rankedwarhits,networth,activestreak,bestactivestreak';
   const STORE_NAMES = Object.freeze(['users','meta','scoutLatest','scoutHistory','globalLatest','globalHistory','globalSyncQueue','candidateLocal','matchProfiles','forumSources','forumSyncState','appLogs','playerIntelligence','companyRecruitment','factionRecruitment','companyVacancies','companyCampaigns','companyRecruitmentConfig','companyRecruitmentSessions','factionSpecialistProfiles','factionCampaigns','factionRecruitmentConfig','factionRecruitmentSessions']);
   const DEFAULT_VISIBLE_COLUMNS = Object.freeze(['player','stage','match','fit','lookingFor','source','lastActive']);
-  const OPTIONAL_COLUMNS = Object.freeze(['currentCompany','man','int','end','total','availability','postedAt','ee','activity30','scoutStatus']);
-  const COLUMN_LABELS = Object.freeze({player:'Player',stage:'Stage',match:'Match',fit:'Fit',lookingFor:'Looking For',source:'Source',lastActive:'Last Active',currentCompany:'Current Company',man:'MAN',int:'INT',end:'END',total:'TOTAL',availability:'Availability',postedAt:'Posted',ee:'EE',activity30:'Activity 30d',scoutStatus:'Scout Status'});
   const OPTIONAL_MODULES = Object.freeze([
-    ['companyOverview','Company Overview'],['companyToday','Company Today'],['companyDiscovery','Company Discovery'],['companyPipeline','Company Pipeline'],['companyVacancies','Company Vacancies'],['companyCampaigns','Company Campaigns'],['companyFollowups','Company Follow-ups'],['companyTimeline','Company Timeline'],['companyStageAging','Company Stage Aging'],['companyContactOutcomes','Company Contact Outcomes'],['companySessions','Company Recruitment Sessions'],['companyTalentPool','Company Talent Pool'],['companyReactivation','Company Reactivation'],['companyOpportunity','Company Opportunity Queue'],['companyCompare','Company Compare'],
-    ['factionOverview','Faction Overview'],['factionToday','Faction Today'],['factionDiscovery','Faction Discovery'],['factionPipeline','Faction Pipeline'],['factionRequirements','Faction Requirements'],['factionCampaigns','Faction Campaigns'],['factionFollowups','Faction Follow-ups'],['factionTimeline','Faction Timeline'],['factionStageAging','Faction Stage Aging'],['factionContactOutcomes','Faction Contact Outcomes'],['factionSessions','Faction Recruitment Sessions'],['factionReactivation','Faction Reactivation'],['factionOpportunity','Faction Opportunity Queue'],['factionCompare','Faction Compare'],
-    ['scout','Scout'],['smartMatch','Smart Match'],['globalIntelligence','Global Intelligence'],['data','Data'],['logs','Logs']
+    ['companyDiscovery','Forum Discovery'],['scout','Scout'],['smartMatch','Smart Match'],['globalIntelligence','Global Intelligence'],['data','Data']
   ]);
   const DEFAULT_OPTIONAL_MODULES = Object.freeze(Object.fromEntries(OPTIONAL_MODULES.map(([key])=>[key,false])));
 
@@ -5685,7 +3978,7 @@
     sync:{running:false,cancelled:false,feed:'',pages:0},
     fill:{running:false,cancelled:false,done:0,total:0,errors:[]},
     scout:{running:false,paused:false,cancelled:false,done:0,total:0,calls:0,currentId:null,status:'Idle'},
-    help:{pinned:false,anchor:null}, contextCandidateId:'', drawerCandidateId:'', messageCandidateId:'', playerCard:{domain:'company',userId:'',pinned:false,popout:false},
+    help:{pinned:false,anchor:null}, drawerCandidateId:'', playerCard:{domain:'company',userId:'',pinned:false,popout:false},
     resizeTimer:null, logRefreshTimer:null, routeSeq:0, metaWrite:Promise.resolve()
   };
 
@@ -5696,7 +3989,6 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const clampRate = value => Math.max(10,Math.min(HARD_API_RATE,number(value,HARD_API_RATE)));
   const formatNumber = (value,dp=0) => finite(value)===null?'—':Number(value).toLocaleString(undefined,{maximumFractionDigits:dp});
-  const money = value => { const x=finite(value); if(x===null)return '—'; if(x>=1e9)return `$${(x/1e9).toFixed(2)}B`; if(x>=1e6)return `$${(x/1e6).toFixed(1)}M`; return `$${Math.round(x).toLocaleString()}`; };
   const profileUrl = id => Candidates.tornProfileUrl(id);
   const forumThreadUrl = id => /^\d+$/.test(text(id)) ? `https://www.torn.com/forums.php?a=0&p=threads&t=${text(id)}` : '';
 
@@ -5875,30 +4167,8 @@
   function latestSourceFor(candidate,sources){const id=text(candidate.latestForumSourceId);if(id)return sources.find(s=>s.sourceId===id)||null;return sources.filter(s=>String(s.userId)===String(candidate.userId)).sort((a,b)=>Number(b.postedAt||0)-Number(a.postedAt||0))[0]||null;}
   function matchAvailability(value){return value==='Available'?'immediate':value==='Unavailable'?'not_available':'';}
   async function candidateViews(){const candidates=await idb.getAll('candidateLocal');const sources=await idb.getAll('forumSources');const scouts=await idb.getAll('scoutLatest');const scoutMap=new Map(scouts.map(s=>[String(s.userId),s]));const profile=await getActiveMatchProfile();const out=[];for(const raw of candidates){let candidate;try{candidate=Runtime.normalizeCandidateRecord(raw);}catch{continue;}if(!state.settings.includeInactive&&String(candidate.status||'active').toLowerCase()==='inactive')continue;const source=latestSourceFor(candidate,sources)||{};const scout=scoutMap.get(String(candidate.userId))||null;const base={userId:candidate.userId,name:candidate.name||source.authorName||`User ${candidate.userId}`,stats:candidate.stats||{},ee:candidate.ee??null,currentCompany:candidate.currentCompany||'',sourceType:source.sourceType||candidate.discoverySources?.[0]||'MANUAL',lastSeenPost:source.postedAt||candidate.lastSeenPost||null,scout,matchInputs:{fit:scoutFit(scout),activity30:(scout?.w30||scout?.provisionalSource||{}).activityHours,xanax30:(scout?.w30||scout?.provisionalSource||{}).xanax,refills30:(scout?.w30||scout?.provisionalSource||{}).refills,attacks30:(scout?.w30||scout?.provisionalSource||{}).attacks,rwHits30:(scout?.w30||scout?.provisionalSource||{}).rwHits}};const matchCandidate={...candidate,availability:matchAvailability(candidate.availability)};const match=MatchCore.evaluateMatch({row:base,candidate:matchCandidate,profile});const view=Candidates.composeCandidateView({candidate,source,result:{...base,matchScore:match.score,fit:scoutFit(scout),currentCompany:candidate.currentCompany||''},scout,match});view.candidate=candidate;view.source=source;view.scout=scout;view.match=match;view.postedAt=source.postedAt||null;view.activity30=(scout?.w30||scout?.provisionalSource||{}).activityHours??null;view.scoutStatus=ResultsCore.classifyScoutStatus(base);const workStats=[view.man,view.int,view.end].map(finite);view.total=workStats.every(value=>value!==null)?workStats.reduce((sum,value)=>sum+value,0):null;out.push(view);}return out;}
-  function candidateSearchRow(view){return{userId:Number(view.userId),name:view.name,stats:{man:view.man,int:view.int,end:view.end,total:view.total},ee:view.ee,preferredCompany:view.desiredCompany,fit:view.fitScore,matchScore:view.matchScore,pipelineStage:view.pipelineStage,sourceType:view.sourceType,discoverySources:view.candidate?.discoverySources||[],lookingFor:view.lookingFor,currentCompany:view.currentCompany,status:view.candidate?.status||'active',lastSeenPost:view.postedAt,scout:view.scout};}
-  function applyCandidateFilters(views){
-    const f=state.settings.candidates.filters||{};
-    const rows=(views||[]).map(view=>({...candidateSearchRow(view),candidateLocal:view.candidate,__view:view}));
-    const filters={
-      search:f.search,
-      pipelineStage:f.stage,
-      sourceType:f.source,
-      lookingFor:f.lookingFor,
-      currentCompany:f.currentCompany,
-      minMatch:f.minMatch,
-      minFit:f.minFit,
-      minMan:f.minMan,
-      minInt:f.minInt,
-      minEnd:f.minEnd,
-      minActivity30:f.minActivity30,
-      activeOnly:!!f.activeOnly,
-      activeAgeDays:state.settings.recruitment.candidateActiveAgeDays
-    };
-    const processed=ResultsCore.processRows(rows,filters,ResultsCore.DEFAULT_SORT,Date.now());
-    return processed.map(row=>row.__view);
-  };
+  ;
 
-  async function migrateLegacyUsers(){const markerKey='v45-legacy-users-migration-v2';const marker=await idb.get('meta',markerKey);if(marker?.complete===true)return marker.counts||{created:0,factionCreated:0};const users=await idb.getAll('users');let created=0,factionCreated=0;for(const row of users){const userId=text(row.userId);if(!/^\d+$/.test(userId))continue;const faction=row.sourceMode==='faction';const candidate=faction?null:await idb.get('candidateLocal',userId);const sourceType=faction?'FACTION FORUM':'COMPANY FORUM';const historicalAt=Number(row.lastSeenPost||row.postedAt||row.postDate||0);const hasHistoricalAt=Number.isFinite(historicalAt)&&historicalAt>0;const observedAt=hasHistoricalAt?historicalAt:0;const source=ForumCore.normalizeSource({sourceType,threadId:text(row.threadId),postId:text(row.postId||'legacy'),userId:Number(userId),postedAt:observedAt,postUrl:forumThreadUrl(row.threadId),text:text(row.rawText),parsed:ForumCore.parseForumIntent(row.rawText||'')});source.authorName=text(row.name);await idb.put('forumSources',source);const merged=ForumCore.mergeCandidateFromSource(candidate||{userId,pipelineStage:'Not Contacted'},source);merged.userId=userId;merged.name=candidate?.name||text(row.name)||`User ${userId}`;merged.stats=candidate?.stats||row.stats||{};merged.ee=candidate?.ee??row.ee??null;merged.status=candidate?.status||row.status||'active';merged.latestForumSourceId=source.sourceId;if(faction){const existingFaction=await idb.get('factionRecruitment',userId);if(!existingFaction){await repositories.faction.ensure(userId,{pipelineStage:'Prospect',availability:merged.availability,discoverySources:merged.discoverySources,latestForumSourceId:source.sourceId},{source:'legacy-user-faction',observedAt,skipShared:true});factionCreated++;}continue;}await idb.put('candidateLocal',merged);const existingCompany=await idb.get('companyRecruitment',userId);if(!existingCompany)await repositories.company.ensure(userId,merged,{source:'legacy-user-company',observedAt,skipShared:true});if(!candidate)created++;}const counts={created,factionCreated};await idb.put('meta',{key:markerKey,complete:true,completedAt:Date.now(),counts});if(created||factionCreated)await logEvent('migration','Legacy forum candidates migrated',counts);return counts;}
 
   function recruitmentDomainForFeed(feed={}){const feedId=text(feed.feedId).toLowerCase();const sourceType=text(feed.sourceType).toUpperCase();return feedId==='faction'||sourceType==='FACTION FORUM'?'faction':'company';}
   async function persistDiscoveredCandidate(feed,candidate,source){const userId=V46Domain.normalizeUserId(candidate?.userId);const observedAt=Number(source?.observedAt||source?.postedAt||Date.now());const domain=recruitmentDomainForFeed(feed);if(domain==='company'){const row={...candidate,userId};await idb.put('candidateLocal',row);await repositories.company.ensure(userId,row,{sharedPatch:{name:row.name,lastObservedAt:observedAt},source:'company-discovery',observedAt});return row;}const existing=await idb.get('factionRecruitment',userId);const discoverySources=[...new Set([...(Array.isArray(existing?.discoverySources)?existing.discoverySources:[]),...(Array.isArray(candidate?.discoverySources)?candidate.discoverySources:[]),text(source?.sourceType)].filter(Boolean))];let availability=existing?.availability||'Unknown';if((!existing||availability==='Unknown')&&candidate?.availability)availability=candidate.availability;const patch={availability,recruiterNote:existing?.recruiterNote??candidate?.recruiterNote??'',discoverySources,latestForumSourceId:text(source?.sourceId||candidate?.latestForumSourceId||existing?.latestForumSourceId),updatedAt:candidate?.updatedAt||new Date(observedAt).toISOString()};if(existing?.pipelineStage)patch.pipelineStage=existing.pipelineStage;await repositories.faction.ensure(userId,patch,{sharedPatch:{name:candidate?.name,ee:candidate?.ee,man:candidate?.stats?.man??candidate?.man,int:candidate?.stats?.int??candidate?.int,end:candidate?.stats?.end??candidate?.end,total:candidate?.stats?.total??candidate?.total,lastActive:candidate?.lastActive,lastObservedAt:observedAt},source:'faction-discovery',observedAt});return idb.get('factionRecruitment',userId);}
@@ -6089,42 +4359,33 @@
 :root{--ra-bg:#08070b;--ra-panel:#100d16;--ra-panel2:#181320;--ra-line:#312440;--ra-line-strong:#5a3b73;--ra-text:#f6f1fb;--ra-muted:#aaa0b8;--ra-accent:#9b4dff;--ra-accent2:#d06cff;--ra-brand-deep:#5b21b6;--ra-danger:#e25d63;--ra-warn:#d6a64d;--ra-pad:14px;--ra-font:12px}
 :root[data-ra-theme="light"]{--ra-bg:#f6f3fa;--ra-panel:#fff;--ra-panel2:#f7f3fb;--ra-line:#d8cce4;--ra-line-strong:#b49acb;--ra-text:#1d1722;--ra-muted:#6f6479;--ra-accent:#7c3aed;--ra-accent2:#9333ea;--ra-danger:#b4232a;--ra-warn:#8c5b13}
 :root[data-ra-density="compact"]{--ra-pad:8px}:root[data-ra-text="small"]{--ra-font:11px}:root[data-ra-text="large"]{--ra-font:14px}
-#ra-app,#ra-launch,#ra-context,#ra-help-popover,#ra-toastbox{font:var(--ra-font)/1.4 Arial,sans-serif;color:var(--ra-text);box-sizing:border-box}#ra-app *{box-sizing:border-box}
+#ra-app,#ra-launch,#ra-help-popover,#ra-toastbox{font:var(--ra-font)/1.4 Arial,sans-serif;color:var(--ra-text);box-sizing:border-box}#ra-app *{box-sizing:border-box}
 #ra-app{position:fixed;left:6vw;top:5vh;width:88vw;height:86vh;z-index:2147483401;background:var(--ra-bg);border:1px solid var(--ra-line-strong);border-radius:14px;box-shadow:0 24px 72px #000c,0 0 0 1px #ffffff05;display:none;resize:both;overflow:hidden;min-width:560px;min-height:420px;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px)}
 .ra-titlebar{height:50px;padding:0 12px 0 16px;display:grid;grid-template-columns:minmax(210px,auto) minmax(150px,220px) 1fr auto;gap:12px;align-items:center;background:radial-gradient(circle at 22% 0%,#7c3aed24,transparent 36%),linear-gradient(180deg,#17121f,#0e0b13);border-bottom:1px solid var(--ra-line);cursor:move}.ra-title-brand{display:flex;align-items:center;gap:10px;min-width:0}.ra-title-mark{width:24px;height:24px;display:grid;place-items:center;border:1px solid #7c3aed;border-radius:7px;color:var(--ra-accent2);font-size:13px;box-shadow:inset 0 0 12px #9b4dff24,0 0 16px #9b4dff20}.ra-title-copy{display:grid;line-height:1.05}.ra-title-copy small{font-size:8px;letter-spacing:.16em;color:var(--ra-muted);font-weight:800}.ra-title-copy strong{font-size:12px;letter-spacing:.05em;color:var(--ra-text)}.ra-version{font-size:9px;color:var(--ra-muted);font-weight:600;margin-left:4px}.ra-title-actions,.ra-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ra-title-spacer{min-width:0}.ra-workspace-select{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px;align-items:center;cursor:default}.ra-workspace-select>span{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ra-muted);font-weight:900}.ra-workspace-toggle{width:100%;min-width:118px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border-radius:8px;border:1px solid var(--ra-line-strong);background:linear-gradient(180deg,#1d1527,#120e19);color:var(--ra-text);font-weight:800;outline:none;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff0a}.ra-workspace-toggle:focus-visible{border-color:var(--ra-accent);box-shadow:0 0 0 2px #9b4dff25}.ra-workspace-menu{position:absolute;left:34px;top:calc(100% + 6px);z-index:30;min-width:150px;padding:5px;border:1px solid var(--ra-line-strong);border-radius:9px;background:linear-gradient(180deg,#1a1323,#0d0a12);box-shadow:0 14px 36px #000b,0 0 22px #9b4dff18}.ra-workspace-menu[hidden]{display:none}.ra-workspace-menu button{width:100%;display:flex;align-items:center;gap:8px;padding:8px 9px;border:0;border-radius:6px;background:transparent;color:var(--ra-text);text-align:left;font-weight:800;cursor:pointer}.ra-workspace-menu button:hover,.ra-workspace-menu button:focus-visible,.ra-workspace-menu button.active{background:#9b4dff22;color:#f4dcff;outline:none}.ra-workspace-caret{color:var(--ra-accent2);font-size:10px}.ra-shell{display:grid;grid-template-columns:196px minmax(0,1fr);height:calc(100% - 50px);position:relative}.ra-shell.is-collapsed{grid-template-columns:58px minmax(0,1fr)}
 .ra-sidebar{background:radial-gradient(circle at 0 0,#7c3aed17,transparent 32%),linear-gradient(180deg,#130f19,#0c0a0f);border-right:1px solid var(--ra-line);overflow:auto;padding:10px}.ra-sidebar-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.ra-brand{font-weight:900;font-size:10px;letter-spacing:.08em;color:var(--ra-muted)}.is-collapsed .ra-brand,.is-collapsed .ra-group-label,.is-collapsed .ra-nav-text,.is-collapsed .ra-domain-switch span{display:none}.ra-group-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;border:0;border-radius:6px;padding:7px 8px;background:transparent;color:var(--ra-muted);cursor:pointer;text-align:left}.ra-group-toggle:hover,.ra-group-toggle:focus-visible{background:var(--ra-panel2);outline:none}.ra-group-toggle.has-active{color:var(--ra-accent2)}.ra-group-label{font-size:9px;font-weight:900;letter-spacing:.08em;color:inherit;margin:0}.ra-group-chevron{font-size:11px;font-weight:900;line-height:1}.ra-nav{display:grid;gap:3px}.ra-nav[hidden]{display:none}.ra-nav button{display:flex;align-items:center;gap:8px;border:0;border-radius:7px;padding:9px 8px;background:transparent;color:var(--ra-text);cursor:pointer;text-align:left}.ra-nav button:hover,.ra-nav button.active{background:#ffffff08}.ra-nav button.active{box-shadow:inset 3px 0 0 var(--ra-accent);color:#fff}.ra-nav-icon{width:18px;color:var(--ra-accent2);font-weight:900;text-align:center}
 .ra-main{min-width:0;display:flex;flex-direction:column}.ra-pagehead{padding:12px 15px;background:var(--ra-panel);border-bottom:1px solid var(--ra-line);display:flex;justify-content:space-between;align-items:center;gap:8px}.ra-pagehead h2{margin:0;font-size:17px}.ra-pagehead p{margin:2px 0 0;color:var(--ra-muted)}.ra-content{overflow:auto;flex:1;padding:var(--ra-pad)}
-.ra-panel,.ra-kpi{border:1px solid var(--ra-line);border-radius:10px;background:linear-gradient(180deg,#15111d,#0f0c14);padding:14px;box-shadow:inset 0 1px 0 #ffffff05}.ra-panel{margin-bottom:12px}.ra-search-panel{border-color:#49345f}.ra-results-panel{padding:0;overflow:hidden}.ra-results-panel>.ra-panel-head{padding:14px 14px 0}.ra-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}.ra-panel-head h3{margin:0;font-size:14px;letter-spacing:.02em}.ra-panel-head p{margin:3px 0 0;color:var(--ra-muted);font-size:10px}.ra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ra-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}.ra-kpi span{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900}.ra-kpi b{font-size:20px}.ra-formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ra-core-search-grid{grid-template-columns:repeat(4,minmax(120px,1fr));margin-bottom:10px}.ra-field label{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900;margin-bottom:4px;letter-spacing:.06em}.ra-field input,.ra-field select,.ra-field textarea{width:100%;padding:8px 9px;border-radius:7px;border:1px solid var(--ra-line);background:#0d0d11;color:var(--ra-text);outline:none}.ra-field input:focus,.ra-field select:focus,.ra-field textarea:focus{border-color:var(--ra-accent);box-shadow:0 0 0 2px #9b4dff22}.ra-field textarea{min-height:76px;resize:vertical}.ra-optional-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}.ra-optional-toggle{display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid var(--ra-line);border-radius:7px;background:var(--ra-panel2);color:var(--ra-text)}
+.ra-panel,.ra-kpi{border:1px solid var(--ra-line);border-radius:10px;background:linear-gradient(180deg,#15111d,#0f0c14);padding:14px;box-shadow:inset 0 1px 0 #ffffff05}.ra-panel{margin-bottom:12px}.ra-search-panel{border-color:#49345f}.ra-results-panel{padding:0;overflow:hidden}.ra-results-panel>.ra-panel-head{padding:14px 14px 0}.ra-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}.ra-panel-head h3{margin:0;font-size:14px;letter-spacing:.02em}.ra-panel-head p{margin:3px 0 0;color:var(--ra-muted);font-size:10px}.ra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ra-kpi span{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900}.ra-kpi b{font-size:20px}.ra-formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ra-core-search-grid{grid-template-columns:repeat(4,minmax(120px,1fr));margin-bottom:10px}.ra-field label{display:block;color:var(--ra-muted);font-size:9px;text-transform:uppercase;font-weight:900;margin-bottom:4px;letter-spacing:.06em}.ra-field input,.ra-field select,.ra-field textarea{width:100%;padding:8px 9px;border-radius:7px;border:1px solid var(--ra-line);background:#0d0d11;color:var(--ra-text);outline:none}.ra-field input:focus,.ra-field select:focus,.ra-field textarea:focus{border-color:var(--ra-accent);box-shadow:0 0 0 2px #9b4dff22}.ra-field textarea{min-height:76px;resize:vertical}.ra-optional-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}.ra-optional-toggle{display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid var(--ra-line);border-radius:7px;background:var(--ra-panel2);color:var(--ra-text)}
 .ra-btn{border:1px solid var(--ra-line);border-radius:7px;background:var(--ra-panel2);color:var(--ra-text);padding:6px 9px;cursor:pointer;font-weight:700;text-decoration:none}.ra-btn:hover{border-color:var(--ra-accent)}.ra-primary{border-color:var(--ra-accent);background:color-mix(in srgb,var(--ra-accent) 20%,var(--ra-panel2))}.ra-danger{border-color:var(--ra-danger);color:var(--ra-danger)}.ra-help{display:inline-grid;place-items:center;width:20px;height:20px;padding:0;border:1px solid var(--ra-line);border-radius:50%;background:var(--ra-panel2);color:var(--ra-muted);cursor:pointer;flex:0 0 auto}.ra-muted{color:var(--ra-muted)}.ra-note{font-size:10px;color:var(--ra-muted)}
-.ra-pill{display:inline-block;border:1px solid color-mix(in srgb,var(--pill) 70%,var(--ra-line));background:color-mix(in srgb,var(--pill) 16%,transparent);border-radius:999px;padding:2px 6px;white-space:nowrap}.ra-table-wrap{overflow:auto;border:1px solid var(--ra-line);border-radius:8px}.ra-table{border-collapse:collapse;width:100%;min-width:900px}.ra-table th,.ra-table td{padding:7px;border-bottom:1px solid var(--ra-line);white-space:nowrap;text-align:left}.ra-table th{position:sticky;top:0;background:var(--ra-panel2);z-index:2}.ra-sort-button{all:unset;display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:inherit;font:inherit;font-weight:800}.ra-sort-button:hover,.ra-sort-button:focus-visible{color:var(--ra-accent2)}.ra-sort-button:focus-visible{outline:2px solid var(--ra-accent);outline-offset:2px;border-radius:3px}.ra-online-live,.ra-online-idle,.ra-online-offline{display:inline-flex;align-items:center;gap:5px;font-weight:800}.ra-online-live:before,.ra-online-idle:before,.ra-online-offline:before{content:"";width:7px;height:7px;border-radius:50%}.ra-online-live:before{background:#45c486;box-shadow:0 0 0 3px #45c4861f}.ra-online-idle:before{background:#d7a84b}.ra-online-offline:before{background:#777781}.ra-table tr{background:color-mix(in srgb,var(--row-tint,transparent) 7%,transparent)}.ra-link{color:var(--ra-accent2);text-decoration:none}.ra-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}.ra-card{border:1px solid var(--ra-line);border-radius:9px;background:var(--ra-panel2);padding:10px}.ra-card h4{margin:0}.ra-card-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin:8px 0}.ra-card-grid span{color:var(--ra-muted)}.ra-card-grid b{display:block;color:var(--ra-text)}
-.ra-hover{position:fixed;z-index:2147483646;width:min(390px,calc(100vw - 12px));max-height:calc(100vh - 12px);overflow:auto;background:var(--ra-panel);border:1px solid var(--ra-line);border-radius:9px;box-shadow:0 12px 32px #000a;padding:10px}.ra-hover[hidden]{display:none}.ra-hover-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:7px}.ra-hover-grid span{color:var(--ra-muted)}.ra-hover-grid b{display:block;color:var(--ra-text)}
-.ra-pipeline{display:grid;grid-template-columns:repeat(6,minmax(230px,1fr));gap:8px;overflow:auto;padding-bottom:4px}.ra-stage{min-height:220px;border:1px solid var(--ra-line);border-top:3px solid var(--stage);border-radius:8px;background:var(--ra-panel);padding:7px}.ra-stage-head{display:flex;justify-content:space-between;gap:6px;margin-bottom:7px}.ra-stage-card{border:1px solid var(--ra-line);border-radius:7px;padding:8px;background:var(--ra-panel2);margin:6px 0;cursor:grab}.ra-stage-card.subdued{opacity:.68}.ra-stage-drop{min-height:120px}.ra-drawer{position:absolute;right:0;top:0;bottom:0;width:min(460px,94%);z-index:12;background:linear-gradient(180deg,#15101d,#0e0b13);border-left:1px solid var(--ra-line-strong);box-shadow:-12px 0 30px #0009,0 0 24px #9b4dff12;overflow:auto;padding:12px}.ra-drawer.is-popout{position:fixed;right:18px;top:72px;bottom:auto;height:min(76vh,720px);width:min(430px,calc(100vw - 24px));border:1px solid var(--ra-line-strong);border-radius:12px;box-shadow:0 24px 80px #000c,0 0 34px #9b4dff20}.ra-player-card-title{display:flex;align-items:center;gap:8px}.ra-player-card-score{margin-left:auto;border:1px solid #6d43a2;border-radius:999px;padding:3px 8px;color:#e5c4ff;background:#9b4dff16;font-weight:900}.ra-player-card-domain{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--ra-accent2)}.ra-player-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}.ra-drawer[hidden]{display:none}.ra-drawer-head{display:flex;justify-content:space-between;align-items:center;position:sticky;top:-12px;background:var(--ra-panel);padding:10px 0;z-index:2}.ra-detail-section{border-top:1px solid var(--ra-line);padding-top:8px;margin-top:8px}.ra-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px}.ra-detail-grid span{color:var(--ra-muted)}.ra-detail-grid b{display:block;color:var(--ra-text)}
-#ra-context{position:fixed;z-index:2147483647;min-width:220px;background:var(--ra-panel);border:1px solid var(--ra-line);border-radius:8px;box-shadow:0 12px 30px #000a;padding:5px}#ra-context[hidden]{display:none}.ra-menu-item{display:block;width:100%;padding:7px;border:0;background:transparent;color:var(--ra-text);text-align:left;border-radius:5px;cursor:pointer}.ra-menu-item:hover,.ra-menu-item:focus{background:var(--ra-panel2)}.ra-menu-sep{border-top:1px solid var(--ra-line);margin:4px 0}.ra-submenu{padding-left:12px}.ra-submenu[hidden]{display:none}
+.ra-pill{display:inline-block;border:1px solid color-mix(in srgb,var(--pill) 70%,var(--ra-line));background:color-mix(in srgb,var(--pill) 16%,transparent);border-radius:999px;padding:2px 6px;white-space:nowrap}.ra-table-wrap{overflow:auto;border:1px solid var(--ra-line);border-radius:8px}.ra-table{border-collapse:collapse;width:100%;min-width:900px}.ra-table th,.ra-table td{padding:7px;border-bottom:1px solid var(--ra-line);white-space:nowrap;text-align:left}.ra-table th{position:sticky;top:0;background:var(--ra-panel2);z-index:2}.ra-sort-button{all:unset;display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:inherit;font:inherit;font-weight:800}.ra-sort-button:hover,.ra-sort-button:focus-visible{color:var(--ra-accent2)}.ra-sort-button:focus-visible{outline:2px solid var(--ra-accent);outline-offset:2px;border-radius:3px}.ra-online-live,.ra-online-idle,.ra-online-offline{display:inline-flex;align-items:center;gap:5px;font-weight:800}.ra-online-live:before,.ra-online-idle:before,.ra-online-offline:before{content:"";width:7px;height:7px;border-radius:50%}.ra-online-live:before{background:#45c486;box-shadow:0 0 0 3px #45c4861f}.ra-online-idle:before{background:#d7a84b}.ra-online-offline:before{background:#777781}.ra-table tr{background:color-mix(in srgb,var(--row-tint,transparent) 7%,transparent)}.ra-link{color:var(--ra-accent2);text-decoration:none}.ra-drawer{position:absolute;right:0;top:0;bottom:0;width:min(460px,94%);z-index:12;background:linear-gradient(180deg,#15101d,#0e0b13);border-left:1px solid var(--ra-line-strong);box-shadow:-12px 0 30px #0009,0 0 24px #9b4dff12;overflow:auto;padding:12px}.ra-drawer.is-popout{position:fixed;right:18px;top:72px;bottom:auto;height:min(76vh,720px);width:min(430px,calc(100vw - 24px));border:1px solid var(--ra-line-strong);border-radius:12px;box-shadow:0 24px 80px #000c,0 0 34px #9b4dff20}.ra-player-card-title{display:flex;align-items:center;gap:8px}.ra-player-card-score{margin-left:auto;border:1px solid #6d43a2;border-radius:999px;padding:3px 8px;color:#e5c4ff;background:#9b4dff16;font-weight:900}.ra-player-card-domain{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--ra-accent2)}.ra-player-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}.ra-drawer[hidden]{display:none}.ra-drawer-head{display:flex;justify-content:space-between;align-items:center;position:sticky;top:-12px;background:var(--ra-panel);padding:10px 0;z-index:2}.ra-detail-section{border-top:1px solid var(--ra-line);padding-top:8px;margin-top:8px}.ra-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px}.ra-detail-grid span{color:var(--ra-muted)}.ra-detail-grid b{display:block;color:var(--ra-text)}
 .ra-modal{position:absolute;inset:0;z-index:15;background:#0009;display:grid;place-items:center;padding:18px}.ra-modal[hidden]{display:none}.ra-modal-card{width:min(620px,96%);max-height:92%;overflow:auto;background:var(--ra-panel);border:1px solid var(--ra-line);border-radius:10px;padding:12px}.ra-modal-card h3{margin-top:0}.ra-log{font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:280px;overflow:auto;background:#050806;border:1px solid var(--ra-line);border-radius:7px;padding:8px}.ra-progress{height:8px;background:var(--ra-line);border-radius:99px;overflow:hidden}.ra-progress>div{height:100%;background:var(--ra-accent);width:0}.ra-source-card{border:1px solid var(--ra-line);border-radius:8px;padding:9px;background:var(--ra-panel2)}.ra-source-card b{display:block}.ra-source-card small{color:var(--ra-muted)}
 .ra-settings details{border:1px solid var(--ra-line);border-radius:8px;background:var(--ra-panel);margin:7px 0;padding:8px}.ra-settings summary{font-weight:900;cursor:pointer}.ra-settings-body{padding-top:8px}.ra-color-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.ra-color-row{display:flex;align-items:center;gap:6px}.ra-color-row input[type=color]{width:38px;height:28px;padding:1px}.ra-danger-zone{border-color:var(--ra-danger)!important}.ra-nuke{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ra-danger);background:color-mix(in srgb,var(--ra-danger) 16%,var(--ra-panel2));color:var(--ra-danger);font-weight:900;border-radius:8px;padding:9px 12px;cursor:pointer}.ra-biohazard{width:24px;height:24px}.ra-help-popover{position:fixed;z-index:2147483647;max-width:min(340px,calc(100vw - 16px));padding:10px;border:1px solid var(--ra-accent);border-radius:8px;background:var(--ra-panel);box-shadow:0 10px 30px #0009}.ra-help-popover[hidden]{display:none}.ra-toastbox{position:fixed;right:12px;top:12px;z-index:2147483647;display:grid;gap:6px}.ra-toast{max-width:360px;border:1px solid var(--ra-line);border-left:3px solid var(--ra-accent);background:var(--ra-panel);padding:9px;border-radius:7px;box-shadow:0 8px 24px #0008}.ra-toast.bad{border-left-color:var(--ra-danger)}
-#ra-mobile-menu{display:none}@media(max-width:640px){#ra-mobile-menu{display:inline-block}}.ra-profile-more{display:inline-block;position:relative}.ra-profile-more>summary{list-style:none;display:inline-block}.ra-profile-more>summary::-webkit-details-marker{display:none}.ra-profile-more[open]>.ra-actions{margin-top:6px}.ra-settings-advanced{margin-top:16px;padding-top:6px;border-top:1px dashed var(--ra-line)}.ra-settings-group-title{margin:6px 0 2px;font-size:13px}.ra-optional-heading{margin:10px 0 6px;font-weight:900;color:var(--ra-muted)}
-@media(max-width:1200px){.ra-pipeline{grid-template-columns:repeat(3,minmax(230px,1fr))}}@media(max-width:900px){#ra-app{left:3vw;top:4vh;width:94vw;height:90vh}.ra-shell{grid-template-columns:58px minmax(0,1fr)}.ra-brand,.ra-group-label,.ra-nav-text{display:none}.ra-kpis{grid-template-columns:repeat(2,1fr)}.ra-color-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:640px){#ra-app{left:4px;top:44px;width:calc(100vw - 8px);height:calc(100vh - 52px);min-width:0;min-height:0}.ra-titlebar{grid-template-columns:minmax(0,1fr) minmax(104px,128px) auto;gap:6px;padding:0 7px;height:50px}.ra-title-spacer{display:none}.ra-title-mark,.ra-title-copy small,.ra-workspace-select>span{display:none}.ra-title-copy strong{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ra-workspace-select{display:block;min-width:0}.ra-workspace-toggle{min-width:0;width:100%;padding:6px 7px;font-size:10px}.ra-workspace-menu{left:0;right:0;min-width:0}.ra-title-actions{flex-wrap:nowrap;gap:3px}.ra-title-actions .ra-btn{padding:5px 7px}.ra-shell{grid-template-columns:minmax(0,1fr)}.ra-sidebar{position:absolute;left:0;top:0;bottom:0;width:230px;z-index:10;transform:translateX(-105%);transition:transform .15s}.ra-shell.sidebar-open .ra-sidebar{transform:translateX(0)}.ra-brand,.ra-group-label,.ra-nav-text{display:initial}.ra-grid,.ra-formgrid,.ra-kpis,.ra-detail-grid,.ra-color-grid{grid-template-columns:1fr}.ra-pipeline{display:block}.ra-stage{display:none}.ra-stage.mobile-active{display:block}.ra-drawer{width:100%}.ra-pagehead{align-items:flex-start}}
+#ra-mobile-menu{display:none}@media(max-width:640px){#ra-mobile-menu{display:inline-block}}.ra-profile-more{display:inline-block;position:relative}.ra-profile-more>summary{list-style:none;display:inline-block}.ra-profile-more>summary::-webkit-details-marker{display:none}.ra-profile-more[open]>.ra-actions{margin-top:6px}.ra-settings-advanced{margin-top:16px;padding-top:6px;border-top:1px dashed var(--ra-line)}.ra-settings-group-title{margin:6px 0 2px;font-size:13px}@media(max-width:900px){#ra-app{left:3vw;top:4vh;width:94vw;height:90vh}.ra-shell{grid-template-columns:58px minmax(0,1fr)}.ra-brand,.ra-group-label,.ra-nav-text{display:none}.ra-color-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:640px){#ra-app{left:4px;top:44px;width:calc(100vw - 8px);height:calc(100vh - 52px);min-width:0;min-height:0}.ra-titlebar{grid-template-columns:minmax(0,1fr) minmax(104px,128px) auto;gap:6px;padding:0 7px;height:50px}.ra-title-spacer{display:none}.ra-title-mark,.ra-title-copy small,.ra-workspace-select>span{display:none}.ra-title-copy strong{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ra-workspace-select{display:block;min-width:0}.ra-workspace-toggle{min-width:0;width:100%;padding:6px 7px;font-size:10px}.ra-workspace-menu{left:0;right:0;min-width:0}.ra-title-actions{flex-wrap:nowrap;gap:3px}.ra-title-actions .ra-btn{padding:5px 7px}.ra-shell{grid-template-columns:minmax(0,1fr)}.ra-sidebar{position:absolute;left:0;top:0;bottom:0;width:230px;z-index:10;transform:translateX(-105%);transition:transform .15s}.ra-shell.sidebar-open .ra-sidebar{transform:translateX(0)}.ra-brand,.ra-group-label,.ra-nav-text{display:initial}.ra-grid,.ra-formgrid,.ra-detail-grid,.ra-color-grid{grid-template-columns:1fr}.ra-drawer{width:100%}.ra-pagehead{align-items:flex-start}}
 `;document.head.appendChild(style);}
 
   function applyTheme(){const root=document.documentElement;root.dataset.raTheme=state.settings.theme;root.dataset.raDensity=state.settings.density;root.dataset.raText=state.settings.textSize;}
   function toast(message,bad=false){let box=document.getElementById('ra-toastbox');if(!box){if(!document.body)return;injectStyles();box=document.createElement('div');box.id='ra-toastbox';box.className='ra-toastbox';document.body.appendChild(box);}const item=document.createElement('div');item.className=`ra-toast${bad?' bad':''}`;item.textContent=message;box.appendChild(item);setTimeout(()=>item.remove(),3800);}
-  function activeDomain(){if(String(state.page||'').startsWith('faction-'))return 'faction';if(String(state.page||'').startsWith('company-'))return 'company';return state.settings.activeDomain==='faction'?'faction':'company';}
+  function activeDomain(){if(String(state.page||'').startsWith('faction-'))return 'faction';if(String(state.page||'').startsWith('company-')&&state.page!=='company-discover')return 'company';return state.settings.activeDomain==='faction'?'faction':'company';}
   function workspaceSelectHtml(domain=activeDomain()){const selected=domain==='faction'?'faction':'company',label=selected==='faction'?'Faction':'Company';return `<div class="ra-workspace-select"><span>Mode</span><button type="button" class="ra-workspace-toggle" id="ra-workspace-toggle" aria-haspopup="menu" aria-expanded="false"><span id="ra-workspace-label">${label}</span><span class="ra-workspace-caret" aria-hidden="true">▾</span></button><div class="ra-workspace-menu" id="ra-workspace-menu" role="menu" hidden><button type="button" role="menuitem" data-workspace-domain="company" class="${selected==='company'?'active':''}">Company</button><button type="button" role="menuitem" data-workspace-domain="faction" class="${selected==='faction'?'active':''}">Faction</button></div></div>`;}
   function navHtml(){const domain=activeDomain();const expanded=new Set(state.settings.navigation?.expandedGroups||[]);const groups=V46Navigation.visibleGroups(state.settings);const domainId=`${domain}-recruitment`;const visible=groups.filter(group=>group.id===domainId||group.id==='intelligence'||group.id==='application');const sections=visible.map(group=>{const core=group.id===domainId;if(core)return `<div class="ra-nav-section"><div class="ra-group-label" style="padding:6px 8px">${esc(group.label)}</div><div class="ra-nav">${group.pages.map(page=>`<button type="button" data-page="${esc(page.id)}"><span class="ra-nav-icon">${esc(icon(page.id))}</span><span class="ra-nav-text">${esc(page.label)}</span></button>`).join('')}</div></div>`;const open=expanded.has(group.id);const hasActive=group.pages.some(page=>page.id===state.page);return `<div class="ra-nav-section"><button type="button" class="ra-group-toggle${hasActive?' has-active':''}" data-nav-toggle="${esc(group.id)}" aria-expanded="${open?'true':'false'}"><span class="ra-group-label">${esc(group.label)}</span><span class="ra-group-chevron" aria-hidden="true">${open?'▾':'▸'}</span></button><div class="ra-nav" data-nav-group="${esc(group.id)}" ${open?'':'hidden'}>${group.pages.map(page=>`<button type="button" data-page="${esc(page.id)}"><span class="ra-nav-icon">${esc(icon(page.id))}</span><span class="ra-nav-text">${esc(page.label)}</span></button>`).join('')}</div></div>`;}).join('');return sections;}
   function rebuildNav(){const target=document.getElementById('ra-nav');if(target)target.innerHTML=navHtml();document.querySelector('.ra-shell')?.classList.toggle('is-collapsed',!!state.settings.sidebarCollapsed);const workspaceLabel=document.getElementById('ra-workspace-label');if(workspaceLabel)workspaceLabel.textContent=activeDomain()==='faction'?'Faction':'Company';document.querySelectorAll('[data-workspace-domain]').forEach(button=>button.classList.toggle('active',button.dataset.workspaceDomain===activeDomain()));target?.querySelectorAll('[data-nav-toggle]').forEach(button=>button.onclick=async()=>{const expanded=V46Navigation.toggleExpandedGroup(state.settings.navigation.expandedGroups,button.dataset.navToggle);await saveSettings({navigation:{...state.settings.navigation,expandedGroups:expanded}});rebuildNav();});target?.querySelectorAll('[data-page]').forEach(btn=>btn.onclick=()=>route(btn.dataset.page).catch(e=>toast(e.message,true)));V46CompanyPlatform.syncNavigation?.();V47FactionPlatform.syncNavigation?.();target?.querySelector(`[data-page="${state.page}"]`)?.classList.add('active');}
 
-  function pageMeta(page){return({'company-overview':['Company Overview','Company recruitment status and work needing attention.'],'company-today':['Company Today','Prioritized Company recruitment work for today.'],'company-discover':['Company Discover','Sync Company recruitment sources and enrich Company candidates.'],'company-candidates':['Company Candidates','Search, filter and manage Company recruitment candidates.'],'company-pipeline':['Company Pipeline','Move Company candidates through explicit recruitment stages.'],'company-vacancies':['Company Vacancies','Define and manage Company hiring needs.'],'company-campaigns':['Company Campaigns','Organize Company recruitment campaigns.'],'company-followups':['Company Follow-ups','Track Company candidate follow-ups.'],'company-timeline':['Company Timeline','Review Company recruitment history.'],'company-stage-aging':['Company Stage Aging','Review candidates aging in their current Company stage.'],'company-contact-outcomes':['Company Contact Outcomes','Track Company recruitment contact outcomes.'],'company-recruitment-sessions':['Company Recruitment Sessions','Work focused Company recruitment queues.'],'company-talent-pool':['Company Talent Pool','Maintain reusable Company talent prospects.'],'company-reactivation':['Company Reactivation','Restart Company recruitment cycles without duplicating identity.'],'company-opportunity':['Company Opportunity Queue','Review explainable Company recruitment opportunities.'],'company-compare':['Company Compare','Compare Company candidates side by side.'],scout:['Scout','Collect official Torn player intelligence through the shared scheduler.'],'smart-match':['Smart Match','Build local vacancy profiles and explain candidate Match scores.'],'global-intelligence':['Global Intelligence','Review the sanitized shared intelligence service.'],settings:['Settings','Only Getting started is needed to search, filter and message. Everything under Advanced is optional.'],data:['Data','Local IndexedDB counts, export and reset controls.'],logs:['Logs','Sanitized Recruitment Agency diagnostic events.']})[page]||['Company Overview','Recruitment Agency'];}
+  function pageMeta(page){return({'company-discover':['Forum Discovery','Sync official Torn forum recruitment sources and enrich candidates.'],scout:['Scout','Collect official Torn player intelligence through the shared scheduler.'],'smart-match':['Smart Match','Build local vacancy profiles and explain candidate Match scores.'],'global-intelligence':['Global Intelligence','Review the sanitized shared intelligence service.'],settings:['Settings','Only Getting started is needed to search, filter and message. Everything under Advanced is optional.'],data:['Data','Local IndexedDB counts, export and reset controls.']})[page]||['Search & Results','Recruitment Agency'];}
 
-  async function renderOverview(){const views=await candidateViews();const sources=await idb.getAll('forumSources');const k=Runtime.kpiCounts(views.map(v=>({...v.candidate,matchScore:v.matchScore})));const recent=[...views].sort((a,b)=>Number(b.postedAt||0)-Number(a.postedAt||0)).slice(0,6);const need=views.filter(v=>['Not Contacted','Shortlisted','Replied'].includes(v.pipelineStage)).slice(0,6);return `<div class="ra-kpis"><div class="ra-kpi"><span>Active Candidates</span><b>${k.active}</b></div><div class="ra-kpi"><span>High Match</span><b>${k.highMatch}</b></div><div class="ra-kpi"><span>Shortlisted</span><b>${k.shortlisted}</b></div><div class="ra-kpi"><span>Replied</span><b>${k.replied}</b></div></div><div class="ra-grid">${panel('Recent Discoveries','Latest local forum imports',recent.map(v=>`<div><a class="ra-link" data-detail="${esc(v.userId)}" href="#">${esc(v.name)}</a> · ${esc(v.sourceType||'MANUAL')} · ${esc(v.lookingFor)}</div>`).join('')||'<div class="ra-muted">No discoveries yet.</div>','discovery')}${panel('Candidates Needing Attention','Recruitment workflow',need.map(v=>`<div><a class="ra-link" data-detail="${esc(v.userId)}" href="#">${esc(v.name)}</a> · ${pill(v.pipelineStage,stageColor(v.pipelineStage))}</div>`).join('')||'<div class="ra-muted">Nothing waiting.</div>','pipeline')}${panel('Sync Status','Forum checkpoints',`<div class="ra-muted">${sources.length} forum observation(s) stored locally. ${state.sync.running?'Sync active.':'Ready.'}</div>`,'sync')}${panel('Scout Status','Shared scheduler',`<div class="ra-muted">${esc(state.scout.status)} · hard cap ${HARD_API_RATE}/min · minimum ${MIN_API_GAP_MS} ms gap.</div>`)}</div>`;}
 
   function sourceStatusCard(feed,cp){const resume=!!cp?.resumeAvailable;return `<div class="ra-source-card"><b>${esc(feed.label)}</b><small>${feed.enabled?`Thread ${esc(feed.threadId)}`:'Not configured'}</small><div>${cp?.updatedAt?`Last sync ${new Date(cp.updatedAt).toLocaleString()}`:'Never synced'}</div><div>${resume?pill('Resume available',Runtime.AVAILABILITY_COLORS.Available):pill(feed.enabled?'Ready':'Disabled','#64748b')}</div></div>`;}
-  async function renderDiscover(){const feeds=Discovery.feedDefinitions(state.settings.recruitment);const checkpoints=new Map((await idb.getAll('forumSyncState')).map(x=>[x.feedId,x]));const sources=(await idb.getAll('forumSources')).sort((a,b)=>Number(b.postedAt||0)-Number(a.postedAt||0)).slice(0,12);const views=await candidateViews();const viewMap=new Map(views.map(v=>[String(v.userId),v]));const c=state.sync.running?(checkpoints.get(state.sync.feed)?.counters||{}):{};return `${panel('Forum Discovery','Official Torn v2 forum sources',`<div class="ra-actions"><button class="ra-btn ra-primary" id="ra-sync">Sync Forum Posts</button><button class="ra-btn" id="ra-add-candidate">Add Candidate</button><button class="ra-btn" id="ra-fill-companies">Fill Companies</button><button class="ra-btn ra-danger" id="ra-cancel-work" ${(state.sync.running||state.fill.running)?'':'hidden'}>Cancel</button><button class="ra-btn" id="ra-discover-menu">More ▾</button></div><div id="ra-discover-more" hidden class="ra-actions" style="margin-top:6px"><button class="ra-btn" data-open-thread="company">Open Company Thread</button><button class="ra-btn" data-open-thread="faction">Open Faction Thread</button><button class="ra-btn" data-open-thread="training">Open Training Thread</button><button class="ra-btn" id="ra-reset-forum">Reset Forum Import</button><button class="ra-btn" id="ra-refresh-discover">Refresh View</button></div><div style="margin-top:9px" class="ra-progress"><div id="ra-discover-progress"></div></div><div id="ra-discover-progress-text" class="ra-note">${state.fill.running?`Company lookups ${state.fill.done}/${state.fill.total}`:state.sync.running?`Syncing ${esc(state.sync.feed)} page ${state.sync.pages}`:'Idle'}</div>`,'sync')}<div class="ra-grid">${feeds.map(feed=>sourceStatusCard(feed,checkpoints.get(feed.feedId))).join('')}</div>${panel('Activity','Timestamped discovery activity',`<div class="ra-log" id="ra-discovery-log">${state.sync.running?`[${new Date().toLocaleTimeString()}] Sync active: ${esc(state.sync.feed)}\nPages: ${number(c.pagesChecked)} · Posts: ${number(c.postsExamined)} · Created: ${number(c.candidatesCreated)} · Updated: ${number(c.candidatesUpdated)}`:`[${new Date().toLocaleTimeString()}] Ready.${state.fill.errors.length?`\nLast company fill errors: ${state.fill.errors.map(x=>`${x.userId}: ${x.error}`).join(' | ')}`:''}`}</div>`)}${panel('Recent Discoveries','Latest imported candidates',`<div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Source</th><th>Looking For</th><th>Match</th><th>Stage</th><th>Discovered / Updated</th></tr></thead><tbody>${sources.map(s=>{const v=viewMap.get(String(s.userId));return `<tr><td><a href="#" data-detail="${esc(s.userId)}" class="ra-link">${esc(v?.name||s.authorName||`User ${s.userId}`)}</a></td><td>${esc(s.sourceType)}</td><td>${esc(v?.lookingFor||'Unknown')}</td><td>${scoreText(v?.matchScore)}</td><td>${v?pill(v.pipelineStage,stageColor(v.pipelineStage)):'—'}</td><td>${s.postedAt?new Date(s.postedAt).toLocaleString():'—'}</td></tr>`;}).join('')||'<tr><td colspan="6">No discoveries yet.</td></tr>'}</tbody></table></div>`,'discovery')}`;}
+  async function renderDiscover(){const feeds=Discovery.feedDefinitions(state.settings.recruitment);const checkpoints=new Map((await idb.getAll('forumSyncState')).map(x=>[x.feedId,x]));const sources=(await idb.getAll('forumSources')).sort((a,b)=>Number(b.postedAt||0)-Number(a.postedAt||0)).slice(0,12);const views=await candidateViews();const viewMap=new Map(views.map(v=>[String(v.userId),v]));const c=state.sync.running?(checkpoints.get(state.sync.feed)?.counters||{}):{};return `${panel('Forum Discovery','Official Torn v2 forum sources',`<div class="ra-actions"><button class="ra-btn ra-primary" id="ra-sync">Sync Forum Posts</button><button class="ra-btn" id="ra-add-candidate">Add Candidate</button><button class="ra-btn" id="ra-fill-companies">Fill Companies</button><button class="ra-btn ra-danger" id="ra-cancel-work" ${(state.sync.running||state.fill.running)?'':'hidden'}>Cancel</button><button class="ra-btn" id="ra-discover-menu">More ▾</button></div><div id="ra-discover-more" hidden class="ra-actions" style="margin-top:6px"><button class="ra-btn" data-open-thread="company">Open Company Thread</button><button class="ra-btn" data-open-thread="faction">Open Faction Thread</button><button class="ra-btn" data-open-thread="training">Open Training Thread</button><button class="ra-btn" id="ra-reset-forum">Reset Forum Import</button><button class="ra-btn" id="ra-refresh-discover">Refresh View</button></div><div style="margin-top:9px" class="ra-progress"><div id="ra-discover-progress"></div></div><div id="ra-discover-progress-text" class="ra-note">${state.fill.running?`Company lookups ${state.fill.done}/${state.fill.total}`:state.sync.running?`Syncing ${esc(state.sync.feed)} page ${state.sync.pages}`:'Idle'}</div>`,'sync')}<div class="ra-grid">${feeds.map(feed=>sourceStatusCard(feed,checkpoints.get(feed.feedId))).join('')}</div>${panel('Activity','Timestamped discovery activity',`<div class="ra-log" id="ra-discovery-log">${state.sync.running?`[${new Date().toLocaleTimeString()}] Sync active: ${esc(state.sync.feed)}\nPages: ${number(c.pagesChecked)} · Posts: ${number(c.postsExamined)} · Created: ${number(c.candidatesCreated)} · Updated: ${number(c.candidatesUpdated)}`:`[${new Date().toLocaleTimeString()}] Ready.${state.fill.errors.length?`\nLast company fill errors: ${state.fill.errors.map(x=>`${x.userId}: ${x.error}`).join(' | ')}`:''}`}</div>`)}${panel('Recent Discoveries','Latest imported candidates',`<div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Source</th><th>Looking For</th><th>Match</th><th>Stage</th><th>Discovered / Updated</th></tr></thead><tbody>${sources.map(s=>{const v=viewMap.get(String(s.userId));return `<tr><td><a href="#" data-detail="${esc(s.userId)}" data-detail-domain="${recruitmentDomainForFeed(s)}" class="ra-link">${esc(v?.name||s.authorName||`User ${s.userId}`)}</a></td><td>${esc(s.sourceType)}</td><td>${esc(v?.lookingFor||'Unknown')}</td><td>${scoreText(v?.matchScore)}</td><td>${v?pill(v.pipelineStage,stageColor(v.pipelineStage)):'—'}</td><td>${s.postedAt?new Date(s.postedAt).toLocaleString():'—'}</td></tr>`;}).join('')||'<tr><td colspan="6">No discoveries yet.</td></tr>'}</tbody></table></div>`,'discovery')}`;}
 
-  function candidateFilterControls(){const f=state.settings.candidates.filters;const sources=ForumCore.SOURCE_TYPES||[];return `<div class="ra-formgrid"><div class="ra-field"><label>Search</label><input id="ra-filter-search" value="${esc(f.search)}" placeholder="Name / ID"></div><div class="ra-field"><label>Stage</label><select id="ra-filter-stage"><option value="">Any</option>${Runtime.PIPELINE_STAGES.map(x=>`<option ${f.stage===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div><div class="ra-field"><label>Source</label><select id="ra-filter-source"><option value="">Any</option>${sources.map(x=>`<option ${f.source===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div><div class="ra-field"><label>Looking For</label><input id="ra-filter-looking" value="${esc(f.lookingFor)}"></div><div class="ra-field"><label>Current Company</label><input id="ra-filter-company" value="${esc(f.currentCompany)}"></div><div class="ra-field"><label>Match ≥</label><input id="ra-filter-match" value="${esc(f.minMatch)}" inputmode="decimal"></div><div class="ra-field"><label>Fit ≥</label><input id="ra-filter-fit" value="${esc(f.minFit)}" inputmode="decimal"></div><div class="ra-field"><label>Active only</label><select id="ra-filter-active"><option value="false">No</option><option value="true" ${f.activeOnly?'selected':''}>Yes</option></select></div></div><div class="ra-actions" style="margin-top:7px"><button class="ra-btn" id="ra-more-filters">${f.moreOpen?'Hide':'More'} Filters</button><button class="ra-btn" id="ra-clear-candidate-filters">Clear</button></div><div id="ra-more-filter-box" ${f.moreOpen?'':'hidden'} class="ra-formgrid" style="margin-top:7px"><div class="ra-field"><label>MAN ≥</label><input id="ra-filter-man" value="${esc(f.minMan)}"></div><div class="ra-field"><label>INT ≥</label><input id="ra-filter-int" value="${esc(f.minInt)}"></div><div class="ra-field"><label>END ≥</label><input id="ra-filter-end" value="${esc(f.minEnd)}"></div><div class="ra-field"><label>Activity 30d ≥</label><input id="ra-filter-activity" value="${esc(f.minActivity30)}"></div></div>`;}
-  function displayColumn(v,key){if(key==='player')return `<a href="#" data-detail="${esc(v.userId)}" data-context-id="${esc(v.userId)}" class="ra-link">${esc(v.name)}</a><small class="ra-muted"> ${esc(v.userId)}</small>`;if(key==='stage')return `<select class="ra-inline-stage" data-stage-id="${esc(v.userId)}">${Runtime.PIPELINE_STAGES.map(s=>`<option ${s===v.pipelineStage?'selected':''}>${esc(s)}</option>`).join('')}</select>`;if(key==='match')return scoreText(v.matchScore);if(key==='fit')return scoreText(v.fitScore);if(key==='lookingFor')return esc(v.lookingFor);if(key==='source')return esc(v.sourceType||'MANUAL');if(key==='lastActive')return lastActiveText(v);if(key==='currentCompany')return esc(v.currentCompany||'—');if(key==='man'||key==='int'||key==='end'||key==='total'||key==='ee')return formatNumber(v[key]);if(key==='availability')return pill(v.availability,availabilityColor(v.availability));if(key==='postedAt')return v.postedAt?new Date(v.postedAt).toLocaleString():'—';if(key==='activity30')return formatNumber(v.activity30,1);if(key==='scoutStatus')return esc(v.scoutStatus||'unscouted');return '—';}
-  async function renderCandidates(){const all=await candidateViews();const rows=applyCandidateFilters(all);const cols=state.settings.candidates.visibleColumns.filter(k=>COLUMN_LABELS[k]);const k=Runtime.kpiCounts(all.map(v=>({...v.candidate,matchScore:v.matchScore})));const body=state.settings.candidates.view==='cards'?`<div class="ra-cards">${rows.map(v=>`<article class="ra-card" data-context-id="${esc(v.userId)}" tabindex="0"><h4><a href="#" data-detail="${esc(v.userId)}" class="ra-link">${esc(v.name)}</a></h4><div>${pill(v.pipelineStage,stageColor(v.pipelineStage))} ${pill(v.availability,availabilityColor(v.availability))}</div><div class="ra-card-grid"><span>Match<b>${scoreText(v.matchScore)}</b></span><span>Fit<b>${scoreText(v.fitScore)}</b></span><span>Looking For<b>${esc(v.lookingFor)}</b></span><span>Source<b>${esc(v.sourceType||'MANUAL')}</b></span></div></article>`).join('')||'<div class="ra-muted">No matching candidates.</div>'}</div>`:`<div class="ra-table-wrap"><table class="ra-table"><thead><tr>${cols.map(c=>`<th>${esc(COLUMN_LABELS[c])}</th>`).join('')}</tr></thead><tbody>${rows.map(v=>`<tr data-context-id="${esc(v.userId)}" tabindex="0" style="--row-tint:${esc(stageColor(v.pipelineStage))}">${cols.map(c=>`<td>${displayColumn(v,c)}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${cols.length}">No matching candidates.</td></tr>`}</tbody></table></div>`;return `<div class="ra-kpis"><div class="ra-kpi"><span>Active</span><b>${k.active}</b></div><div class="ra-kpi"><span>High Match</span><b>${k.highMatch}</b></div><div class="ra-kpi"><span>Shortlisted</span><b>${k.shortlisted}</b></div><div class="ra-kpi"><span>Replied</span><b>${k.replied}</b></div></div>${panel('Candidate Filters','Recruitment and Scout-derived criteria',candidateFilterControls())}${panel('Candidates',`${rows.length} matching of ${all.length}`,`<div class="ra-actions"><button class="ra-btn" id="ra-toggle-view">${state.settings.candidates.view==='table'?'Cards':'Table'} View</button><button class="ra-btn" id="ra-columns">Columns</button></div><div id="ra-column-picker" hidden class="ra-actions" style="margin:7px 0">${[...DEFAULT_VISIBLE_COLUMNS,...OPTIONAL_COLUMNS].filter((x,i,a)=>a.indexOf(x)===i).map(c=>`<label><input type="checkbox" data-column="${esc(c)}" ${cols.includes(c)?'checked':''} ${c==='player'?'disabled':''}> ${esc(COLUMN_LABELS[c])}</label>`).join('')}</div>${body}`)}`;}
 
-  async function renderPipeline(){const views=await candidateViews();const buckets=Candidates.pipelineBuckets(views.map(v=>({...v,pipelineStage:v.pipelineStage})));const mobileStage=text(state.settings.candidates.mobilePipelineStage)||Runtime.PIPELINE_STAGES[0];return `${panel('Pipeline','Explicit stage changes only',`<div class="ra-muted">Opening a profile, forum source, or message compose never changes a candidate stage.</div><div class="ra-field" id="ra-mobile-stage-select-wrap"><label>Small-screen stage</label><select id="ra-mobile-stage-select">${Runtime.PIPELINE_STAGES.map(s=>`<option ${s===mobileStage?'selected':''}>${esc(s)}</option>`).join('')}</select></div>`,'pipeline')}<div class="ra-pipeline">${Runtime.PIPELINE_STAGES.map(stage=>`<section class="ra-stage ${stage===mobileStage?'mobile-active':''}" data-drop-stage="${esc(stage)}" style="--stage:${esc(stageColor(stage))}"><div class="ra-stage-head"><b>${esc(stage)}</b><span>${(buckets[stage]||[]).length}</span></div><div class="ra-stage-drop">${(buckets[stage]||[]).map(v=>`<article class="ra-stage-card ${['Hired','Rejected'].includes(stage)?'subdued':''}" draggable="true" data-drag-id="${esc(v.userId)}" data-context-id="${esc(v.userId)}" tabindex="0"><a href="#" data-detail="${esc(v.userId)}" class="ra-link"><b>${esc(v.name)}</b></a><div>${esc(v.sourceType||'MANUAL')}</div><div>Match ${scoreText(v.matchScore)} · Fit ${scoreText(v.fitScore)}</div><div>${esc(v.lookingFor)}</div><div>${pill(v.availability,availabilityColor(v.availability))}</div></article>`).join('')}</div></section>`).join('')}</div>`;}
 
   async function renderScout(){const history=(await idb.getAll('scoutHistory')).sort((a,b)=>b.capturedAt-a.capturedAt).slice(0,20);return `${panel('Scout','Official Torn player intelligence',`<div class="ra-formgrid"><div class="ra-field"><label>Player IDs / profile URLs</label><textarea id="ra-scout-ids" placeholder="3877028, profile URLs, etc."></textarea></div><div><div class="ra-detail-grid"><span>Queue<b>${state.scout.done}/${state.scout.total}</b></span><span>API calls<b>${state.scout.calls}</b></span><span>Current candidate<b>${state.scout.currentId||'—'}</b></span><span>Status<b id="ra-scout-status">${esc(state.scout.status)}</b></span></div><div class="ra-progress" style="margin-top:8px"><div id="ra-scout-progress" style="width:${state.scout.total?Math.min(100,state.scout.done/state.scout.total*100):0}%"></div></div></div></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-run-scout">Scout</button><button class="ra-btn" id="ra-pause-scout" ${state.scout.running?'':'disabled'}>${state.scout.paused?'Resume':'Pause'}</button><button class="ra-btn ra-danger" id="ra-cancel-scout" ${state.scout.running?'':'disabled'}>Cancel</button></div>`) }${panel('Scout History','Most recent local snapshots',`<div class="ra-table-wrap"><table class="ra-table"><thead><tr><th>Player</th><th>Captured</th><th>Fit</th><th>Type</th><th>Trend</th></tr></thead><tbody>${history.map(s=>`<tr><td>${esc(s.profile?.name||s.userId)}</td><td>${new Date(s.capturedAt).toLocaleString()}</td><td>${scoreText(scoutFit(s))}</td><td>${esc(s.originalFitType||'—')}</td><td>${finite(s.trend)===null?'—':`${Number(s.trend)>=0?'+':''}${Number(s.trend).toFixed(1)}%`}</td></tr>`).join('')||'<tr><td colspan="5">No Scout history.</td></tr>'}</tbody></table></div>`)}`;}
 
@@ -6134,15 +4395,13 @@
   async function renderGlobal(){const pending=(await idb.getAll('globalSyncQueue')).length;return `${panel('Global Intelligence','Sanitized shared public-player observations',`<div class="ra-detail-grid"><span>Enabled<b>${state.settings.global.enabled?'Yes':'No'}</b></span><span>Endpoint<b>${globalEndpoint()?'Configured':'Not configured'}</b></span><span>Pending queue<b>${pending}</b></span><span>Schema<b>${GlobalCore.GLOBAL_SCHEMA_VERSION}</b></span></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" id="ra-global-test">Test Service</button><button class="ra-btn" id="ra-global-retry">Retry Sync</button></div>`) }${panel('Privacy','Exactly what can leave the browser',`<div class="ra-muted">Shared fields: ${esc(GlobalCore.GLOBAL_FIELDS.join(', '))}.</div><p class="ra-muted">Forum text, source URLs/history, pipeline stage, notes, salary, availability overrides, Match/Profile data, recruitment messages and workflow state remain local.</p>`)}`;}
 
   function settingsSection(title,id,body,help='',open=false){return `<details data-settings-section="${esc(id)}"${open?' open':''}><summary>${esc(title)} ${help?helpButton(help):''}</summary><div class="ra-settings-body">${body}</div></details>`;}
-  function colorSettings(){const stages=Runtime.PIPELINE_STAGES.map(s=>`<label class="ra-color-row"><input type="color" data-stage-color="${esc(s)}" value="${esc(stageColor(s))}"> ${esc(s)}</label>`).join('');const availability=Runtime.AVAILABILITY_VALUES.map(v=>`<label class="ra-color-row"><input type="color" data-availability-color="${esc(v)}" value="${esc(availabilityColor(v))}"> ${esc(v)}</label>`).join('');return `<div class="ra-color-grid">${stages}${availability}</div><div class="ra-actions"><button class="ra-btn" id="ra-reset-colors">Reset Colours</button></div>`;}
-  function optionalModuleSettingsHtml(){return `<div class="ra-note" style="margin-bottom:8px">Search & Results stays available. Enable only the extra workspaces you actually use.</div>${[['company','Company tools',/^company/],['faction','Faction tools',/^faction/],['tools','Other tools',/^(?!company|faction)/]].map(([group,heading,match])=>`<div data-optional-group="${group}"><div class="ra-optional-heading">${heading}</div><div class="ra-optional-grid">${OPTIONAL_MODULES.filter(([key])=>match.test(key)).map(([key,label])=>`<label class="ra-optional-toggle"><input type="checkbox" data-optional-module="${esc(key)}" ${state.settings.optionalModules?.[key]===true?'checked':''}><span>${esc(label.replace(/^(Company|Faction) /,''))}</span></label>`).join('')}</div></div>`).join('')}`;}
-  async function renderSettings(){const r=state.settings.recruitment;return `<div class="ra-settings">${settingsSection('Getting started','essentials',`<div class="ra-formgrid"><div class="ra-field" style="grid-column:1/-1"><label>Torn API key</label><div class="ra-actions"><span class="ra-muted" id="ra-api-key-status">${state.settings.apiKey?'Saved on this device.':'Not set yet. You will be asked for it the first time the app contacts Torn.'}</span><button class="ra-btn" id="ra-set-key">Set / Change API Key</button></div></div><div class="ra-field" style="grid-column:1/-1"><b>Company recruitment</b><div class="ra-note">Recruit performs a fresh Torn check before preparing private chat.</div></div><div class="ra-field"><label>Company name</label><input id="ra-setting-own-company" value="${esc(state.settings.ownCompanyName)}" placeholder="Bad Decisions"></div><div class="ra-field"><label>Company type</label><input id="ra-setting-company-type" value="${esc(r.companyType)}" placeholder="Adult Novelties"></div><div class="ra-field" style="grid-column:1/-1"><label>Company recruitment private-chat message</label><textarea id="ra-setting-company-message" style="min-height:150px">${esc(r.companyRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {company_name} {company_type}</div></div><div class="ra-field" style="grid-column:1/-1"><b>Faction recruitment</b></div><div class="ra-field"><label>Faction name</label><input id="ra-setting-faction-name" value="${esc(r.factionName)}" placeholder="Silent Ledger"></div><div class="ra-field" style="grid-column:1/-1"><label>Faction recruitment private-chat message</label><textarea id="ra-setting-faction-message" style="min-height:150px">${esc(r.factionRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {faction_name}</div></div><input type="hidden" id="ra-setting-default-message" value="${esc(r.defaultMessage)}"></div>`,'defaultMessage',true)}${settingsSection('General','general',`<div class="ra-formgrid"><div class="ra-field"><label>Theme</label><select id="ra-setting-theme"><option value="dark">Dark</option><option value="light">Light</option></select></div><div class="ra-field"><label>Density</label><select id="ra-setting-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div class="ra-field"><label>Interface text size</label><select id="ra-setting-text"><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option></select></div><div class="ra-field"><label>Interface mode</label><select id="ra-setting-complexity"><option value="simple">Simple</option><option value="advanced">Advanced</option></select></div><div class="ra-field"><label>Launcher</label><select id="ra-setting-launcher"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Sidebar</label><select id="ra-setting-sidebar"><option value="false">Expanded</option><option value="true">Collapsed</option></select></div><div class="ra-field"><label>Include inactive candidates</label><select id="ra-setting-inactive"><option value="false">No</option><option value="true">Yes</option></select></div></div>`)}<div class="ra-settings-advanced" data-settings-group="advanced"><h3 class="ra-settings-group-title">Advanced (optional)</h3><p class="ra-muted">Extra tools and tuning. Not needed for searching, filtering or messaging.</p>${settingsSection('Optional Features','optional-features',optionalModuleSettingsHtml())}${settingsSection('Recruitment sources & colours','recruitment',`<div class="ra-formgrid"><div class="ra-field"><label>Company thread</label><input id="ra-setting-company-thread" value="${esc(r.companyThreadId)}"></div><div class="ra-field"><label>Faction thread</label><input id="ra-setting-faction-thread" value="${esc(r.factionThreadId)}"></div><div class="ra-field"><label>Training thread</label><input id="ra-setting-training-thread" value="${esc(r.trainingThreadId)}"></div><div class="ra-field"><label>Recent import window (days)</label><input id="ra-setting-import-days" type="number" min="1" value="${r.recentImportDays}"></div><div class="ra-field"><label>Max pages / feed</label><input id="ra-setting-max-pages" type="number" min="1" value="${r.maxPagesPerFeed}"></div><div class="ra-field"><label>Candidate active age (days)</label><input id="ra-setting-active-age" type="number" min="1" value="${r.candidateActiveAgeDays}"></div><div class="ra-field"><label>Train buyers</label><select id="ra-setting-train-explicit"><option value="true">Explicit only</option><option value="false">All parsed train interest</option></select></div></div>${colorSettings()}`)}${settingsSection('Scout','scout',`<div class="ra-formgrid"><div class="ra-field"><label>API calls/min (max 75)</label><input id="ra-setting-rate" type="number" min="10" max="75" value="${state.settings.scout.rate}"></div><div class="ra-field"><label>Workers</label><input id="ra-setting-workers" type="number" min="1" max="8" value="${state.settings.scout.workers}"></div><div class="ra-field"><label>Request budget</label><input id="ra-setting-budget" type="number" min="1" value="${state.settings.scout.budget}"></div><div class="ra-field"><label>History gap ms</label><input id="ra-setting-history-gap" type="number" min="0" value="${state.settings.scout.historyGapMs}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-cache-diagnostic">Diagnostics</button></div>`)}${settingsSection('Candidates','candidates',`<div class="ra-formgrid"><div class="ra-field"><label>Default view</label><select id="ra-setting-candidate-view"><option value="table">Table</option><option value="cards">Cards</option></select></div><div class="ra-field"><label>Results layout</label><select id="ra-setting-results-layout"><option value="expanded">Expanded table</option><option value="compact">Compact table · details in Player Card</option></select></div><div class="ra-field"><label>Compactness</label><select id="ra-setting-candidate-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div class="ra-field"><label>Player name click</label><select id="ra-setting-player-card-name"><option value="true">Open Player Card</option><option value="false">Do nothing</option></select></div><div class="ra-field"><label>Player Card pop-out</label><select id="ra-setting-player-card-popout"><option value="true">Allowed</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Remember open Player Card</label><select id="ra-setting-player-card-remember"><option value="true">Yes</option><option value="false">No</option></select></div></div><div class="ra-note" style="margin:8px 0">Compact results keep the table minimal; the hidden intelligence remains available in the context-sensitive Player Card. Company and Faction never share private workflow state.</div><div class="ra-actions"><button class="ra-btn" id="ra-reset-layout">Reset Layout</button></div>`)}${settingsSection('Smart Match','smart-match',`<div class="ra-muted">Smart Match profiles are edited on the Smart Match page.</div><div class="ra-actions"><button class="ra-btn" data-go-page="smart-match">Open Smart Match</button></div>`)}${settingsSection('Global Intelligence','global',`<div class="ra-formgrid"><div class="ra-field"><label>Enabled</label><select id="ra-setting-global-enabled"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Endpoint</label><input id="ra-setting-global-endpoint" value="${esc(state.settings.global.endpoint)}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-setting-global-test">Test</button><button class="ra-btn" id="ra-setting-global-retry">Retry</button></div>`)}${settingsSection('Data & Reset','data',`<div class="ra-actions"><button class="ra-btn" id="ra-reset-layout-2">Reset Layout</button><button class="ra-btn" id="ra-clear-scout">Clear Scout Cache</button><button class="ra-btn" id="ra-clear-recruitment">Clear Local Candidate / Forum Data</button></div>`,'data')}<details class="ra-danger-zone" data-settings-section="danger"><summary>Danger Zone</summary><div class="ra-settings-body"><p class="ra-muted">Hard local reset deletes Recruitment Agency browser-local data only. Torn account data and unrelated userscripts are untouched.</p><button type="button" id="ra-nuke" class="ra-nuke">${biohazardSvg()}<span>NUKE IT ALL!</span></button></div></details></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-save-settings">Save Settings</button></div></div>`;}
+  function colorSettings(){const availability=Runtime.AVAILABILITY_VALUES.map(v=>`<label class="ra-color-row"><input type="color" data-availability-color="${esc(v)}" value="${esc(availabilityColor(v))}"> ${esc(v)}</label>`).join('');return `<div class="ra-color-grid">${availability}</div><div class="ra-actions"><button class="ra-btn" id="ra-reset-colors">Reset Colours</button></div>`;}
+  function optionalModuleSettingsHtml(){return `<div class="ra-note" style="margin-bottom:8px">Search & Results stays available. Enable only the extra tools you actually use.</div><div data-optional-group="tools"><div class="ra-optional-grid">${OPTIONAL_MODULES.map(([key,label])=>`<label class="ra-optional-toggle"><input type="checkbox" data-optional-module="${esc(key)}" ${state.settings.optionalModules?.[key]===true?'checked':''}><span>${esc(label)}</span></label>`).join('')}</div></div>`;}
+  async function renderSettings(){const r=state.settings.recruitment;return `<div class="ra-settings">${settingsSection('Getting started','essentials',`<div class="ra-formgrid"><div class="ra-field" style="grid-column:1/-1"><label>Torn API key</label><div class="ra-actions"><span class="ra-muted" id="ra-api-key-status">${state.settings.apiKey?'Saved on this device.':'Not set yet. You will be asked for it the first time the app contacts Torn.'}</span><button class="ra-btn" id="ra-set-key">Set / Change API Key</button></div></div><div class="ra-field" style="grid-column:1/-1"><b>Company recruitment</b><div class="ra-note">Recruit performs a fresh Torn check before preparing private chat.</div></div><div class="ra-field"><label>Company name</label><input id="ra-setting-own-company" value="${esc(state.settings.ownCompanyName)}" placeholder="Bad Decisions"></div><div class="ra-field"><label>Company type</label><input id="ra-setting-company-type" value="${esc(r.companyType)}" placeholder="Adult Novelties"></div><div class="ra-field" style="grid-column:1/-1"><label>Company recruitment private-chat message</label><textarea id="ra-setting-company-message" style="min-height:150px">${esc(r.companyRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {company_name} {company_type}</div></div><div class="ra-field" style="grid-column:1/-1"><b>Faction recruitment</b></div><div class="ra-field"><label>Faction name</label><input id="ra-setting-faction-name" value="${esc(r.factionName)}" placeholder="Silent Ledger"></div><div class="ra-field" style="grid-column:1/-1"><label>Faction recruitment private-chat message</label><textarea id="ra-setting-faction-message" style="min-height:150px">${esc(r.factionRecruitmentMessage)}</textarea><div class="ra-note">Placeholders: {name} {faction_name}</div></div><input type="hidden" id="ra-setting-default-message" value="${esc(r.defaultMessage)}"></div>`,'defaultMessage',true)}${settingsSection('General','general',`<div class="ra-formgrid"><div class="ra-field"><label>Theme</label><select id="ra-setting-theme"><option value="dark">Dark</option><option value="light">Light</option></select></div><div class="ra-field"><label>Density</label><select id="ra-setting-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div class="ra-field"><label>Interface text size</label><select id="ra-setting-text"><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option></select></div><div class="ra-field"><label>Launcher</label><select id="ra-setting-launcher"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Sidebar</label><select id="ra-setting-sidebar"><option value="false">Expanded</option><option value="true">Collapsed</option></select></div><div class="ra-field"><label>Include inactive candidates</label><select id="ra-setting-inactive"><option value="false">No</option><option value="true">Yes</option></select></div></div>`)}<div class="ra-settings-advanced" data-settings-group="advanced"><h3 class="ra-settings-group-title">Advanced (optional)</h3><p class="ra-muted">Extra tools and tuning. Not needed for searching, filtering or messaging.</p>${settingsSection('Optional Features','optional-features',optionalModuleSettingsHtml())}${settingsSection('Recruitment sources & colours','recruitment',`<div class="ra-formgrid"><div class="ra-field"><label>Company thread</label><input id="ra-setting-company-thread" value="${esc(r.companyThreadId)}"></div><div class="ra-field"><label>Faction thread</label><input id="ra-setting-faction-thread" value="${esc(r.factionThreadId)}"></div><div class="ra-field"><label>Training thread</label><input id="ra-setting-training-thread" value="${esc(r.trainingThreadId)}"></div><div class="ra-field"><label>Recent import window (days)</label><input id="ra-setting-import-days" type="number" min="1" value="${r.recentImportDays}"></div><div class="ra-field"><label>Max pages / feed</label><input id="ra-setting-max-pages" type="number" min="1" value="${r.maxPagesPerFeed}"></div><div class="ra-field"><label>Candidate active age (days)</label><input id="ra-setting-active-age" type="number" min="1" value="${r.candidateActiveAgeDays}"></div><div class="ra-field"><label>Train buyers</label><select id="ra-setting-train-explicit"><option value="true">Explicit only</option><option value="false">All parsed train interest</option></select></div></div>${colorSettings()}`)}${settingsSection('Scout','scout',`<div class="ra-formgrid"><div class="ra-field"><label>API calls/min (max 75)</label><input id="ra-setting-rate" type="number" min="10" max="75" value="${state.settings.scout.rate}"></div><div class="ra-field"><label>Workers</label><input id="ra-setting-workers" type="number" min="1" max="8" value="${state.settings.scout.workers}"></div><div class="ra-field"><label>Request budget</label><input id="ra-setting-budget" type="number" min="1" value="${state.settings.scout.budget}"></div><div class="ra-field"><label>History gap ms</label><input id="ra-setting-history-gap" type="number" min="0" value="${state.settings.scout.historyGapMs}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-cache-diagnostic">Diagnostics</button></div>`)}${settingsSection('Candidates','candidates',`<div class="ra-formgrid"><div class="ra-field"><label>Results layout</label><select id="ra-setting-results-layout"><option value="expanded">Expanded table</option><option value="compact">Compact table · details in Player Card</option></select></div><div class="ra-field"><label>Compactness</label><select id="ra-setting-candidate-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div><div class="ra-field"><label>Player name click</label><select id="ra-setting-player-card-name"><option value="true">Open Player Card</option><option value="false">Do nothing</option></select></div><div class="ra-field"><label>Player Card pop-out</label><select id="ra-setting-player-card-popout"><option value="true">Allowed</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Remember open Player Card</label><select id="ra-setting-player-card-remember"><option value="true">Yes</option><option value="false">No</option></select></div></div><div class="ra-note" style="margin:8px 0">Compact results keep the table minimal; the hidden intelligence remains available in the context-sensitive Player Card. Company and Faction never share private workflow state.</div><div class="ra-actions"><button class="ra-btn" id="ra-reset-layout">Reset Layout</button></div>`)}${settingsSection('Smart Match','smart-match',`<div class="ra-muted">Smart Match profiles are edited on the Smart Match page.</div><div class="ra-actions"><button class="ra-btn" data-go-page="smart-match">Open Smart Match</button></div>`)}${settingsSection('Global Intelligence','global',`<div class="ra-formgrid"><div class="ra-field"><label>Enabled</label><select id="ra-setting-global-enabled"><option value="true">Enabled</option><option value="false">Disabled</option></select></div><div class="ra-field"><label>Endpoint</label><input id="ra-setting-global-endpoint" value="${esc(state.settings.global.endpoint)}"></div></div><div class="ra-actions"><button class="ra-btn" id="ra-setting-global-test">Test</button><button class="ra-btn" id="ra-setting-global-retry">Retry</button></div>`)}${settingsSection('Data & Reset','data',`<div class="ra-actions"><button class="ra-btn" id="ra-reset-layout-2">Reset Layout</button><button class="ra-btn" id="ra-clear-scout">Clear Scout Cache</button><button class="ra-btn" id="ra-clear-recruitment">Clear Local Candidate / Forum Data</button></div>`,'data')}<details class="ra-danger-zone" data-settings-section="danger"><summary>Danger Zone</summary><div class="ra-settings-body"><p class="ra-muted">Hard local reset deletes Recruitment Agency browser-local data only. Torn account data and unrelated userscripts are untouched.</p><button type="button" id="ra-nuke" class="ra-nuke">${biohazardSvg()}<span>NUKE IT ALL!</span></button></div></details></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-save-settings">Save Settings</button></div></div>`;}
 
   async function renderData(){const candidates=await idb.getAll('candidateLocal'),sources=await idb.getAll('forumSources'),logs=await idb.getAll('appLogs');return `${panel('Local Data','IndexedDB store summary',`<div class="ra-detail-grid"><span>DB version<b>${DB_VERSION}</b></span><span>Candidates<b>${candidates.length}</b></span><span>Forum sources<b>${sources.length}</b></span><span>Logs<b>${logs.length}</b></span></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" id="ra-export-csv">Export Candidate CSV</button><button class="ra-btn" id="ra-data-clear-candidates">Clear Candidate / Forum Data</button></div>`,'data')}`;}
-  async function renderLogs(){const logs=(await idb.getAll('appLogs')).sort((a,b)=>b.at-a.at).slice(0,200);return `${panel('Application Logs','Sanitized events only',`<div class="ra-actions"><button class="ra-btn" id="ra-refresh-logs">Refresh</button><button class="ra-btn" id="ra-clear-logs">Clear Logs</button></div><div class="ra-log" style="margin-top:8px">${logs.map(x=>`[${new Date(x.at).toLocaleString()}] ${esc(String(x.type).toUpperCase())} ${esc(x.message)}`).join('\n')||'No log entries.'}</div>`,'logs')}`;}
 
-  const renderCompanyPlaceholder=async()=>panel(pageMeta(state.page)[0],'Company recruitment route shell',`<div class="ra-muted">This dedicated Company workspace is wired and will be populated by the next Company implementation task.</div>`);
-  const renderers={'company-overview':renderOverview,'company-discover':renderDiscover,'company-candidates':renderCandidates,'company-pipeline':renderPipeline,'company-today':renderCompanyPlaceholder,'company-vacancies':renderCompanyPlaceholder,'company-campaigns':renderCompanyPlaceholder,'company-followups':renderCompanyPlaceholder,'company-timeline':renderCompanyPlaceholder,'company-stage-aging':renderCompanyPlaceholder,'company-contact-outcomes':renderCompanyPlaceholder,'company-recruitment-sessions':renderCompanyPlaceholder,'company-talent-pool':renderCompanyPlaceholder,'company-reactivation':renderCompanyPlaceholder,'company-opportunity':renderCompanyPlaceholder,'company-compare':renderCompanyPlaceholder,scout:renderScout,'smart-match':renderSmartMatch,'global-intelligence':renderGlobal,settings:renderSettings,data:renderData,logs:renderLogs};
+  const renderers={'company-discover':renderDiscover,scout:renderScout,'smart-match':renderSmartMatch,'global-intelligence':renderGlobal,settings:renderSettings,data:renderData};
   function visibleRouteSet(){return new Set(V46Navigation.visibleGroups(state.settings).flatMap(group=>group.pages.map(page=>page.id)));}
   function defaultDomainRoute(){return `${state.settings.activeDomain==='faction'?'faction':'company'}-candidates`;}
   // Re-render a page after async work only if the user is still on it; never navigate back to it.
@@ -6151,7 +4410,7 @@
     ensureAppMounted();
     const requested=String(page||'').trim().toLowerCase();
     const previousPage=state.page;
-    if(!V46Navigation.ROUTES.includes(requested)||(requested!=='settings'&&!visibleRouteSet().has(requested))||(requested==='logs'&&state.settings.complexity!=='advanced'))return false;
+    if(!V46Navigation.ROUTES.includes(requested)||(requested!=='settings'&&!visibleRouteSet().has(requested)))return false;
     if(requested===state.page&&persist){document.querySelector('.ra-shell')?.classList.remove('sidebar-open');return true;}
     state.page=requested;
     const seq=++state.routeSeq,stale=()=>seq!==state.routeSeq;
@@ -6164,7 +4423,6 @@
       if(stale())return false;
       bindHelp();
       document.querySelector('.ra-shell')?.classList.remove('sidebar-open');
-      stopLogRefresh();
       return;
     }
     if(V47FactionPlatform._test.IMPLEMENTED_ROUTES.has(state.page)){
@@ -6173,10 +4431,9 @@
       if(stale())return false;
       bindHelp();
       document.querySelector('.ra-shell')?.classList.remove('sidebar-open');
-      stopLogRefresh();
       return;
     }
-    const html=await (renderers[state.page]||renderOverview)();
+    const renderer=renderers[state.page];if(!renderer)return false;const html=await renderer();
     if(stale())return false;
     const [title,description]=pageMeta(state.page);
     document.getElementById('ra-page-title').textContent=title;
@@ -6185,30 +4442,12 @@
     content.innerHTML=html;
     rebuildNav();bindPageControls();bindHelp();bindCandidateInteractions();
     document.querySelector('.ra-shell')?.classList.remove('sidebar-open');
-    if(state.page==='logs')startLogRefresh();else stopLogRefresh();
   }
 
   async function saveCandidate(candidate){candidate.userId=String(candidate.userId);candidate.updatedAt=new Date().toISOString();await idb.put('candidateLocal',candidate);await repositories.company.ensure(candidate.userId,candidate,{source:'company-workflow',observedAt:Date.now(),skipShared:true});return candidate;}
-  async function changeCandidateStage(id,stage){const candidate=await idb.get('candidateLocal',String(id))||await idb.get('candidateLocal',Number(id));if(!candidate)return;await saveCandidate(Candidates.changeStage(candidate,stage));await logEvent('candidate','Pipeline stage changed',{playerId:Number(id),stage:ForumCore.normalizeStage(stage)});}
-  async function changeCandidateAvailability(id,value){const candidate=await idb.get('candidateLocal',String(id))||await idb.get('candidateLocal',Number(id));if(!candidate)return;await saveCandidate(Candidates.changeAvailability(candidate,value));}
-  async function deleteCompanyCandidateData(id){const userId=V46Domain.normalizeUserId(id);await idb.delete('candidateLocal',userId);await idb.delete('candidateLocal',Number(userId));await idb.delete('companyRecruitment',userId);for(const row of await idb.getAll('users'))if(text(row.userId)===userId&&text(row.sourceMode).toLowerCase()!=='faction')await idb.delete('users',row.recordId);for(const source of await idb.getAll('forumSources'))if(text(source.userId)===userId&&text(source.sourceType).toUpperCase()!=='FACTION FORUM')await idb.delete('forumSources',source.sourceId);return true;}
-  async function deleteCandidate(id){if(!confirm('Delete this local Company candidate and their Company recruitment source records?'))return;await deleteCompanyCandidateData(id);toast('Local Company candidate deleted.');await route(state.page,false);}
 
-  function contextMenuHtml(view){return Candidates.contextMenuModel(view).map(item=>{if(item.separator)return '<div class="ra-menu-sep"></div>';if(item.children)return `<button class="ra-menu-item" data-submenu="${esc(item.id)}">${esc(item.label)} ▸</button><div class="ra-submenu" data-submenu-box="${esc(item.id)}" hidden>${item.children.map(child=>`<button class="ra-menu-item" data-menu-action="${esc(child.id)}">${child.checked?'✓ ':''}${esc(child.label)}</button>`).join('')}</div>`;return `<button class="ra-menu-item" data-menu-action="${esc(item.id)}" ${item.disabled?'disabled':''}>${esc(item.label)}</button>`;}).join('');}
-  async function openContextMenu(id,x,y){const views=await candidateViews();const view=views.find(v=>String(v.userId)===String(id));if(!view)return;state.contextCandidateId=String(id);const menu=document.getElementById('ra-context');menu.innerHTML=contextMenuHtml(view);menu.hidden=false;const width=240,height=Math.min(500,menu.scrollHeight||400);menu.style.left=`${Math.max(4,Math.min(x,innerWidth-width-4))}px`;menu.style.top=`${Math.max(4,Math.min(y,innerHeight-height-4))}px`;menu.querySelectorAll('[data-submenu]').forEach(b=>b.onclick=()=>{const box=menu.querySelector(`[data-submenu-box="${b.dataset.submenu}"]`);if(box)box.hidden=!box.hidden;});menu.querySelectorAll('[data-menu-action]').forEach(b=>b.onclick=()=>handleMenuAction(b.dataset.menuAction,view));menu.querySelector('.ra-menu-item:not([disabled])')?.focus();}
-  function closeContextMenu(){const menu=document.getElementById('ra-context');if(menu)menu.hidden=true;state.contextCandidateId='';}
-  async function handleMenuAction(action,view){closeContextMenu();if(action==='message')return openMessageModal(view.userId);if(action==='details')return openDrawer(view.userId);if(action==='profile')return window.open(profileUrl(view.userId),'_blank','noopener');if(action==='forum'&&view.forumUrl)return window.open(view.forumUrl,'_blank','noopener');if(action==='scout')return runScout([Number(view.userId)],true).catch(e=>toast(e.message,true));if(action==='edit')return openEditCandidateModal(view.userId);if(action==='delete')return deleteCandidate(view.userId);if(action.startsWith('stage:')){await changeCandidateStage(view.userId,action.slice(6));return route(state.page,false);}if(action.startsWith('availability:')){await changeCandidateAvailability(view.userId,action.slice(13));return route(state.page,false);}}
 
   function contactStateFromStage(stage,outcomes=[]){if(Array.isArray(outcomes)&&outcomes.length)return 'Contacted';const value=text(stage).toLowerCase();return ['contacted','replied','hired','joined','invite ready','evaluating'].includes(value)?'Contacted':'Not yet';}
-  async function setCompanyWatchlist(userId,enabled){
-    const id=V46Domain.normalizeUserId(userId);
-    const existing=await idb.get('companyRecruitment',id);
-    if(!existing)throw new Error('Company candidate was not found.');
-    const reason=enabled?(text(existing.talentPoolReason)||'Watched from Player Card'):'';
-    const next=V46CompanyWorkflow.setTalentPool(existing,enabled,reason,Date.now());
-    await idb.put('companyRecruitment',next);
-    return next;
-  }
   function matchProfileRequirements(profile={}){
     const criteria=profile?.criteria||{},requirements={};
     for(const [key,target] of [['man','minMan'],['int','minInt'],['end','minEnd']]){
@@ -6282,16 +4521,11 @@
     state.playerCard={domain:normalizedDomain,userId,pinned:state.playerCard.pinned,popout:state.playerCard.popout};
     state.drawerCandidateId=userId;
     drawer.classList.toggle('is-popout',state.playerCard.popout);
-    drawer.innerHTML=`<div class="ra-drawer-head"><div class="ra-player-card-title"><div><div class="ra-player-card-domain">${esc(normalizedDomain)} player card</div><b>${esc(name)}</b><div class="ra-muted">Player ID ${esc(userId)} · ${esc(provenance.state)}</div></div>${finite(recruitmentFit)!==null?`<span class="ra-player-card-score" title="Explainable Recruitment Fit · ${esc(recruitmentConfidence)} confidence">${Number(recruitmentFit).toFixed(1)} · ${esc(recruitmentConfidence)}</span>`:''}</div><button class="ra-btn" id="ra-close-drawer">×</button></div><div class="ra-detail-section"><b>Player</b><div class="ra-detail-grid"><span>Level<b>${level===null?'—':formatNumber(level)}</b></span><span>Age<b>${formatNumber(age)}</b></span><span>Last Action<b>${esc(lastText)}</b></span><span>MAN<b>${formatNumber(man)}</b></span><span>INT<b>${formatNumber(intStat)}</b></span><span>END<b>${formatNumber(end)}</b></span><span>30d Activity<b>${formatNumber(activity30,1)}</b></span><span>Activity Streak<b>${formatNumber(streak)}</b></span><span>${fitLabel}<b>${scoreText(scoutFit)}</b></span></div></div><div class="ra-detail-section"><b>${statusLabel}</b><div class="ra-detail-grid"><span>${orgLabel}<b>${esc(orgValue)}</b></span><span>Recruitment Stage<b>${esc(stage)}</b></span><span>Contacted<b>${esc(contactStateFromStage(stage,record.outcomes))}</b></span><span>Availability<b>${esc(record.availability||'Unknown')}</b></span></div></div>${factionIntelHtml}<div class="ra-detail-section"><b>Recruitment Fit</b><div class="ra-detail-grid"><span>Score<b>${finite(recruitmentFit)===null?'—':Number(recruitmentFit).toFixed(1)}</b></span><span>Confidence<b>${esc(recruitmentConfidence)}</b></span><span>Profile<b>${normalizedDomain==='company'?esc(activeMatchProfile?.name||'No profile'):esc(activeFactionProfile?.name||'Faction default')}</b></span><span>Prospect State<b>${esc(provenance.state)}</b></span><span>Freshness<b>${esc(provenance.freshness)}</b></span></div>${fitBreakdownHtml}</div><div class="ra-detail-section"><b>Provenance</b><div class="ra-detail-grid"><span>Sources<b>${esc((provenance.sources||[]).join(' · ')||(normalizedDomain==='company'?sources.join(' · '):'')||'Unknown')}</b></span><span>First Discovered<b>${provenance.firstDiscoveredAt?esc(dateOrDash(provenance.firstDiscoveredAt)):'—'}</b></span><span>Last Observed<b>${displayedObservedAt?esc(dateOrDash(displayedObservedAt)):'—'}</b></span><span>Last Enriched<b>${provenance.lastEnrichedAt?esc(dateOrDash(provenance.lastEnrichedAt)):'—'}</b></span></div><div class="ra-note">Player Card reads existing browser-local intelligence. Opening it does not make a Torn API request. Scout Fit remains a separate activity metric.</div></div><div class="ra-player-card-actions"><button class="ra-btn ${record.doNotContact===true?'ra-danger':'ra-primary'}" id="ra-card-recruit" ${record.doNotContact===true?'disabled title="Do Not Contact is set for this recruitment domain"':''}>${record.doNotContact===true?'Do Not Contact':'Recruit'}</button>${normalizedDomain==='company'?`<button class="ra-btn" id="ra-card-watch">${record.talentPool===true?'Unwatch':'Watch'}</button>`:''}<button class="ra-btn" id="ra-card-refresh">Refresh Intelligence</button><button class="ra-btn" id="ra-card-profile">Open Profile</button><button class="ra-btn" id="ra-card-popout">${state.playerCard.popout?'Dock':'Pop Out'}</button><button class="ra-btn" id="ra-card-pin">${state.playerCard.pinned?'Unpin':'Pin'}</button></div>`;
+    drawer.innerHTML=`<div class="ra-drawer-head"><div class="ra-player-card-title"><div><div class="ra-player-card-domain">${esc(normalizedDomain)} player card</div><b>${esc(name)}</b><div class="ra-muted">Player ID ${esc(userId)} · ${esc(provenance.state)}</div></div>${finite(recruitmentFit)!==null?`<span class="ra-player-card-score" title="Explainable Recruitment Fit · ${esc(recruitmentConfidence)} confidence">${Number(recruitmentFit).toFixed(1)} · ${esc(recruitmentConfidence)}</span>`:''}</div><button class="ra-btn" id="ra-close-drawer">×</button></div><div class="ra-detail-section"><b>Player</b><div class="ra-detail-grid"><span>Level<b>${level===null?'—':formatNumber(level)}</b></span><span>Age<b>${formatNumber(age)}</b></span><span>Last Action<b>${esc(lastText)}</b></span><span>MAN<b>${formatNumber(man)}</b></span><span>INT<b>${formatNumber(intStat)}</b></span><span>END<b>${formatNumber(end)}</b></span><span>30d Activity<b>${formatNumber(activity30,1)}</b></span><span>Activity Streak<b>${formatNumber(streak)}</b></span><span>${fitLabel}<b>${scoreText(scoutFit)}</b></span></div></div><div class="ra-detail-section"><b>${statusLabel}</b><div class="ra-detail-grid"><span>${orgLabel}<b>${esc(orgValue)}</b></span><span>Recruitment Stage<b>${esc(stage)}</b></span><span>Contacted<b>${esc(contactStateFromStage(stage,record.outcomes))}</b></span><span>Availability<b>${esc(record.availability||'Unknown')}</b></span></div></div>${factionIntelHtml}<div class="ra-detail-section"><b>Recruitment Fit</b><div class="ra-detail-grid"><span>Score<b>${finite(recruitmentFit)===null?'—':Number(recruitmentFit).toFixed(1)}</b></span><span>Confidence<b>${esc(recruitmentConfidence)}</b></span><span>Profile<b>${normalizedDomain==='company'?esc(activeMatchProfile?.name||'No profile'):esc(activeFactionProfile?.name||'Faction default')}</b></span><span>Prospect State<b>${esc(provenance.state)}</b></span><span>Freshness<b>${esc(provenance.freshness)}</b></span></div>${fitBreakdownHtml}</div><div class="ra-detail-section"><b>Provenance</b><div class="ra-detail-grid"><span>Sources<b>${esc((provenance.sources||[]).join(' · ')||(normalizedDomain==='company'?sources.join(' · '):'')||'Unknown')}</b></span><span>First Discovered<b>${provenance.firstDiscoveredAt?esc(dateOrDash(provenance.firstDiscoveredAt)):'—'}</b></span><span>Last Observed<b>${displayedObservedAt?esc(dateOrDash(displayedObservedAt)):'—'}</b></span><span>Last Enriched<b>${provenance.lastEnrichedAt?esc(dateOrDash(provenance.lastEnrichedAt)):'—'}</b></span></div><div class="ra-note">Player Card reads existing browser-local intelligence. Opening it does not make a Torn API request. Scout Fit remains a separate activity metric.</div></div><div class="ra-player-card-actions"><button class="ra-btn ${record.doNotContact===true?'ra-danger':'ra-primary'}" id="ra-card-recruit" ${record.doNotContact===true?'disabled title="Do Not Contact is set for this recruitment domain"':''}>${record.doNotContact===true?'Do Not Contact':'Recruit'}</button><button class="ra-btn" id="ra-card-refresh">Refresh Intelligence</button><button class="ra-btn" id="ra-card-profile">Open Profile</button><button class="ra-btn" id="ra-card-popout">${state.playerCard.popout?'Dock':'Pop Out'}</button><button class="ra-btn" id="ra-card-pin">${state.playerCard.pinned?'Unpin':'Pin'}</button></div>`;
     drawer.hidden=false;
     const close=()=>{drawer.hidden=true;state.drawerCandidateId='';if(!state.playerCard.pinned)state.playerCard.userId='';};
     document.getElementById('ra-close-drawer').onclick=close;
     const recruitButton=document.getElementById('ra-card-recruit');if(record.doNotContact!==true)recruitButton.onclick=async()=>{try{const latest=await idb.get(normalizedDomain==='faction'?'factionRecruitment':'companyRecruitment',userId);if(latest?.doNotContact===true)throw new Error('Do Not Contact is set for this recruitment domain.');await recruitCandidate(normalizedDomain,userId,name);}catch(error){toast(error.message,true);}};
-    const watchButton=document.getElementById('ra-card-watch');
-    if(watchButton)watchButton.onclick=async()=>{
-      try{const next=await setCompanyWatchlist(userId,record.talentPool!==true);record.talentPool=next.talentPool;await openPlayerCard('company',userId,{force:true});}
-      catch(error){toast(error.message,true);}
-    };
     const refreshButton=document.getElementById('ra-card-refresh');
     refreshButton.onclick=async()=>{
       try{refreshButton.disabled=true;refreshButton.textContent='Refreshing…';const previous=await idb.get('scoutLatest',Number(userId));await runScout([Number(userId)],true);const current=await idb.get('scoutLatest',Number(userId));if(!current||current.snapshotId===previous?.snapshotId)throw new Error('Intelligence refresh failed; previous intelligence retained.');await openPlayerCard(normalizedDomain,userId,{force:true});}
@@ -6305,14 +4539,11 @@
   }
   function dateOrDash(value){const n=Number(value);if(Number.isFinite(n)&&n>0)return new Date(n).toLocaleString();const parsed=Date.parse(value);return Number.isFinite(parsed)?new Date(parsed).toLocaleString():'—';}
 
-  async function openDrawer(id){const views=await candidateViews();const v=views.find(x=>String(x.userId)===String(id));if(!v)return;state.drawerCandidateId=String(id);const drawer=document.getElementById('ra-drawer');drawer.innerHTML=`<div class="ra-drawer-head"><div><b>${esc(v.name)}</b><div class="ra-muted">${esc(v.userId)}</div></div><button class="ra-btn" id="ra-close-drawer">×</button></div><div class="ra-detail-section"><b>Identity</b><div class="ra-detail-grid"><span>Player<b>${esc(v.name)}</b></span><span>ID<b>${esc(v.userId)}</b></span><span>Current company<b>${esc(v.currentCompany||'—')}</b></span><span>Last active<b>${lastActiveText(v)}</b></span></div></div><div class="ra-detail-section"><b>Recruitment</b><div class="ra-detail-grid"><span>Stage<b>${pill(v.pipelineStage,stageColor(v.pipelineStage))}</b></span><span>Availability<b>${pill(v.availability,availabilityColor(v.availability))}</b></span><span>Salary<b>${money(v.expectedSalary)}</b></span><span>Source<b>${esc(v.sourceType||'MANUAL')}</b></span></div><div class="ra-note">${esc(v.recruiterNote||'No recruiter note.')}</div></div><div class="ra-detail-section"><b>Intelligence</b><div class="ra-detail-grid"><span>Match<b>${scoreText(v.matchScore)}</b></span><span>Fit<b>${scoreText(v.fitScore)}</b></span><span>EE<b>${formatNumber(v.ee)}</b></span><span>MAN / INT / END<b>${formatNumber(v.man)} / ${formatNumber(v.int)} / ${formatNumber(v.end)}</b></span></div></div><div class="ra-detail-section"><b>Looking For</b><div>${esc(v.lookingFor)}</div></div><div class="ra-detail-section"><b>Forum Source</b><div>${v.forumUrl?`<a class="ra-link" target="_blank" rel="noopener" href="${esc(v.forumUrl)}">Open latest source</a>`:'No forum source URL.'}</div></div><div class="ra-actions" style="margin-top:10px"><button class="ra-btn ra-primary" id="ra-drawer-message">Message Player</button><button class="ra-btn" id="ra-drawer-profile">Open Torn Profile</button><button class="ra-btn" id="ra-drawer-scout">Scout Player</button><button class="ra-btn" id="ra-drawer-edit">Edit Candidate</button></div>`;drawer.hidden=false;document.getElementById('ra-close-drawer').onclick=()=>{drawer.hidden=true;state.drawerCandidateId='';};document.getElementById('ra-drawer-message').onclick=()=>openMessageModal(v.userId);document.getElementById('ra-drawer-profile').onclick=()=>window.open(profileUrl(v.userId),'_blank','noopener');document.getElementById('ra-drawer-scout').onclick=()=>runScout([Number(v.userId)],true).catch(e=>toast(e.message,true));document.getElementById('ra-drawer-edit').onclick=()=>openEditCandidateModal(v.userId);}
 
   async function openAddCandidateModal(){showModal(`<h3>Add Candidate</h3><div class="ra-formgrid"><div class="ra-field"><label>Torn player ID</label><input id="ra-add-id" inputmode="numeric"></div><div class="ra-field"><label>Name (optional)</label><input id="ra-add-name"></div><div class="ra-field"><label>Desired company</label><input id="ra-add-company"></div><div class="ra-field"><label>Desired role</label><input id="ra-add-role"></div><div class="ra-field"><label>Expected salary</label><input id="ra-add-salary"></div><div class="ra-field"><label>Availability</label><select id="ra-add-availability"><option value="Unknown">Unknown</option><option value="Available">Available</option><option value="Unavailable">Unavailable</option></select></div><div class="ra-field" style="grid-column:1/-1"><label>Recruiter note</label><textarea id="ra-add-note"></textarea></div></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-add-save">Add Candidate</button><button class="ra-btn" data-modal-close>Cancel</button></div>`);document.getElementById('ra-add-save').onclick=async()=>{try{const id=text(document.getElementById('ra-add-id').value);const existing=await idb.get('candidateLocal',id);const record=Discovery.addCandidateRecord({userId:id,name:text(document.getElementById('ra-add-name').value),desiredCompany:text(document.getElementById('ra-add-company').value),desiredRole:text(document.getElementById('ra-add-role').value),expectedSalary:finite(document.getElementById('ra-add-salary').value),availability:document.getElementById('ra-add-availability').value,recruiterNote:text(document.getElementById('ra-add-note').value)},existing);await saveCandidate(record);closeModal();toast('Candidate added.');await route(state.page,false);}catch(error){toast(error.message,true);}};}
-  async function openEditCandidateModal(id){const views=await candidateViews();const v=views.find(x=>String(x.userId)===String(id));if(!v)return;showModal(`<h3>Edit Candidate</h3><div class="ra-formgrid"><div class="ra-field"><label>Stage</label><select id="ra-edit-stage">${Runtime.PIPELINE_STAGES.map(s=>`<option ${s===v.pipelineStage?'selected':''}>${esc(s)}</option>`).join('')}</select></div><div class="ra-field"><label>Availability</label><select id="ra-edit-availability">${Runtime.AVAILABILITY_VALUES.map(a=>`<option ${a===v.availability?'selected':''}>${esc(a)}</option>`).join('')}</select></div><div class="ra-field"><label>Desired company</label><input id="ra-edit-company" value="${esc(v.desiredCompany)}"></div><div class="ra-field"><label>Desired role</label><input id="ra-edit-role" value="${esc(v.desiredRole)}"></div><div class="ra-field"><label>Expected salary</label><input id="ra-edit-salary" value="${esc(v.expectedSalary??'')}"></div><div class="ra-field" style="grid-column:1/-1"><label>Recruiter note</label><textarea id="ra-edit-note">${esc(v.recruiterNote)}</textarea></div></div><div class="ra-actions"><button class="ra-btn ra-primary" id="ra-edit-save">Save</button><button class="ra-btn" data-modal-close>Cancel</button></div>`);document.getElementById('ra-edit-save').onclick=async()=>{const c={...v.candidate,pipelineStage:document.getElementById('ra-edit-stage').value,availability:document.getElementById('ra-edit-availability').value,desiredCompany:text(document.getElementById('ra-edit-company').value),desiredRole:text(document.getElementById('ra-edit-role').value),expectedSalary:finite(document.getElementById('ra-edit-salary').value),recruiterNote:text(document.getElementById('ra-edit-note').value),manualFields:{...(v.candidate.manualFields||{}),desiredCompany:text(document.getElementById('ra-edit-company').value),desiredRole:text(document.getElementById('ra-edit-role').value),expectedSalary:finite(document.getElementById('ra-edit-salary').value),availability:document.getElementById('ra-edit-availability').value}};await saveCandidate(c);closeModal();toast('Candidate saved.');await route(state.page,false);if(!document.getElementById('ra-drawer').hidden)await openDrawer(id);};}
 
-  async function openMessageModal(id){const views=await candidateViews();const v=views.find(x=>String(x.userId)===String(id));if(!v)return;state.messageCandidateId=String(id);const values=Candidates.messageValues(v,state.settings.ownCompanyName);const plan=Messaging.messagePlan(state.settings.recruitment.defaultMessage,{...values,userId:id});showModal(`<h3>Message Player · ${esc(v.name)}</h3><div class="ra-note">Prepared locally. Opening Torn compose never changes pipeline stage and never sends automatically.</div><div class="ra-field" style="margin-top:8px"><label>Message</label><textarea id="ra-message-text" style="min-height:190px">${esc(plan.preparedText)}</textarea></div><div class="ra-actions"><button class="ra-btn" id="ra-message-edit">Edit</button><button class="ra-btn" id="ra-message-default">Save as Default</button><button class="ra-btn ra-primary" id="ra-message-open">Copy & Open Torn Message</button><button class="ra-btn" data-modal-close>Cancel</button></div>`,'messagePlayer');const ta=document.getElementById('ra-message-text');ta.readOnly=true;document.getElementById('ra-message-edit').onclick=()=>{ta.readOnly=false;ta.focus();};document.getElementById('ra-message-default').onclick=async()=>{await saveSettings({recruitment:{...state.settings.recruitment,defaultMessage:ta.value}});toast('Default recruitment message saved.');};document.getElementById('ra-message-open').onclick=async()=>{const prepared=text(ta.value);let copied=false;try{await navigator.clipboard.writeText(prepared);copied=true;}catch{ta.readOnly=false;ta.select();toast('Clipboard failed. Message remains selected for manual copy.',true);}window.open(Messaging.composeUrl(id),'_blank','noopener');if(copied)toast('Message copied. Torn compose opened; you still click Send.');};}
   function showModal(html){const modal=document.getElementById('ra-modal');modal.innerHTML=`<div class="ra-modal-card">${html}</div>`;modal.hidden=false;modal.querySelectorAll('[data-modal-close]').forEach(b=>b.onclick=closeModal);bindHelp();}
-  function closeModal(){const modal=document.getElementById('ra-modal');if(modal){modal.hidden=true;modal.innerHTML='';}state.messageCandidateId='';}
+  function closeModal(){const modal=document.getElementById('ra-modal');if(modal){modal.hidden=true;modal.innerHTML='';}}
 
   function candidateCsvRow(v){return[v.userId,v.name,v.pipelineStage,v.matchScore??'',v.fitScore??'',v.lookingFor,v.sourceType,v.currentCompany,v.availability,v.man??'',v.int??'',v.end??'',v.ee??''];}
   function csvCell(value){let safe=String(value??'');if(/^\s*[=+\-@]/u.test(safe))safe=`'${safe}`;return `"${safe.replaceAll('"','""')}"`;}
@@ -6323,8 +4554,6 @@
   async function clearRecruitment(){if(!confirm('Clear local Company/Faction recruitment and forum discovery data? Shared Scout/Player Intelligence will be kept.'))return;await clearRecruitmentData();toast('Recruitment/forum data cleared.');await logEvent('reset','Recruitment and forum data cleared');await route(state.page,false);}
   async function resetLayout(){await updateMeta(meta=>{meta.ui={windowGeometry:{}};});const app=document.getElementById('ra-app');Object.assign(app.style,{left:'6vw',top:'5vh',width:'88vw',height:'86vh'});toast('Layout reset.');}
 
-  function readFiltersFromUi(){const old=state.settings.candidates.filters;return{...old,search:text(document.getElementById('ra-filter-search')?.value),stage:text(document.getElementById('ra-filter-stage')?.value),source:text(document.getElementById('ra-filter-source')?.value),lookingFor:text(document.getElementById('ra-filter-looking')?.value),currentCompany:text(document.getElementById('ra-filter-company')?.value),minMatch:text(document.getElementById('ra-filter-match')?.value),minFit:text(document.getElementById('ra-filter-fit')?.value),activeOnly:document.getElementById('ra-filter-active')?.value==='true',minMan:text(document.getElementById('ra-filter-man')?.value),minInt:text(document.getElementById('ra-filter-int')?.value),minEnd:text(document.getElementById('ra-filter-end')?.value),minActivity30:text(document.getElementById('ra-filter-activity')?.value)};}
-  async function persistFilters(){await saveSettings({candidates:{...state.settings.candidates,filters:readFiltersFromUi()}});await refreshRoute('company-candidates');}
 
   async function runCacheDiagnostic(){
     if(state.scout.running)throw new Error('Finish the current Scout run first.');
@@ -6338,36 +4567,22 @@
     return verdict;
   }
 
-  async function saveSettingsPage(){const optionalModules={...DEFAULT_OPTIONAL_MODULES};document.querySelectorAll('[data-optional-module]').forEach(el=>{optionalModules[el.dataset.optionalModule]=el.checked===true;});const stageColors={...state.settings.recruitment.stageColors};document.querySelectorAll('[data-stage-color]').forEach(el=>stageColors[el.dataset.stageColor]=el.value);const availabilityColors={...state.settings.recruitment.availabilityColors};document.querySelectorAll('[data-availability-color]').forEach(el=>availabilityColors[el.dataset.availabilityColor]=el.value);const recruitment=Runtime.normalizeRecruitmentSettings({...state.settings.recruitment,companyThreadId:text(document.getElementById('ra-setting-company-thread')?.value),factionThreadId:text(document.getElementById('ra-setting-faction-thread')?.value),trainingThreadId:text(document.getElementById('ra-setting-training-thread')?.value),recentImportDays:number(document.getElementById('ra-setting-import-days')?.value,30),maxPagesPerFeed:number(document.getElementById('ra-setting-max-pages')?.value,20),candidateActiveAgeDays:number(document.getElementById('ra-setting-active-age')?.value,30),explicitTrainBuyersOnly:document.getElementById('ra-setting-train-explicit')?.value!=='false',defaultMessage:document.getElementById('ra-setting-default-message')?.value,companyType:text(document.getElementById('ra-setting-company-type')?.value),companyRecruitmentMessage:document.getElementById('ra-setting-company-message')?.value,factionName:text(document.getElementById('ra-setting-faction-name')?.value),factionRecruitmentMessage:document.getElementById('ra-setting-faction-message')?.value,stageColors,availabilityColors});await saveSettings({theme:document.getElementById('ra-setting-theme')?.value||state.settings.theme,density:document.getElementById('ra-setting-density')?.value||state.settings.density,textSize:document.getElementById('ra-setting-text')?.value||state.settings.textSize,complexity:document.getElementById('ra-setting-complexity')?.value||state.settings.complexity,launcherEnabled:document.getElementById('ra-setting-launcher')?.value!=='false',sidebarCollapsed:document.getElementById('ra-setting-sidebar')?.value==='true',includeInactive:document.getElementById('ra-setting-inactive')?.value==='true',ownCompanyName:text(document.getElementById('ra-setting-own-company')?.value),optionalModules,recruitment,scout:{...state.settings.scout,rate:clampRate(document.getElementById('ra-setting-rate')?.value),workers:number(document.getElementById('ra-setting-workers')?.value,3),budget:number(document.getElementById('ra-setting-budget')?.value,900),historyGapMs:number(document.getElementById('ra-setting-history-gap')?.value,0)},candidates:{...state.settings.candidates,view:document.getElementById('ra-setting-candidate-view')?.value||state.settings.candidates.view,resultsLayout:document.getElementById('ra-setting-results-layout')?.value==='compact'?'compact':'expanded',playerCard:{...state.settings.candidates.playerCard,openOnName:document.getElementById('ra-setting-player-card-name')?.value!=='false',allowPopout:document.getElementById('ra-setting-player-card-popout')?.value!=='false',rememberPanel:document.getElementById('ra-setting-player-card-remember')?.value!=='false'}},global:{...state.settings.global,enabled:document.getElementById('ra-setting-global-enabled')?.value!=='false',endpoint:text(document.getElementById('ra-setting-global-endpoint')?.value)}});applyTheme();syncLauncherVisibility();await refreshRoute('settings');toast('Settings saved.');await logEvent('settings','Settings saved',{complexity:state.settings.complexity,theme:state.settings.theme});}
+  async function saveSettingsPage(){const optionalModules={...DEFAULT_OPTIONAL_MODULES};document.querySelectorAll('[data-optional-module]').forEach(el=>{optionalModules[el.dataset.optionalModule]=el.checked===true;});const availabilityColors={...state.settings.recruitment.availabilityColors};document.querySelectorAll('[data-availability-color]').forEach(el=>availabilityColors[el.dataset.availabilityColor]=el.value);const recruitment=Runtime.normalizeRecruitmentSettings({...state.settings.recruitment,companyThreadId:text(document.getElementById('ra-setting-company-thread')?.value),factionThreadId:text(document.getElementById('ra-setting-faction-thread')?.value),trainingThreadId:text(document.getElementById('ra-setting-training-thread')?.value),recentImportDays:number(document.getElementById('ra-setting-import-days')?.value,30),maxPagesPerFeed:number(document.getElementById('ra-setting-max-pages')?.value,20),candidateActiveAgeDays:number(document.getElementById('ra-setting-active-age')?.value,30),explicitTrainBuyersOnly:document.getElementById('ra-setting-train-explicit')?.value!=='false',defaultMessage:document.getElementById('ra-setting-default-message')?.value,companyType:text(document.getElementById('ra-setting-company-type')?.value),companyRecruitmentMessage:document.getElementById('ra-setting-company-message')?.value,factionName:text(document.getElementById('ra-setting-faction-name')?.value),factionRecruitmentMessage:document.getElementById('ra-setting-faction-message')?.value,availabilityColors});await saveSettings({theme:document.getElementById('ra-setting-theme')?.value||state.settings.theme,density:document.getElementById('ra-setting-density')?.value||state.settings.density,textSize:document.getElementById('ra-setting-text')?.value||state.settings.textSize,launcherEnabled:document.getElementById('ra-setting-launcher')?.value!=='false',sidebarCollapsed:document.getElementById('ra-setting-sidebar')?.value==='true',includeInactive:document.getElementById('ra-setting-inactive')?.value==='true',ownCompanyName:text(document.getElementById('ra-setting-own-company')?.value),optionalModules,recruitment,scout:{...state.settings.scout,rate:clampRate(document.getElementById('ra-setting-rate')?.value),workers:number(document.getElementById('ra-setting-workers')?.value,3),budget:number(document.getElementById('ra-setting-budget')?.value,900),historyGapMs:number(document.getElementById('ra-setting-history-gap')?.value,0)},candidates:{...state.settings.candidates,resultsLayout:document.getElementById('ra-setting-results-layout')?.value==='compact'?'compact':'expanded',playerCard:{...state.settings.candidates.playerCard,openOnName:document.getElementById('ra-setting-player-card-name')?.value!=='false',allowPopout:document.getElementById('ra-setting-player-card-popout')?.value!=='false',rememberPanel:document.getElementById('ra-setting-player-card-remember')?.value!=='false'}},global:{...state.settings.global,enabled:document.getElementById('ra-setting-global-enabled')?.value!=='false',endpoint:text(document.getElementById('ra-setting-global-endpoint')?.value)}});applyTheme();syncLauncherVisibility();await refreshRoute('settings');toast('Settings saved.');await logEvent('settings','Settings saved',{complexity:state.settings.complexity,theme:state.settings.theme});}
 
   function bindPageControls(){
     document.getElementById('ra-sync')?.addEventListener('click',()=>syncForums().catch(e=>toast(e.message,true)));document.getElementById('ra-add-candidate')?.addEventListener('click',openAddCandidateModal);document.getElementById('ra-fill-companies')?.addEventListener('click',()=>fillCompanies().catch(e=>toast(e.message,true)));document.getElementById('ra-cancel-work')?.addEventListener('click',()=>{cancelSync();cancelFill();});document.getElementById('ra-discover-menu')?.addEventListener('click',()=>{const x=document.getElementById('ra-discover-more');if(x)x.hidden=!x.hidden;});document.querySelectorAll('[data-open-thread]').forEach(b=>b.onclick=()=>{const feed=Discovery.feedDefinitions(state.settings.recruitment).find(f=>f.feedId===b.dataset.openThread);if(feed?.threadId)window.open(forumThreadUrl(feed.threadId),'_blank','noopener');});document.getElementById('ra-reset-forum')?.addEventListener('click',async()=>{if(!confirm('Reset local forum import sources and checkpoints? Candidate recruiter data is preserved.'))return;await idb.clear('forumSources');await idb.clear('forumSyncState');toast('Forum import reset.');await refreshRoute('company-discover');});document.getElementById('ra-refresh-discover')?.addEventListener('click',()=>route('company-discover',false));
-    ['ra-filter-search','ra-filter-stage','ra-filter-source','ra-filter-looking','ra-filter-company','ra-filter-match','ra-filter-fit','ra-filter-active','ra-filter-man','ra-filter-int','ra-filter-end','ra-filter-activity'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>persistFilters().catch(e=>toast(e.message,true))));document.getElementById('ra-more-filters')?.addEventListener('click',async()=>{const f={...readFiltersFromUi(),moreOpen:!state.settings.candidates.filters.moreOpen};await saveSettings({candidates:{...state.settings.candidates,filters:f}});await refreshRoute('company-candidates');});document.getElementById('ra-clear-candidate-filters')?.addEventListener('click',async()=>{await saveSettings({candidates:{...state.settings.candidates,filters:{...defaultSettings().candidates.filters}}});await refreshRoute('company-candidates');});document.getElementById('ra-toggle-view')?.addEventListener('click',async()=>{await saveSettings({candidates:{...state.settings.candidates,view:state.settings.candidates.view==='table'?'cards':'table'}});await refreshRoute('company-candidates');});document.getElementById('ra-columns')?.addEventListener('click',()=>{const x=document.getElementById('ra-column-picker');if(x)x.hidden=!x.hidden;});document.querySelectorAll('[data-column]').forEach(el=>el.onchange=async()=>{let cols=[...state.settings.candidates.visibleColumns];if(el.checked)cols=[...new Set([...cols,el.dataset.column])];else cols=cols.filter(x=>x!==el.dataset.column);if(!cols.includes('player'))cols.unshift('player');await saveSettings({candidates:{...state.settings.candidates,visibleColumns:cols}});await refreshRoute('company-candidates');});document.querySelectorAll('.ra-inline-stage').forEach(el=>el.onchange=async()=>{await changeCandidateStage(el.dataset.stageId,el.value);toast('Stage updated.');});
-    document.getElementById('ra-mobile-stage-select')?.addEventListener('change',async e=>{await saveSettings({candidates:{...state.settings.candidates,mobilePipelineStage:e.target.value}});await refreshRoute('company-pipeline');});
+    
+    
     document.getElementById('ra-run-scout')?.addEventListener('click',()=>{const ids=ScoutCore.parseIds(document.getElementById('ra-scout-ids')?.value||'',state.settings.scout.maxCandidates);runScout(ids,true).catch(e=>toast(e.message,true));});document.getElementById('ra-pause-scout')?.addEventListener('click',pauseScout);document.getElementById('ra-cancel-scout')?.addEventListener('click',cancelScout);
     document.getElementById('ra-match-profile-select')?.addEventListener('change',async e=>{await saveSettings({match:{...state.settings.match,activeProfileId:e.target.value}});await refreshRoute('smart-match');});document.getElementById('ra-match-new')?.addEventListener('click',async()=>{const p=await saveMatchProfile(MatchCore.createDefaultProfile('New Match Profile'));await saveSettings({match:{...state.settings.match,activeProfileId:p.profileId}});await refreshRoute('smart-match');});document.getElementById('ra-match-duplicate')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);const p=MatchCore.normalizeProfile({...active,profileId:'',name:`${active.name} Copy`,createdAt:'',updatedAt:''});const saved=await saveMatchProfile(p);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});await refreshRoute('smart-match');});document.getElementById('ra-match-delete')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);if(!confirm(`Delete Match Profile "${active.name}"?`))return;await idb.delete('matchProfiles',active.profileId);await saveSettings({match:{...state.settings.match,activeProfileId:''}});await ensureDefaultMatchProfile();await refreshRoute('smart-match');});document.getElementById('ra-match-save')?.addEventListener('click',async()=>{const active=await getActiveMatchProfile(true);const criteria={};for(const key of MatchCore.CRITERIA_KEYS){const old=active.criteria[key];const enabled=!!document.querySelector(`[data-match-enabled="${key}"]`)?.checked;const weight=number(document.querySelector(`[data-match-weight="${key}"]`)?.value,old.weight);if(['company','role','availability'].includes(key))criteria[key]={enabled,weight,value:text(document.querySelector(`[data-match-value="${key}"]`)?.value)};else if(key==='salary')criteria[key]={enabled,weight,max:number(document.querySelector('[data-match-max="salary"]')?.value,old.max)};else criteria[key]={enabled,weight,target:number(document.querySelector(`[data-match-target="${key}"]`)?.value,old.target)};}const saved=await saveMatchProfile({profileId:active.profileId,name:text(document.getElementById('ra-match-name')?.value)||active.name,criteria,createdAt:active.createdAt,searchFilters:active.searchFilters,searchFiltersCustom:active.searchFiltersCustom});await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});toast('Match Profile saved.');await refreshRoute('smart-match');});
     document.getElementById('ra-global-test')?.addEventListener('click',()=>testGlobalService().then(()=>toast('Global service connected.')).catch(e=>toast(e.message,true)));document.getElementById('ra-global-retry')?.addEventListener('click',()=>flushGlobalQueue(true).then(r=>toast(`Global sync processed ${r.processed}; ${r.pending} pending.`)).catch(e=>toast(e.message,true)));
     document.getElementById('ra-save-settings')?.addEventListener('click',()=>saveSettingsPage().catch(e=>toast(e.message,true)));document.getElementById('ra-set-key')?.addEventListener('click',()=>ensureApiKey(true).then(()=>{toast('API key saved.');const status=document.getElementById('ra-api-key-status');if(status)status.textContent='Saved on this device.';}).catch(e=>toast(e.message,true)));document.getElementById('ra-cache-diagnostic')?.addEventListener('click',()=>runCacheDiagnostic().catch(e=>toast(e.message,true)));document.getElementById('ra-reset-colors')?.addEventListener('click',async()=>{await saveSettings({recruitment:{...state.settings.recruitment,stageColors:{...Runtime.STAGE_COLORS},availabilityColors:{...Runtime.AVAILABILITY_COLORS}}});await refreshRoute('settings');});document.getElementById('ra-reset-layout')?.addEventListener('click',resetLayout);document.getElementById('ra-reset-layout-2')?.addEventListener('click',resetLayout);document.getElementById('ra-clear-scout')?.addEventListener('click',async()=>{if(!confirm('Clear local Scout cache and history?'))return;await idb.clear('scoutLatest');await idb.clear('scoutHistory');toast('Scout cache cleared.');});document.getElementById('ra-clear-recruitment')?.addEventListener('click',clearRecruitment);document.getElementById('ra-nuke')?.addEventListener('click',()=>hardReset().catch(e=>toast(e.message,true)));document.querySelectorAll('[data-go-page]').forEach(b=>b.onclick=()=>route(b.dataset.goPage));document.getElementById('ra-setting-global-test')?.addEventListener('click',()=>testGlobalService().then(()=>toast('Global service connected.')).catch(e=>toast(e.message,true)));document.getElementById('ra-setting-global-retry')?.addEventListener('click',()=>flushGlobalQueue(true).then(()=>toast('Global queue retried.')).catch(e=>toast(e.message,true)));
-    document.getElementById('ra-export-csv')?.addEventListener('click',exportCsv);document.getElementById('ra-data-clear-candidates')?.addEventListener('click',clearRecruitment);document.getElementById('ra-refresh-logs')?.addEventListener('click',()=>route('logs',false));document.getElementById('ra-clear-logs')?.addEventListener('click',async()=>{if(!confirm('Clear local application logs?'))return;await idb.clear('appLogs');await refreshRoute('logs');});
-    const setVal=(id,value)=>{const el=document.getElementById(id);if(el)el.value=String(value);};setVal('ra-setting-theme',state.settings.theme);setVal('ra-setting-density',state.settings.density);setVal('ra-setting-text',state.settings.textSize);setVal('ra-setting-complexity',state.settings.complexity);setVal('ra-setting-launcher',state.settings.launcherEnabled);setVal('ra-setting-sidebar',state.settings.sidebarCollapsed);setVal('ra-setting-inactive',state.settings.includeInactive);setVal('ra-setting-train-explicit',state.settings.recruitment.explicitTrainBuyersOnly);setVal('ra-setting-candidate-view',state.settings.candidates.view);setVal('ra-setting-results-layout',state.settings.candidates.resultsLayout);setVal('ra-setting-candidate-density',state.settings.density);setVal('ra-setting-player-card-name',state.settings.candidates.playerCard.openOnName);setVal('ra-setting-player-card-popout',state.settings.candidates.playerCard.allowPopout);setVal('ra-setting-player-card-remember',state.settings.candidates.playerCard.rememberPanel);setVal('ra-setting-global-enabled',state.settings.global.enabled);
+    document.getElementById('ra-export-csv')?.addEventListener('click',exportCsv);document.getElementById('ra-data-clear-candidates')?.addEventListener('click',clearRecruitment);
+    const setVal=(id,value)=>{const el=document.getElementById(id);if(el)el.value=String(value);};setVal('ra-setting-theme',state.settings.theme);setVal('ra-setting-density',state.settings.density);setVal('ra-setting-text',state.settings.textSize);setVal('ra-setting-launcher',state.settings.launcherEnabled);setVal('ra-setting-sidebar',state.settings.sidebarCollapsed);setVal('ra-setting-inactive',state.settings.includeInactive);setVal('ra-setting-train-explicit',state.settings.recruitment.explicitTrainBuyersOnly);setVal('ra-setting-results-layout',state.settings.candidates.resultsLayout);setVal('ra-setting-candidate-density',state.settings.density);setVal('ra-setting-player-card-name',state.settings.candidates.playerCard.openOnName);setVal('ra-setting-player-card-popout',state.settings.candidates.playerCard.allowPopout);setVal('ra-setting-player-card-remember',state.settings.candidates.playerCard.rememberPanel);setVal('ra-setting-global-enabled',state.settings.global.enabled);
   }
 
-  let hoverOpenTimer=null,hoverCloseTimer=null;
-  function closeCandidateHover(){clearTimeout(hoverOpenTimer);clearTimeout(hoverCloseTimer);const box=document.getElementById('ra-hover');if(box)box.hidden=true;}
-  function scheduleCandidateHoverClose(){clearTimeout(hoverCloseTimer);hoverCloseTimer=setTimeout(closeCandidateHover,220);}
-  async function openCandidateHover(id,anchor){
-    clearTimeout(hoverOpenTimer);clearTimeout(hoverCloseTimer);
-    const views=await candidateViews();const v=views.find(x=>String(x.userId)===String(id));const box=document.getElementById('ra-hover');
-    if(!v||!box||!anchor)return;
-    box.innerHTML=`<div style="display:flex;justify-content:space-between;gap:8px"><div><b>${esc(v.name)}</b><div class="ra-muted">${esc(v.userId)}</div></div><b>Match ${scoreText(v.matchScore)}</b></div><div class="ra-hover-grid"><span>Stage<b>${esc(v.pipelineStage)}</b></span><span>Availability<b>${esc(v.availability)}</b></span><span>Fit<b>${scoreText(v.fitScore)}</b></span><span>EE<b>${formatNumber(v.ee)}</b></span><span>Looking For<b>${esc(v.lookingFor)}</b></span><span>Current Company<b>${esc(v.currentCompany||'—')}</b></span><span>MAN / INT / END<b>${formatNumber(v.man)} / ${formatNumber(v.int)} / ${formatNumber(v.end)}</b></span><span>Source<b>${esc(v.sourceType||'MANUAL')}</b></span></div><div class="ra-actions" style="margin-top:8px"><button class="ra-btn" data-hover-detail="${esc(v.userId)}">View Details</button><button class="ra-btn" data-hover-scout="${esc(v.userId)}">Scout</button></div>`;
-    box.hidden=false;const r=anchor.getBoundingClientRect();const br=box.getBoundingClientRect();let left=r.right+8,top=r.top;if(left+br.width>innerWidth-6)left=r.left-br.width-8;left=Math.max(6,Math.min(left,innerWidth-br.width-6));top=Math.max(6,Math.min(top,innerHeight-br.height-6));box.style.left=`${left}px`;box.style.top=`${top}px`;
-    box.onpointerenter=()=>{clearTimeout(hoverCloseTimer);};box.onpointerleave=scheduleCandidateHoverClose;
-    box.querySelector('[data-hover-detail]')?.addEventListener('click',()=>{closeCandidateHover();openDrawer(v.userId);});
-    box.querySelector('[data-hover-scout]')?.addEventListener('click',()=>runScout([Number(v.userId)],true).catch(e=>toast(e.message,true)));
-  }
-  function scheduleCandidateHover(id,anchor){clearTimeout(hoverOpenTimer);hoverOpenTimer=setTimeout(()=>openCandidateHover(id,anchor).catch(()=>{}),180);}
 
-  function bindCandidateInteractions(){document.querySelectorAll('[data-detail]').forEach(el=>{el.onclick=e=>{e.preventDefault();closeCandidateHover();openDrawer(el.dataset.detail);};el.onpointerenter=()=>scheduleCandidateHover(el.dataset.detail,el);el.onpointerleave=scheduleCandidateHoverClose;el.onfocus=()=>scheduleCandidateHover(el.dataset.detail,el);el.onblur=scheduleCandidateHoverClose;});document.querySelectorAll('[data-context-id]').forEach(el=>{el.oncontextmenu=e=>{e.preventDefault();openContextMenu(el.dataset.contextId,e.clientX,e.clientY);};el.onkeydown=e=>{if((e.shiftKey&&e.key==='F10')||e.key==='ContextMenu'){e.preventDefault();const r=el.getBoundingClientRect();openContextMenu(el.dataset.contextId,r.left+12,r.top+12);}};});document.querySelectorAll('[data-drag-id]').forEach(el=>el.ondragstart=e=>e.dataTransfer.setData('text/plain',el.dataset.dragId));document.querySelectorAll('[data-drop-stage]').forEach(stage=>{stage.ondragover=e=>e.preventDefault();stage.ondrop=async e=>{e.preventDefault();const id=e.dataTransfer.getData('text/plain');if(id){await changeCandidateStage(id,stage.dataset.dropStage);await refreshRoute('company-pipeline');}};});}
+  function bindCandidateInteractions(){document.querySelectorAll('[data-detail]').forEach(el=>{el.onclick=e=>{e.preventDefault();openPlayerCard(el.dataset.detailDomain==='faction'?'faction':'company',el.dataset.detail);};});}
 
   function bindHelp(){document.querySelectorAll('.ra-help').forEach(button=>{button.onpointerenter=()=>{if(!state.help.pinned)openHelp(button,false);};button.onpointerleave=()=>{if(!state.help.pinned)closeHelp();};button.onfocus=()=>{if(!state.help.pinned)openHelp(button,false);};button.onblur=()=>{if(!state.help.pinned)closeHelp();};button.onclick=e=>{e.preventDefault();e.stopPropagation();if(state.help.pinned&&state.help.anchor===button)closeHelp(true);else openHelp(button,true);};});}
   function openHelp(button,pinned){const item=Runtime.HELP_REGISTRY[button.dataset.helpKey];const pop=document.getElementById('ra-help-popover');if(!item||!pop)return;state.help={pinned:!!pinned,anchor:button};pop.innerHTML=`<b>${esc(item.title)}</b><p>${esc(item.body)}</p>`;pop.hidden=false;positionHelp(button);}
@@ -6376,8 +4591,6 @@
 
   function refreshScoutRuntimeUi(){const status=document.getElementById('ra-scout-status');if(status)status.textContent=state.scout.status;const p=document.getElementById('ra-scout-progress');if(p)p.style.width=`${state.scout.total?Math.min(100,state.scout.done/state.scout.total*100):0}%`;}
   function refreshDiscoverRuntimeUi(counters={},feed={}){const t=document.getElementById('ra-discover-progress-text');if(t)t.textContent=state.fill.running?`Company lookups ${state.fill.done}/${state.fill.total}${state.fill.errors.length?` · ${state.fill.errors.length} errors`:''}`:state.sync.running?`${feed.label||state.sync.feed} · pages ${number(counters.pagesChecked)} · posts ${number(counters.postsExamined)} · recent ${number(counters.recentPosts)} · created ${number(counters.candidatesCreated)} · updated ${number(counters.candidatesUpdated)} · train buyers ${number(counters.explicitTrainBuyers)}`:'Idle';const p=document.getElementById('ra-discover-progress');if(p)p.style.width=state.fill.running&&state.fill.total?`${state.fill.done/state.fill.total*100}%`:state.sync.running?'65%':'0%';}
-  function startLogRefresh(){stopLogRefresh();state.logRefreshTimer=setInterval(()=>{if(state.page==='logs')route('logs',false).catch(()=>{});},5000);}
-  function stopLogRefresh(){if(state.logRefreshTimer){clearInterval(state.logRefreshTimer);state.logRefreshTimer=null;}}
 
   async function saveGeometry(){const app=document.getElementById('ra-app');if(!app)return;const r=app.getBoundingClientRect();await updateMeta(meta=>{meta.ui=meta.ui||{};meta.ui.windowGeometry=meta.ui.windowGeometry||{};meta.ui.windowGeometry.main={x:r.left,y:r.top,width:r.width,height:r.height};});}
   async function restoreGeometry(){const app=document.getElementById('ra-app');const meta=await getMeta();const g=meta.ui?.windowGeometry?.main;if(!app||!g)return;const minW=Math.min(560,innerWidth-8),minH=Math.min(420,innerHeight-8);app.style.left=`${Math.max(4,Math.min(number(g.x,20),innerWidth-48))}px`;app.style.top=`${Math.max(4,Math.min(number(g.y,50),innerHeight-48))}px`;app.style.width=`${Math.max(minW,Math.min(number(g.width,900),innerWidth-8))}px`;app.style.height=`${Math.max(minH,Math.min(number(g.height,650),innerHeight-8))}px`;}
@@ -6385,9 +4598,9 @@
   function appVisible(){const app=document.getElementById('ra-app');return !!app&&app.style.display==='block';}
   // The app shell, overlays and the app stylesheet are built on first open (or first route), never while the panel was only installed.
   function ensureAppMounted(){if(document.getElementById('ra-app')||!state.mounted)return false;window.dispatchEvent(new window.CustomEvent('ra:app-mounting'));mount();V46CompanyPlatform.install(companyPlatformApp,{renderInitial:false});V47FactionPlatform.install(companyPlatformApp,{renderInitial:false});window.dispatchEvent(new window.CustomEvent('ra:app-mounted'));return true;}
-  function openApp(){const first=ensureAppMounted();const app=document.getElementById('ra-app');if(!app)return Promise.resolve();app.style.display='block';state.topZ++;app.style.zIndex=state.topZ;syncLauncherVisibility();let ready=Promise.resolve();if(first)ready=route(state.page,false).catch(error=>toast(error.message,true));else if(state.page==='logs')startLogRefresh();if(!state.globalFlushStarted){state.globalFlushStarted=true;if(state.settings.global.enabled&&globalEndpoint())void flushGlobalQueue(false);}return ready;}
+  function openApp(){const first=ensureAppMounted();const app=document.getElementById('ra-app');if(!app)return Promise.resolve();app.style.display='block';state.topZ++;app.style.zIndex=state.topZ;syncLauncherVisibility();let ready=Promise.resolve();if(first)ready=route(state.page,false).catch(error=>toast(error.message,true));if(!state.globalFlushStarted){state.globalFlushStarted=true;if(state.settings.global.enabled&&globalEndpoint())void flushGlobalQueue(false);}return ready;}
   // Closing the window also closes every body-level RA layer (help, hover, context menu) so nothing invisible keeps intercepting Torn clicks.
-  function closeApp(){stopLogRefresh();closeContextMenu();closeCandidateHover();closeHelp(true);const menu=document.getElementById('ra-workspace-menu');if(menu)menu.hidden=true;document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const app=document.getElementById('ra-app');if(app)app.style.display='none';syncLauncherVisibility();}
+  function closeApp(){closeHelp(true);const menu=document.getElementById('ra-workspace-menu');if(menu)menu.hidden=true;document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const app=document.getElementById('ra-app');if(app)app.style.display='none';syncLauncherVisibility();}
   function toggleApp(){if(appVisible())closeApp();else openApp();}
 
   function findInformationSection(){const nodes=[...(document.getElementById('sidebarroot')||document).querySelectorAll('h1,h2,h3,h4,h5,h6,div,span')].filter(el=>/^information$/i.test(text(el.textContent)));for(const label of nodes){let section=label.parentElement;for(let depth=0;section&&depth<5;depth++,section=section.parentElement){const links=section.querySelectorAll("a,button,[role='button']");if(links.length>=2&&links.length<=30)return section;}}return null;}
@@ -6406,16 +4619,17 @@
   function watchLauncherHosts(){if(typeof MutationObserver!=='function'||!document.body)return;launcherObserver?.disconnect();launcherObserver=new MutationObserver(scheduleLauncherCheck);launcherObserver.observe(document.body,{childList:true});const header=document.getElementById('ra-status-launcher')?.closest('#header-root,header')||document.getElementById('ra-status-launcher')?.parentElement?.parentElement||document.getElementById('header-root');const sidebar=document.getElementById('sidebarroot')||document.getElementById('ra-sidebar-launcher')?.parentElement;for(const host of new Set([header,sidebar]))if(host&&host!==document.body&&host!==document.documentElement)launcherObserver.observe(host,{childList:true,subtree:true});}
 
   function mountLauncher(){if(!document.getElementById('ra-launch-css')){const style=document.createElement('style');style.id='ra-launch-css';style.textContent=`#ra-launch{font:12px/1.4 Arial,sans-serif;box-sizing:border-box;position:fixed;left:0;top:42%;z-index:2147483400;width:22px;height:44px;padding:0;font-size:9px;letter-spacing:.04em;writing-mode:vertical-rl;opacity:.82;border-radius:0 9px 9px 0;border:1px solid #5a3b73;border-left:0;background:radial-gradient(circle at 35% 20%,#9b4dff30,transparent 45%),linear-gradient(145deg,#1b1425,#0d0a12);color:#d06cff;font-weight:900;cursor:pointer;display:none;box-shadow:0 10px 30px #0008,0 0 22px #9b4dff18,inset 0 1px 0 #ffffff0b}`;document.head.appendChild(style);}if(document.getElementById('ra-launch'))return;const fallback=document.createElement('button');fallback.id='ra-launch';fallback.type='button';fallback.textContent='RA';fallback.title='Recruitment Agency';fallback.setAttribute('aria-label','Open Recruitment Agency');fallback.onclick=toggleApp;document.body.appendChild(fallback);}
-  function mount(){injectStyles();const app=document.createElement('div');app.id='ra-app';app.innerHTML=`<div class="ra-titlebar" id="ra-titlebar"><div class="ra-title-brand"><span class="ra-title-mark" aria-hidden="true">◆</span><div class="ra-title-copy"><small>VOIDSMITH INDUSTRIES</small><strong>RECRUITMENT AGENCY <span class="ra-version">v${SCRIPT_VERSION}</span></strong></div></div>${workspaceSelectHtml()}<div class="ra-title-spacer" aria-hidden="true"></div><div class="ra-title-actions"><button class="ra-btn" id="ra-settings-button" title="Settings" aria-label="Settings">⚙</button><button class="ra-btn" id="ra-mobile-menu" aria-label="Menu">☰</button><button class="ra-btn" id="ra-close" aria-label="Close">×</button></div></div><div class="ra-shell"><aside class="ra-sidebar"><div class="ra-sidebar-head"><span class="ra-brand">RECRUITMENT</span><button class="ra-btn" id="ra-collapse" aria-label="Collapse navigation">≡</button></div><div id="ra-nav"></div></aside><main class="ra-main"><header class="ra-pagehead"><div><h2 id="ra-page-title">Search & Results</h2><p id="ra-page-desc"></p></div><div id="ra-page-actions"></div></header><div class="ra-content" id="ra-content"></div><aside id="ra-drawer" class="ra-drawer" hidden></aside><div id="ra-modal" class="ra-modal" hidden></div></main></div>`;document.body.appendChild(app);const hover=document.createElement('div');hover.id='ra-hover';hover.className='ra-hover';hover.hidden=true;hover.setAttribute('role','dialog');hover.setAttribute('aria-label','Candidate intelligence');document.body.appendChild(hover);const context=document.createElement('div');context.id='ra-context';context.hidden=true;context.setAttribute('role','menu');document.body.appendChild(context);const help=document.createElement('div');help.id='ra-help-popover';help.className='ra-help-popover';help.hidden=true;help.setAttribute('role','dialog');document.body.appendChild(help);document.getElementById('ra-close').onclick=closeApp;document.getElementById('ra-settings-button').onclick=()=>route('settings');const workspaceToggle=document.getElementById('ra-workspace-toggle'),workspaceMenu=document.getElementById('ra-workspace-menu');workspaceToggle.onclick=()=>{const opening=workspaceMenu.hidden;workspaceMenu.hidden=!opening;workspaceToggle.setAttribute('aria-expanded',String(opening));};document.querySelectorAll('[data-workspace-domain]').forEach(button=>button.onclick=async()=>{const domain=button.dataset.workspaceDomain==='faction'?'faction':'company';workspaceMenu.hidden=true;workspaceToggle.setAttribute('aria-expanded','false');const from=state.page;await saveSettings({activeDomain:domain,activePage:`${domain}-candidates`});if(state.page!==from){rebuildNav();return;}const drawer=document.getElementById('ra-drawer');if(drawer){drawer.hidden=true;state.drawerCandidateId='';state.playerCard.userId='';}await route(`${domain}-candidates`,false);});document.getElementById('ra-collapse').onclick=async()=>{await saveSettings({sidebarCollapsed:!state.settings.sidebarCollapsed});rebuildNav();};document.getElementById('ra-mobile-menu').onclick=()=>document.querySelector('.ra-shell')?.classList.toggle('sidebar-open');document.addEventListener('click',e=>{if(!e.target.closest('#ra-context'))closeContextMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){const layered=['ra-context','ra-hover','ra-help-popover','ra-modal','ra-drawer','ra-workspace-menu'].some(id=>{const el=document.getElementById(id);return el&&!el.hidden;})||!!document.querySelector('.ra-shell.sidebar-open'),target=e.target,tornField=!!target?.closest&&!target.closest('#ra-app')&&!!target.matches?.('input,textarea,select,[contenteditable],[contenteditable] *');if(appVisible()&&!layered&&!tornField){closeApp();return;}closeContextMenu();closeCandidateHover();closeHelp(true);closeModal();document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const drawer=document.getElementById('ra-drawer');if(drawer&&!drawer.hidden){drawer.hidden=true;state.drawerCandidateId='';}}});bindWindow();rebuildNav();restoreGeometry().catch(()=>{});}
+  function mount(){injectStyles();const app=document.createElement('div');app.id='ra-app';app.innerHTML=`<div class="ra-titlebar" id="ra-titlebar"><div class="ra-title-brand"><span class="ra-title-mark" aria-hidden="true">◆</span><div class="ra-title-copy"><small>VOIDSMITH INDUSTRIES</small><strong>RECRUITMENT AGENCY <span class="ra-version">v${SCRIPT_VERSION}</span></strong></div></div>${workspaceSelectHtml()}<div class="ra-title-spacer" aria-hidden="true"></div><div class="ra-title-actions"><button class="ra-btn" id="ra-settings-button" title="Settings" aria-label="Settings">⚙</button><button class="ra-btn" id="ra-mobile-menu" aria-label="Menu">☰</button><button class="ra-btn" id="ra-close" aria-label="Close">×</button></div></div><div class="ra-shell"><aside class="ra-sidebar"><div class="ra-sidebar-head"><span class="ra-brand">RECRUITMENT</span><button class="ra-btn" id="ra-collapse" aria-label="Collapse navigation">≡</button></div><div id="ra-nav"></div></aside><main class="ra-main"><header class="ra-pagehead"><div><h2 id="ra-page-title">Search & Results</h2><p id="ra-page-desc"></p></div><div id="ra-page-actions"></div></header><div class="ra-content" id="ra-content"></div><aside id="ra-drawer" class="ra-drawer" hidden></aside><div id="ra-modal" class="ra-modal" hidden></div></main></div>`;document.body.appendChild(app);const help=document.createElement('div');help.id='ra-help-popover';help.className='ra-help-popover';help.hidden=true;help.setAttribute('role','dialog');document.body.appendChild(help);document.getElementById('ra-close').onclick=closeApp;document.getElementById('ra-settings-button').onclick=()=>route('settings');const workspaceToggle=document.getElementById('ra-workspace-toggle'),workspaceMenu=document.getElementById('ra-workspace-menu');workspaceToggle.onclick=()=>{const opening=workspaceMenu.hidden;workspaceMenu.hidden=!opening;workspaceToggle.setAttribute('aria-expanded',String(opening));};document.querySelectorAll('[data-workspace-domain]').forEach(button=>button.onclick=async()=>{const domain=button.dataset.workspaceDomain==='faction'?'faction':'company';workspaceMenu.hidden=true;workspaceToggle.setAttribute('aria-expanded','false');const from=state.page;await saveSettings({activeDomain:domain,activePage:`${domain}-candidates`});if(state.page!==from){rebuildNav();return;}const drawer=document.getElementById('ra-drawer');if(drawer){drawer.hidden=true;state.drawerCandidateId='';state.playerCard.userId='';}await route(`${domain}-candidates`,false);});document.getElementById('ra-collapse').onclick=async()=>{await saveSettings({sidebarCollapsed:!state.settings.sidebarCollapsed});rebuildNav();};document.getElementById('ra-mobile-menu').onclick=()=>document.querySelector('.ra-shell')?.classList.toggle('sidebar-open');document.addEventListener('keydown',e=>{if(e.key==='Escape'){const layered=['ra-help-popover','ra-modal','ra-drawer','ra-workspace-menu'].some(id=>{const el=document.getElementById(id);return el&&!el.hidden;})||!!document.querySelector('.ra-shell.sidebar-open'),target=e.target,tornField=!!target?.closest&&!target.closest('#ra-app')&&!!target.matches?.('input,textarea,select,[contenteditable],[contenteditable] *');if(appVisible()&&!layered&&!tornField){closeApp();return;}closeHelp(true);closeModal();document.querySelector('.ra-shell')?.classList.remove('sidebar-open');const drawer=document.getElementById('ra-drawer');if(drawer&&!drawer.hidden){drawer.hidden=true;state.drawerCandidateId='';}}});bindWindow();rebuildNav();restoreGeometry().catch(()=>{});}
 
   async function start(options={}){
     if(state.mounted)return;
     state.db=options.db||await openDB(options.indexedDB);
     state.settings=mergeSettings((await getMeta()).settings||{});
-    state.page=V46Navigation.normalizeRoute(state.settings.activePage,state.settings.complexity);
-    if(!visibleRouteSet().has(state.page))state.page=defaultDomainRoute();
+    state.page=V46Navigation.normalizeRoute(state.settings.activePage);
+    // A saved page that no longer exists (removed workflow pages) or is hidden reopens that workspace's Search & Results.
+    if(state.page!==state.settings.activePage||!visibleRouteSet().has(state.page))state.page=defaultDomainRoute();
     const meta=await getMeta();meta.settings=state.settings;meta.ui=meta.ui||{windowGeometry:{}};await idb.put('meta',meta);
-    await migrateLegacyUsers();await repositories.backfillLegacy(Date.now());await ensureDefaultMatchProfile();
+    await repositories.backfillLegacy(Date.now());await ensureDefaultMatchProfile();
     if(document.readyState==='loading')await new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));
     applyTheme();mountLauncher();state.mounted=true;
     ensureTornLauncher();
@@ -6427,7 +4641,7 @@
     return true;
   }
 
-  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,OPTIONAL_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,openApp,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,setCompanyWatchlist,deleteCompanyCandidateData,clearRecruitmentData,applyCandidateFilters,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
+  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,openApp,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,clearRecruitmentData,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
 });
 
 /* userscript bootstrap */
@@ -6436,7 +4650,7 @@
   const INSTALLER_VERSION = '4.8.4';
   const EXPECTED_APP_VERSION = '4.8.3';
   const DOM_GUARD = 'data-r4g3-ra-v45-owner';
-  const RA_ROOT_SELECTOR = '#ra-app,#ra-hover,#ra-context,#ra-help-popover';
+  const RA_ROOT_SELECTOR = '#ra-app,#ra-help-popover';
   const SHELL_STYLE_ID = 'ra-v454-shell-css';
   const shellUiState = {maximized:false, restoreGeometry:null, navObserver:null};
 

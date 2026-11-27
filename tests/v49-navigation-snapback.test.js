@@ -12,11 +12,8 @@ const MODULES = [
   'scout-core.js', 'results-core.js', 'global-core.js', 'match-core.js', 'forum-core.js',
   'v45-runtime.js', 'v45-candidates.js', 'v45-discovery.js', 'v45-messaging.js',
   'v46-domain-core.js', 'v46-storage-core.js', 'v46-navigation.js', 'v46-company-core.js',
-  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-operations.js',
-  'v46-company-workflow.js', 'v46-company-workflow-ui.js', 'v46-company-opportunity-ui.js',
-  'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
-  'v47-faction-ui.js', 'v47-faction-operations.js', 'v47-faction-workflow.js',
-  'v47-faction-workflow-ui.js', 'v47-faction-opportunity-ui.js', 'v47-faction-platform.js',
+  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
+  'v47-faction-ui.js', 'v47-faction-platform.js',
   'v45-app.js'
 ];
 const BOOT = sourceCompatibleBoot(ROOT);
@@ -131,7 +128,7 @@ const settled = () => sleep(900);
 test('a slow render of an older route never overwrites the page the user navigated to', { timeout: 60000 }, async () => {
   await withApp(async page => {
     for (const [older, newer, store, expectTitle, expectContent] of [
-      ['scout', 'company-pipeline', 'scoutHistory', 'Company Pipeline', 'Not Contacted'],
+      ['scout', 'company-discover', 'scoutHistory', 'Forum Discovery', 'Forum Discovery'],
       ['global-intelligence', 'data', 'globalSyncQueue', 'Data', 'Local Data'],
       ['smart-match', 'settings', 'matchProfiles', 'Settings', 'Getting started']
     ]) {
@@ -159,15 +156,15 @@ test('the last route the user chose is the one restored after reload, even when 
       const first = RA_V45App._test.navigate('scout');
       await new Promise(resolve => setTimeout(resolve, 40));
       window.__slowStores = {};
-      const second = RA_V45App._test.navigate('company-pipeline');
+      const second = RA_V45App._test.navigate('company-discover');
       await Promise.allSettled([first, second]);
     });
     await settled();
-    assert.equal((await view(page)).page, 'company-pipeline');
+    assert.equal((await view(page)).page, 'company-discover');
     await boot();
     const restored = await view(page);
-    assert.equal(restored.page, 'company-pipeline', 'reload must reopen the last route, not an older one');
-    assert.equal(restored.title, 'Company Pipeline');
+    assert.equal(restored.page, 'company-discover', 'reload must reopen the last route, not an older one');
+    assert.equal(restored.title, 'Forum Discovery');
   });
 });
 
@@ -179,11 +176,11 @@ test('in-page saves that finish after a nav click do not snap back to the page t
     await page.evaluate(() => { window.__slowStores = { meta: 300 }; document.getElementById('ra-match-profile-select').dispatchEvent(new Event('change')); });
     await sleep(40);
     await page.evaluate(() => { window.__slowStores = {}; });
-    await clickNav(page, 'company-pipeline');
+    await clickNav(page, 'company-discover');
     await settled();
     let now = await view(page);
-    assert.equal(now.page, 'company-pipeline', 'Smart Match profile save must not pull the user back');
-    assert.equal(now.title, 'Company Pipeline');
+    assert.equal(now.page, 'company-discover', 'Smart Match profile save must not pull the user back');
+    assert.equal(now.title, 'Forum Discovery');
 
     // Settings save, then a nav click before the save completes.
     await page.evaluate(() => document.getElementById('ra-settings-button').click());

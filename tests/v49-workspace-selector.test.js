@@ -16,41 +16,29 @@ test('v4.9 workspace selector is a single top-level Company/Faction dropdown', (
 });
 
 test('v4.9 sidebar navigation renders only the active recruitment domain', () => {
-  App._test.state.settings = App.mergeSettings({
-    activeDomain: 'company',
-    activePage: 'company-candidates',
-    optionalModules: {
-      companyPipeline: true,
-      factionPipeline: true,
-      scout: true
-    }
-  });
+  const optionalModules = { companyPipeline: true, factionPipeline: true, companyDiscovery: true, scout: true };
+  App._test.state.settings = App.mergeSettings({ activeDomain: 'company', activePage: 'company-candidates', optionalModules });
   App._test.state.page = 'company-candidates';
 
   const companyNav = App._test.navHtml();
   assert.match(companyNav, /data-page="company-candidates"/);
-  assert.match(companyNav, /data-page="company-pipeline"/);
+  assert.match(companyNav, /data-page="company-discover"/);
+  assert.doesNotMatch(companyNav, /data-page="company-pipeline"/, 'removed workflow pages stay hidden even with an old flag');
   assert.doesNotMatch(companyNav, /data-page="faction-candidates"/);
-  assert.doesNotMatch(companyNav, /data-page="faction-pipeline"/);
   assert.doesNotMatch(companyNav, /data-domain=/);
 
-  App._test.state.settings = App.mergeSettings({
-    activeDomain: 'faction',
-    activePage: 'faction-candidates',
-    optionalModules: {
-      companyPipeline: true,
-      factionPipeline: true,
-      scout: true
-    }
-  });
+  App._test.state.settings = App.mergeSettings({ activeDomain: 'faction', activePage: 'faction-candidates', optionalModules });
   App._test.state.page = 'faction-candidates';
 
   const factionNav = App._test.navHtml();
   assert.match(factionNav, /data-page="faction-candidates"/);
-  assert.match(factionNav, /data-page="faction-pipeline"/);
+  assert.match(factionNav, /data-page="company-discover"/, 'Forum Discovery is a shared optional tool');
+  assert.doesNotMatch(factionNav, /data-page="faction-pipeline"/);
   assert.doesNotMatch(factionNav, /data-page="company-candidates"/);
-  assert.doesNotMatch(factionNav, /data-page="company-pipeline"/);
   assert.doesNotMatch(factionNav, /data-domain=/);
+
+  App._test.state.page = 'company-discover';
+  assert.equal(App._test.activeDomain(), 'faction', 'opening Forum Discovery does not switch the Faction workspace to Company');
 });
 
 const { JSDOM } = require('jsdom');
@@ -315,32 +303,6 @@ test('v4.9 Player Card shows the active Company recruitment profile while keepin
 });
 
 
-test('v4.9 Player Card watch reuses Company Talent Pool and never creates Faction workflow state', async () => {
-  const db=await App.openDB(indexedDB);
-  App._test.state.db=db;
-  await put(db,'companyRecruitment',{
-    userId:'9902',domain:'company',pipelineStage:'Not Contacted',recruiterNote:'KEEP',
-    talentPool:false,cycles:[],events:[]
-  });
-
-  const watched=await App._test.setCompanyWatchlist('9902',true);
-  assert.equal(watched.talentPool,true);
-  assert.equal(watched.talentPoolReason,'Watched from Player Card');
-  assert.equal(watched.recruiterNote,'KEEP');
-
-  const unwatched=await App._test.setCompanyWatchlist('9902',false);
-  assert.equal(unwatched.talentPool,false);
-  assert.equal(unwatched.talentPoolReason,'');
-
-  const faction=await new Promise((resolve,reject)=>{
-    const q=db.transaction('factionRecruitment','readonly').objectStore('factionRecruitment').get('9902');
-    q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>reject(q.error);
-  });
-  assert.equal(faction,null);
-  db.close();
-});
-
-
 test('v4.9 Faction Player Card uses the active specialist recruitment profile', async () => {
   const dom=new JSDOM('<!doctype html><html><body><aside id="ra-drawer" class="ra-drawer" hidden></aside></body></html>',{url:'https://www.torn.com/'});
   global.window=dom.window;global.document=dom.window.document;
@@ -477,22 +439,6 @@ test('CodeQL workflow is pinned and least-privilege',()=>{
 });
 
 
-test('legacy startup migration is one-time and cannot use workflow timestamps as observation authority',()=>{
-  const fs=require('node:fs');
-  const app=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
-  const start=app.indexOf('async function migrateLegacyUsers()');
-  const end=app.indexOf('function recruitmentDomainForFeed',start);
-  assert.ok(start>=0&&end>start);
-  const migration=app.slice(start,end);
-  assert.match(migration,/v45-legacy-users-migration-v2/);
-  assert.match(migration,/marker\?\.complete===true/);
-  assert.match(migration,/skipShared:true/);
-  assert.match(migration,/existingFaction/);
-  assert.match(migration,/existingCompany/);
-  assert.doesNotMatch(migration,/row\.updatedAt|row\.createdAt|candidate\?\.updatedAt|candidate\?\.createdAt/);
-});
-
-
 test('v4.9 acquisition paths preserve missing Scout, work-stat and company facts as unknown',()=>{
   const fs=require('node:fs');
   const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
@@ -518,7 +464,7 @@ test('v4.9 Company workflow saves never replay candidate facts into shared intel
   const fs=require('node:fs');
   const source=fs.readFileSync(require.resolve('../src/v45-app'),'utf8');
   const start=source.indexOf('async function saveCandidate(candidate)');
-  const end=source.indexOf('async function changeCandidateStage',start);
+  const end=source.indexOf('\n',start);
   assert.ok(start>=0&&end>start);
   const saveCandidate=source.slice(start,end);
   assert.match(saveCandidate,/skipShared:true/);

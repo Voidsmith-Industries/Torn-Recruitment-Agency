@@ -6,7 +6,7 @@ const root=path.join(__dirname,'..');
 const boot=fs.readFileSync(path.join(root,'R4G3RUNN3R-Recruitment-Agency.user.js'),'utf8');
 const app=fs.readFileSync(path.join(root,'src/v45-app.js'),'utf8');
 const PINNED_RUNTIME='912b070ec11b68b4cdc0337b1971a8ccc3554a13';
-const RELEASE_FILES=['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-operations.js','v46-company-workflow.js','v46-company-workflow-ui.js','v46-company-opportunity-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-operations.js','v47-faction-workflow.js','v47-faction-workflow-ui.js','v47-faction-opportunity-ui.js','v47-faction-platform.js','v45-app.js'];
+const RELEASE_FILES=['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js','v45-app.js'];
 
 test('public userscript is the v4.8.4 icon release with immutable v4.8.3 core requires',()=>{
   assert.match(boot,/@version\s+4\.8\.4/);
@@ -25,7 +25,7 @@ test('public userscript is the v4.8.4 icon release with immutable v4.8.3 core re
 test('v4.8.4 loads Company and Faction dependencies before the source application',()=>{
   const appIndex=boot.indexOf(`/src/v45-app.js`);
   assert.ok(appIndex>0);
-  for(const file of ['v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-operations.js','v46-company-workflow.js','v46-company-workflow-ui.js','v46-company-opportunity-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-operations.js','v47-faction-workflow.js','v47-faction-workflow-ui.js','v47-faction-opportunity-ui.js','v47-faction-platform.js']){
+  for(const file of ['v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js']){
     const index=boot.indexOf(`/src/${file}`);
     assert.ok(index>=0&&index<appIndex,`${file} must load before v45-app.js`);
   }
@@ -104,4 +104,4 @@ test('v4.8 keeps Smart Match local and messaging manual',()=>{assert.match(app,/
 
 test('Settings is a real routed page and Danger Zone uses inline biohazard SVG',()=>{assert.match(app,/id=\"ra-settings-button\"/);assert.match(app,/document\.getElementById\('ra-settings-button'\)\.onclick=\(\)=>route\('settings'\)/);for(const section of ['General','Recruitment','Scout','Candidates','Smart Match','Global Intelligence','Data & Reset','Danger Zone'])assert.ok(app.includes(section));assert.match(app,/function biohazardSvg/);assert.match(app,/NUKE IT ALL!/);assert.match(app,/Type NUKE to confirm/);});
 
-test('candidate workspace, drawer, context menu, hover and pipeline are operational',()=>{for(const token of ['renderCandidates','renderPipeline','openDrawer','openContextMenu','openCandidateHover','ra-inline-stage','data-drop-stage','shiftKey'])assert.ok(app.includes(token),token);assert.deepEqual(require('../src/v45-runtime').PIPELINE_STAGES,['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);});
+test('legacy v4.5 candidate table, context menu, hover and pipeline are gone; discovery links open the Player Card',()=>{for(const token of ['function renderCandidates','function renderPipeline','function openDrawer','function openContextMenu','function openCandidateHover','function migrateLegacyUsers','ra-inline-stage','data-drop-stage',"id='ra-context'","id='ra-hover'"])assert.equal(app.includes(token),false,token);assert.match(app,/data-detail-domain=/);assert.match(app,/function bindCandidateInteractions\(\)\{[^\n]*openPlayerCard\(/);});

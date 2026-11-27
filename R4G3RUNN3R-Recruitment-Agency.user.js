@@ -26,18 +26,10 @@
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-storage.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-operations.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-workflow.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-workflow-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-opportunity-ui.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-platform.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-storage.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-operations.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-workflow.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-workflow-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-opportunity-ui.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-platform.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v45-app.js
 // @downloadURL  https://voidsmithindustries.com/torn/install/recruitment-agency.user.js
@@ -49,7 +41,7 @@
   const INSTALLER_VERSION = '4.8.4';
   const EXPECTED_APP_VERSION = '4.8.3';
   const DOM_GUARD = 'data-r4g3-ra-v45-owner';
-  const RA_ROOT_SELECTOR = '#ra-app,#ra-hover,#ra-context,#ra-help-popover';
+  const RA_ROOT_SELECTOR = '#ra-app,#ra-help-popover';
   const SHELL_STYLE_ID = 'ra-v454-shell-css';
   const shellUiState = {maximized:false, restoreGeometry:null, navObserver:null};
 

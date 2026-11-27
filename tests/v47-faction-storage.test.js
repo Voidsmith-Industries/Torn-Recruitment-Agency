@@ -137,33 +137,6 @@ test('specialist profile repository preserves approved lifecycle states and list
   db.close();
 });
 
-test('Faction campaigns and recruitment sessions remain separate durable entities', async () => {
-  const Storage = requireStorage();
-  const db = await openDb();
-  const repos = Storage.createRepositories(adapter(db), FactionCore);
-  const campaign = await repos.campaigns.save({
-    campaignId: 'c1',
-    title: 'RW Recruitment',
-    candidateIds: ['2','1','2'],
-    profileId: 'rw',
-    status: 'Active'
-  });
-  const session = await repos.sessions.save({
-    sessionId: 's1',
-    candidateIds: ['2','1'],
-    cursor: 0,
-    status: 'Active'
-  });
-
-  assert.deepEqual(campaign.candidateIds, ['2','1']);
-  assert.equal(campaign.profileId, 'rw');
-  assert.deepEqual(session.candidateIds, ['2','1']);
-  assert.equal((await repos.campaigns.list()).length, 1);
-  assert.equal((await repos.sessions.list()).length, 1);
-  db.close();
-});
-
-
 test('Faction config preserves active Results specialist profile', () => {
   const Storage=requireStorage();
   const row=Storage.normalizeConfig({activeResultsProfileId:' rw-1 '});

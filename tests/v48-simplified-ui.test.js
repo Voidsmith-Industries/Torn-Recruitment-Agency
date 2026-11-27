@@ -28,8 +28,8 @@ test('v4.8 optional modules appear only when explicitly enabled', () => {
       data: true
     }
   });
-  assert.deepEqual(byGroup(groups, 'company-recruitment').pages.map(page => page.id), ['company-candidates', 'company-pipeline', 'company-followups']);
-  assert.deepEqual(byGroup(groups, 'faction-recruitment').pages.map(page => page.id), ['faction-candidates', 'faction-pipeline']);
+  assert.deepEqual(byGroup(groups, 'company-recruitment').pages.map(page => page.id), ['company-candidates'], 'removed workflow flags no longer add pages');
+  assert.deepEqual(byGroup(groups, 'faction-recruitment').pages.map(page => page.id), ['faction-candidates']);
   assert.deepEqual(byGroup(groups, 'intelligence').pages.map(page => page.id), ['scout', 'smart-match']);
   assert.deepEqual(byGroup(groups, 'application').pages.map(page => page.id), ['data']);
 });

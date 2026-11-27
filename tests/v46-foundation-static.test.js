@@ -33,10 +33,10 @@ test('new stores are owned by scoped reset and startup backfill runs before matc
   const returnIndex=app.indexOf('return Object.freeze',startIndex);
   assert.ok(startIndex>=0&&returnIndex>startIndex,'start function should be present');
   const startBlock=app.slice(startIndex,returnIndex);
-  const migrate=startBlock.indexOf('await migrateLegacyUsers()');
   const backfill=startBlock.indexOf('await repositories.backfillLegacy(Date.now())');
   const match=startBlock.indexOf('await ensureDefaultMatchProfile()');
-  assert.ok(migrate>=0&&backfill>migrate&&match>backfill,'startup migration/backfill/match order');
+  assert.equal(startBlock.includes('migrateLegacyUsers'),false,'the v4.4 users migration is removed');
+  assert.ok(backfill>=0&&match>backfill,'startup backfill/match order');
 });
 
 test('Scout and Fill Companies mirror only shared facts into player intelligence',()=>{

@@ -36,6 +36,6 @@ test('source app installs and delegates owned Company routes to the v4.6 Company
   assert.match(app,/V46CompanyPlatform\._test\.IMPLEMENTED_ROUTES\.has\(state\.page\)/);
 });
 
-test('syntax script includes Company storage, workflow, Opportunity and platform source modules',()=>{
-  for(const file of ['v46-company-core','v46-company-storage','v46-company-ui','v46-company-operations','v46-company-workflow','v46-company-workflow-ui','v46-company-opportunity-ui','v46-company-platform'])assert.match(pkg.scripts.syntax,new RegExp(`src/${file}\\.js`));
+test('syntax script includes Company core, storage, UI and platform source modules',()=>{
+  for(const file of ['v46-company-core','v46-company-storage','v46-company-ui','v46-company-platform'])assert.match(pkg.scripts.syntax,new RegExp(`src/${file}\\.js`));
 });
