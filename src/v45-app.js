@@ -137,7 +137,7 @@
   const repositories=V46Storage.createRepositories(idb);
   const companyRepositories=V46CompanyStorage.createRepositories(idb,V46CompanyCore);
   const factionRepositories=V47FactionStorage.createRepositories(idb,V47FactionCore);
-  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name,options)=>recruitCandidate(domain,userId,name,options),searchCandidates:(domain,filters)=>searchCandidates(domain,filters),discoverWorkstatProspects:(options={})=>discoverWorkstatProspects(options),listMatchProfiles:async()=> (await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile),getActiveMatchProfile:()=>getActiveMatchProfile(),setActiveMatchProfile:async profileId=>{const id=text(profileId);if(!id){await saveSettings({match:{...state.settings.match,activeProfileId:''}});return null;}const row=await idb.get('matchProfiles',id);if(!row)throw new Error('Match Profile was not found.');await saveSettings({match:{...state.settings.match,activeProfileId:id}});return MatchCore.normalizeProfile(row);},saveCompanySearchProfile:async(profileId,filters={})=>{const id=text(profileId);const row=id?await idb.get('matchProfiles',id):null;if(!row)throw new Error('Match Profile was not found.');const profile=MatchCore.normalizeProfile(row);profile.searchFilters={...profile.searchFilters,company:MatchCore.normalizeCompanySearchFilters(filters)};profile.searchFiltersCustom=true;const saved=await saveMatchProfile(profile);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});return saved;},openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),saveResultsView:async(domain,view)=>{const key=text(domain)==='faction'?'faction':'company';const current=state.settings.candidates?.resultsView;await saveSettings({candidates:{...state.settings.candidates,resultsView:{...(current&&typeof current==='object'?current:{}),[key]:view}}});return state.settings.candidates.resultsView[key];},setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
+  const companyPlatformApp={navigate:(page,persist=true)=>route(page,persist),recruitCandidate:(domain,userId,name,options)=>recruitCandidate(domain,userId,name,options),searchCandidates:(domain,filters,options)=>searchCandidates(domain,filters,{},options),discoverWorkstatProspects:(options={})=>discoverWorkstatProspects(options),listMatchProfiles:async()=> (await idb.getAll('matchProfiles')).map(MatchCore.normalizeProfile),getActiveMatchProfile:()=>getActiveMatchProfile(),setActiveMatchProfile:async profileId=>{const id=text(profileId);if(!id){await saveSettings({match:{...state.settings.match,activeProfileId:''}});return null;}const row=await idb.get('matchProfiles',id);if(!row)throw new Error('Match Profile was not found.');await saveSettings({match:{...state.settings.match,activeProfileId:id}});return MatchCore.normalizeProfile(row);},saveCompanySearchProfile:async(profileId,filters={})=>{const id=text(profileId);const row=id?await idb.get('matchProfiles',id):null;if(!row)throw new Error('Match Profile was not found.');const profile=MatchCore.normalizeProfile(row);profile.searchFilters={...profile.searchFilters,company:MatchCore.normalizeCompanySearchFilters(filters)};profile.searchFiltersCustom=true;const saved=await saveMatchProfile(profile);await saveSettings({match:{...state.settings.match,activeProfileId:saved.profileId}});return saved;},openPlayerCard:(domain,userId)=>openPlayerCard(domain,userId),saveResultsView:async(domain,view)=>{const key=text(domain)==='faction'?'faction':'company';const current=state.settings.candidates?.resultsView;await saveSettings({candidates:{...state.settings.candidates,resultsView:{...(current&&typeof current==='object'?current:{}),[key]:view}}});return state.settings.candidates.resultsView[key];},setResultsLayout:async layout=>{await saveSettings({candidates:{...state.settings.candidates,resultsLayout:layout==='compact'?'compact':'expanded'}});return state.settings.candidates.resultsLayout;},_test:{state,repositories,companyRepositories,factionRepositories}};
 
   function mergeSettings(raw={}) {
     const base=defaultSettings();
@@ -316,7 +316,7 @@
     };
   }
 
-  async function persistApiSearchCandidate(domain,raw){
+  async function persistApiSearchCandidate(domain,raw,context={}){
     const normalizedDomain=text(domain).toLowerCase()==='faction'?'faction':'company';
     const candidate=normalizeApiSearchCandidate(raw);
     const observedAt=Date.now();
@@ -329,7 +329,9 @@
     if(candidate.factionId!==null)sharedPatch.factionId=candidate.factionId;
     if(candidate.onlineStatus)sharedPatch.onlineStatus=candidate.onlineStatus;
     if(candidate.lastActive!==null)sharedPatch.lastActive=candidate.lastActive;
-    sharedPatch.lastObservedAt=observedAt;
+    // A Company search filtered by Torn (notInCompany/inCompany) tells us presence, never which company.
+    if(normalizedDomain==='company'&&context.presence==='none')Object.assign(sharedPatch,{currentCompany:'',currentCompanyId:0,companyPresence:'none',companyCheckedAt:observedAt});
+    if(normalizedDomain==='company'&&context.presence==='has'){const player=await idb.get('playerIntelligence',candidate.userId);sharedPatch.companyPresence='has';if(!(Number(player?.currentCompanyId)>0)&&!text(player?.currentCompany))sharedPatch.currentCompanyId=null;}
     const patch={
       pipelineStage:existing?.pipelineStage||(normalizedDomain==='faction'?'Prospect':'Not Contacted'),
       availability:existing?.availability||'Unknown',
@@ -414,7 +416,14 @@
     return result;
   }
 
-  async function searchCandidates(domain,filters={},deps={}){
+  // Torn v2 user/search returns only id/name/level/online/faction_id/icons (25 per call); END/MAN/INT are never public.
+  // Visible filters map to server-side filters: presence None/Has -> notIn*/in* (Company or Faction), Status
+  // Online -> lastActionNow, Idle/Any -> lastActionRecent, Offline -> lastActionHourAgo. A name search sends only
+  // the filters the user chose (no default activity window) and pages by offset; other searches page by cursor.
+  const SEARCH_PAGES=4;
+  function userSearchParams(domain,filters={}){const name=text(filters.search),list=[],org=domain==='faction'?'Faction':'Company',presence=text(filters.organizationPresence).toLowerCase(),status=text(filters.onlineStatus).toLowerCase();if(presence==='has')list.push(`in${org}`);if(presence==='none')list.push(`notIn${org}`);const last={online:'lastActionNow',idle:'lastActionRecent',offline:'lastActionHourAgo'}[status]||(name?'':'lastActionRecent');if(last)list.push(last);const params=name?{name}:{};if(list.length)params.filters=list.join(',');return params;}
+  function searchSummary(api,forum){return `Search complete: ${api} players from Torn, ${forum} from forum posts. END/MAN/INT aren't public in Torn's API, so they show as Unknown until known.`;}
+  async function searchCandidates(domain,filters={},deps={},options={}){
     const normalizedDomain=text(domain).toLowerCase()==='faction'?'faction':'company';
     const sync=deps.syncDomainForums||syncDomainForums;
     const request=deps.tornRequest||tornRequest;
@@ -423,28 +432,37 @@
     const warnings=[];
     let forum=Discovery.initialCounters();
     let apiCount=0;
-    try{forum=await sync(normalizedDomain);}catch(error){warnings.push(`Forum: ${text(error.message||error)}`);}
+    const query=text(filters.search);
+    const params=userSearchParams(normalizedDomain,filters),key=JSON.stringify(params);
+    const paging=state.searchPaging||(state.searchPaging={});
+    let cursor=paging[normalizedDomain]?.key===key&&options.more?paging[normalizedDomain]:null;
+    if(!options.more)try{forum=await sync(normalizedDomain);}catch(error){warnings.push(`Forum: ${text(error.message||error)}`);}
     try{
-      const query=text(filters.search);
-      let response;
-      let candidates=[];
       if(/^\d+$/.test(query)){
-        response=await request(`user/${query}/profile`,{});
-        if(response?.profile)candidates=[response.profile];
+        if(!cursor){const response=await request(`user/${query}/profile`,{});if(response?.profile){await persist(normalizedDomain,response.profile,{});apiCount++;}}
+        cursor={key,done:true};
       }else{
-        const params=query?{name:query}:{filters:'lastActionRecent'};
-        response=await request('user/search',params);
-        candidates=Array.isArray(response?.search)?response.search:[];
+        cursor=cursor||{key,offset:0,cursor:'',done:false};
+        const context={presence:text(filters.organizationPresence).toLowerCase()==='has'?'has':text(filters.organizationPresence).toLowerCase()==='none'?'none':''};
+        for(let page=0;page<SEARCH_PAGES&&!cursor.done;page++){
+          const call={...params};if(cursor.cursor)call.cursor=cursor.cursor;else if(cursor.offset)call.offset=cursor.offset;
+          const response=await request('user/search',call);
+          const rows=Array.isArray(response?.search)?response.search:[];
+          for(const candidate of rows){await persist(normalizedDomain,candidate,context);apiCount++;}
+          const next=response?._metadata?.links?.next;let nextCursor='';try{nextCursor=next?text(new URL(next,API_BASE).searchParams.get('cursor')):'';}catch{}
+          if(query){cursor.offset+=rows.length;cursor.done=!next||rows.length<25;}else{cursor.cursor=nextCursor;cursor.done=!nextCursor;}
+        }
       }
-      for(const candidate of candidates){await persist(normalizedDomain,candidate);apiCount++;}
     }catch(error){warnings.push(`Torn API: ${text(error.message||error)}`);}
+    paging[normalizedDomain]=cursor||{key,done:true};
+    const hasMore=!paging[normalizedDomain].done;
     if(warnings.length>=2)throw new Error(`Candidate search failed. ${warnings.join(' | ')}`);
     if(!injected){
-      await logEvent('search','Active candidate search completed',{domain:normalizedDomain,forumPosts:Number(forum.postsExamined||0),forumCreated:Number(forum.candidatesCreated||0),apiCount,warnings});
-      const summary=`Search complete: forum ${Number(forum.postsExamined||0)} post(s), Torn API ${apiCount} user(s).`;
+      await logEvent('search','Active candidate search completed',{domain:normalizedDomain,more:!!options.more,forumPosts:Number(forum.postsExamined||0),forumCreated:Number(forum.candidatesCreated||0),apiCount,warnings});
+      const summary=options.more?`Loaded ${apiCount} more players from Torn.`:searchSummary(apiCount,Number(forum.candidatesCreated||0)+Number(forum.candidatesUpdated||0));
       toast(warnings.length?`${summary} ${warnings.join(' | ')}`:summary,warnings.length>0);
     }
-    return{domain:normalizedDomain,forum,apiCount,warnings};
+    return{domain:normalizedDomain,forum,apiCount,hasMore,warnings};
   }
   function cancelSync(){if(state.sync.running){state.sync.cancelled=true;toast('Cancelling forum sync after the current safe page.');}}
 
@@ -756,5 +774,5 @@
     return true;
   }
 
-  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,openApp,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,clearRecruitmentData,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
+  return Object.freeze({SCRIPT_VERSION,DB_VERSION,HARD_API_RATE,MIN_API_GAP_MS,DEFAULT_VISIBLE_COLUMNS,openDB,mergeSettings,start,_test:{navigate:route,openApp,state,repositories,companyRepositories,factionRepositories,activeDomain,navHtml,workspaceSelectHtml,openPlayerCard,lastActiveText,recruitmentDomainForFeed,persistDiscoveredCandidate,getDiscoveryCandidate,syncDomainForums,normalizeApiSearchCandidate,persistApiSearchCandidate,searchCandidates,searchSummary,normalizeWorkstatHofCandidate,persistWorkstatHofCandidate,discoverWorkstatProspects,matchProfileRequirements,clearRecruitmentData,candidateCsvRow,csvCell,getActiveMatchProfile,matchAvailability,forumThreadUrl,recruitCandidate,restorePendingPrivateChatDraft,findPrivateChatInput,setPrivateChatInputValue,currentProfileUserId}});
 });

@@ -24,7 +24,7 @@
 
   const {text,makeId,dbGetAll,dbGet,dbPut,DEFAULT_SEARCH_FILTERS,RESULTS_PAGE_SIZE,sortRows,toggleSort}=Shared;
   const COMPANY_ROUTES=Object.freeze(['company-discover','company-candidates']);
-  const organizationInfo=Shared.organizationInfoFor({player:'playerRecord',name:'currentCompany',id:'currentCompanyId',label:'Company'});
+  const organizationInfo=Shared.organizationInfoFor({player:'playerRecord',name:'currentCompany',id:'currentCompanyId',label:'Company',presence:'companyPresence'});
   function profileRequirements(profile={}){
     const criteria=profile?.criteria||{},out={};
     for(const [key,target] of [['man','minMan'],['int','minInt'],['end','minEnd']]){
