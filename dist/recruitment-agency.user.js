@@ -2557,7 +2557,8 @@
       const existing = await idb.get('companyRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
-      const next = Domain.normalizeCompanyRecruitment(input,observedAt,{ambiguous:options.ambiguous === true,assumed:options.assumed === true});
+      // Keep fields written by earlier versions (for example removed workflow pages) that the normalizer does not know.
+      const next = {...(existing || {}),...Domain.normalizeCompanyRecruitment(input,observedAt,{ambiguous:options.ambiguous === true,assumed:options.assumed === true})};
       await idb.put('companyRecruitment',next);
       return next;
     }
@@ -2569,7 +2570,8 @@
       const existing = await idb.get('factionRecruitment',id);
       const input = {...(existing || {}),...recruitmentPatch,userId:id};
       if (!Object.prototype.hasOwnProperty.call(recruitmentPatch,'updatedAt')) input.updatedAt = observedAt;
-      const next = Domain.normalizeFactionRecruitment(input,observedAt,{ambiguous:options.ambiguous === true});
+      // Keep fields written by earlier versions (for example removed workflow pages) that the normalizer does not know.
+      const next = {...(existing || {}),...Domain.normalizeFactionRecruitment(input,observedAt,{ambiguous:options.ambiguous === true})};
       await idb.put('factionRecruitment',next);
       return next;
     }
