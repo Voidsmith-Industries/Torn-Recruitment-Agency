@@ -1,12 +1,12 @@
 (function(root,factory){
-  let CompanyCore=root&&root.RA_V46CompanyCore;
-  if(!CompanyCore&&typeof module==='object'&&module.exports)CompanyCore=require('./v46-company-core');
-  const api=factory(CompanyCore);
+  let CompanyCore=root&&root.RA_V46CompanyCore,Shared=root&&root.RA_V46RecruitmentShared;
+  if(typeof module==='object'&&module.exports){CompanyCore=CompanyCore||require('./v46-company-core');Shared=Shared||require('./v46-recruitment-shared');}
+  const api=factory(CompanyCore,Shared);
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.RA_V46CompanyStorage=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(CompanyCore){
+})(typeof globalThis!=='undefined'?globalThis:this,function(CompanyCore,Shared){
   'use strict';
-  if(!CompanyCore)throw new Error('RA_V46CompanyCore is required.');
+  if(!CompanyCore||!Shared)throw new Error('RA_V46CompanyCore is required.');
 
   const DB_VERSION=14;
   const STORE_DEFINITIONS=Object.freeze({
@@ -26,33 +26,8 @@
     ])})
   });
 
-  function text(value){return String(value??'').trim();}
-  function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
-
-  function applyUpgrade(db){
-    for(const[storeName,definition]of Object.entries(STORE_DEFINITIONS)){
-      if(db.objectStoreNames.contains(storeName))continue;
-      const store=db.createObjectStore(storeName,{keyPath:definition.keyPath});
-      for(const index of definition.indexes)store.createIndex(index.name,index.keyPath,{unique:false});
-    }
-  }
-
-  function normalizeConfig(raw={}){
-    const thresholds={};
-    for(const[key,value]of Object.entries(raw.stageThresholds||{})){
-      const days=Math.max(0,Math.floor(number(value,0)));
-      if(days>0)thresholds[text(key)]=days;
-    }
-    const weights={};
-    for(const[key,value]of Object.entries(raw.opportunityWeights||{}))weights[text(key)]=Math.max(0,number(value,0));
-    return {
-      key:'company',
-      baseline:CompanyCore.normalizeBaseline(raw.baseline||{}),
-      stageThresholds:thresholds,
-      opportunityWeights:weights,
-      updatedAt:number(raw.updatedAt,Date.now())
-    };
-  }
+  function applyUpgrade(db){Shared.applyStoreDefinitions(db,STORE_DEFINITIONS);}
+  function normalizeConfig(raw={}){return Shared.normalizeDomainConfig(raw,'company');}
 
   function createRepositories(idb){
     if(!idb||!['get','put'].every(name=>typeof idb[name]==='function'))throw new Error('A compatible IndexedDB adapter is required.');

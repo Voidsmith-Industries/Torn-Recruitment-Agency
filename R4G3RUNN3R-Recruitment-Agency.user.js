@@ -23,6 +23,7 @@
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-domain-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-storage-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-navigation.js
+// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-recruitment-shared.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-storage.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-ui.js

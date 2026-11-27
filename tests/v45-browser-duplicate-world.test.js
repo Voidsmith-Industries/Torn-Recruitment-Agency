@@ -8,7 +8,7 @@ const puppeteer = require('puppeteer-core');
 const sourceCompatibleBoot = require('./source-compatible-boot');
 
 const ROOT = path.join(__dirname, '..');
-const MODULES = ['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js','v45-app.js'];
+const MODULES = ['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-recruitment-shared.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js','v45-app.js'];
 const BOOT = sourceCompatibleBoot(ROOT);
 const SOURCE_VERSION = fs.readFileSync(path.join(ROOT,'src','v45-app.js'),'utf8').match(/SCRIPT_VERSION\s*=\s*'([^']+)'/)?.[1];
 assert.ok(SOURCE_VERSION,'local source runtime must declare SCRIPT_VERSION');

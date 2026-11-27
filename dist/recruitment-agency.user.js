@@ -2410,101 +2410,214 @@
   return Object.freeze({COMPANY_PAGES,FACTION_PAGES,GROUPS,GROUP_IDS,ROUTES,normalizeRoute,visibleGroups,normalizeExpandedGroups,toggleExpandedGroup});
 });
 
-/* bundled runtime: v46-company-core.js */
+/* bundled runtime: v46-recruitment-shared.js */
 (function(root,factory){
   const api=factory();
   if(typeof module==='object'&&module.exports)module.exports=api;
-  if(root)root.RA_V46CompanyCore=api;
+  if(root)root.RA_V46RecruitmentShared=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
 
-  const REQUIREMENT_KINDS=Object.freeze(['Hard','Preferred']);
-
-  function text(value){return String(value??'').trim();}
-  function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
+  const text=value=>String(value??'').trim();
+  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
+  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  let idSequence=0;
+  function makeId(prefix){const uuid=globalThis.crypto?.randomUUID?.();if(uuid)return `${prefix}-${uuid}`;idSequence=(idSequence+1)%1000000;return `${prefix}-${Date.now()}-${idSequence}`;}
 
   function normalizeKind(value){return text(value).toLowerCase()==='hard'?'Hard':'Preferred';}
-  function normalizeRequirement(raw={},index=0){
-    const field=text(raw.field);
-    return {
-      id:text(raw.id)||`${field||'criterion'}-${index+1}`,
-      field,
-      operator:text(raw.operator||'gte').toLowerCase(),
-      value:raw.value,
-      value2:raw.value2,
-      kind:normalizeKind(raw.kind),
-      label:text(raw.label)||field||`Criterion ${index+1}`,
-      weight:Math.max(0,number(raw.weight,1))
-    };
-  }
-
-  function normalizeBaseline(config={}){
-    return {criteria:(Array.isArray(config.criteria)?config.criteria:[]).map(normalizeRequirement),updatedAt:number(config.updatedAt,0)};
-  }
-
+  function normalizeRequirement(raw={},index=0){const field=text(raw.field);return{id:text(raw.id)||`${field||'criterion'}-${index+1}`,field,operator:text(raw.operator||'gte').toLowerCase(),value:raw.value,value2:raw.value2,kind:normalizeKind(raw.kind),label:text(raw.label)||field||`Criterion ${index+1}`,weight:Math.max(0,number(raw.weight,1))};}
+  function normalizeBaseline(config={}){return{criteria:(Array.isArray(config.criteria)?config.criteria:[]).map(normalizeRequirement),updatedAt:number(config.updatedAt,0)};}
   function compare(operator,actual,value,value2){
-    if(actual===undefined||actual===null||actual==='')return {known:false,passed:false};
+    if(actual===undefined||actual===null||actual==='')return{known:false,passed:false};
     const op=text(operator).toLowerCase();
-    if(op==='gte'||op==='gt'||op==='lte'||op==='lt'){
-      const a=Number(actual),b=Number(value);
-      if(!Number.isFinite(a)||!Number.isFinite(b))return {known:false,passed:false};
-      if(op==='gte')return {known:true,passed:a>=b};
-      if(op==='gt')return {known:true,passed:a>b};
-      if(op==='lte')return {known:true,passed:a<=b};
-      return {known:true,passed:a<b};
-    }
-    if(op==='between'){
-      const a=Number(actual),lo=Number(value),hi=Number(value2);
-      if(![a,lo,hi].every(Number.isFinite))return {known:false,passed:false};
-      return {known:true,passed:a>=Math.min(lo,hi)&&a<=Math.max(lo,hi)};
-    }
-    if(op==='contains')return {known:true,passed:text(actual).toLowerCase().includes(text(value).toLowerCase())};
-    if(op==='oneof'){
-      const allowed=(Array.isArray(value)?value:[value]).map(v=>text(v).toLowerCase());
-      return {known:true,passed:allowed.includes(text(actual).toLowerCase())};
-    }
-    return {known:true,passed:text(actual).toLowerCase()===text(value).toLowerCase()};
+    if(op==='gte'||op==='gt'||op==='lte'||op==='lt'){const a=Number(actual),b=Number(value);if(!Number.isFinite(a)||!Number.isFinite(b))return{known:false,passed:false};if(op==='gte')return{known:true,passed:a>=b};if(op==='gt')return{known:true,passed:a>b};if(op==='lte')return{known:true,passed:a<=b};return{known:true,passed:a<b};}
+    if(op==='between'){const a=Number(actual),lo=Number(value),hi=Number(value2);if(![a,lo,hi].every(Number.isFinite))return{known:false,passed:false};return{known:true,passed:a>=Math.min(lo,hi)&&a<=Math.max(lo,hi)};}
+    if(op==='contains')return{known:true,passed:text(actual).toLowerCase().includes(text(value).toLowerCase())};
+    if(op==='oneof'){const allowed=(Array.isArray(value)?value:[value]).map(item=>text(item).toLowerCase());return{known:true,passed:allowed.includes(text(actual).toLowerCase())};}
+    return{known:true,passed:text(actual).toLowerCase()===text(value).toLowerCase()};
   }
+  // waiverFor(requirementId) is supplied by each domain, so Company and Faction waiver scoping stay separate.
+  function evaluateCriteria(criteria=[],facts={},waiverFor=()=>null){
+    const results=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement).map(req=>{const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id):null;return{...req,known:verdict.known,passed:verdict.passed,waived:Boolean(waiver),waiver,effectivePass:verdict.passed||Boolean(waiver)};});
+    const hardFailures=results.filter(r=>r.kind==='Hard'&&r.known&&!r.passed),unknownHard=results.filter(r=>r.kind==='Hard'&&!r.known),unwaivedHardFailures=hardFailures.filter(r=>!r.waived),failures=results.filter(r=>r.known&&!r.passed),known=results.filter(r=>r.known);
+    const totalWeight=known.reduce((sum,r)=>sum+(r.weight||1),0),earned=known.filter(r=>r.passed).reduce((sum,r)=>sum+(r.weight||1),0);
+    const score=totalWeight?Math.round(earned/totalWeight*100):null,hardFailed=unwaivedHardFailures.length>0;
+    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
+    return{results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
+  }
+
+  function applyStoreDefinitions(db,definitions){for(const[storeName,definition]of Object.entries(definitions)){if(db.objectStoreNames.contains(storeName))continue;const store=db.createObjectStore(storeName,{keyPath:definition.keyPath});for(const index of definition.indexes)store.createIndex(index.name,index.keyPath,{unique:false});}}
+  function normalizeDomainConfig(raw,key,extra={}){const thresholds={};for(const[k,value]of Object.entries(raw.stageThresholds||{})){const days=Math.max(0,Math.floor(number(value,0)));if(days>0)thresholds[text(k)]=days;}const weights={};for(const[k,value]of Object.entries(raw.opportunityWeights||{}))weights[text(k)]=Math.max(0,number(value,0));return{key,baseline:normalizeBaseline(raw.baseline||{}),stageThresholds:thresholds,opportunityWeights:weights,...extra,updatedAt:number(raw.updatedAt,Date.now())};}
+
+  const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
+  const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
+  const RESULTS_PAGE_SIZE=100;
+  const NUMERIC_SORT_KEYS=['level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit'];
+  const SORT_KEYS=new Set(['player',...NUMERIC_SORT_KEYS,'lastActive']);
+  function parseThreshold(value){const raw=text(value).toLowerCase().replace(/,/g,'');if(!raw)return null;const match=raw.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([kmb])?$/);if(!match)return null;const mult={k:1e3,m:1e6,b:1e9}[match[2]]||1;const out=Number(match[1])*mult;return Number.isFinite(out)?out:null;}
+  // spec: {player:'playerRecord'|'player', name:'currentCompany'|'factionName', id:'currentCompanyId'|'factionId', label:'Company'|'Faction'}
+  function organizationInfoFor(spec){return function organizationInfo(row={}){const player=row[spec.player]||{};const name=text(row[spec.name]||player[spec.name]);const rawId=row[spec.id]??player[spec.id];if(name)return{state:'has',label:name};if(rawId!==null&&rawId!==undefined&&rawId!==''){const id=Number(rawId);if(Number.isFinite(id)){if(id===0)return{state:'none',label:'None'};if(id>0)return{state:'has',label:`${spec.label} #${id}`};}}return{state:'unknown',label:'Unknown'};};}
+  function belowMin(row,key,min){return min!==null&&(!Number.isFinite(Number(row[key]))||row[key]===null||row[key]===undefined||row[key]===''||Number(row[key])<min);}
+  function filterRows(rows,filters={},organizationInfo){const search=text(filters.search).toLowerCase(),minEnd=parseThreshold(filters.minEnd),minMan=parseThreshold(filters.minMan),minInt=parseThreshold(filters.minInt),onlineStatus=text(filters.onlineStatus).toLowerCase(),organization=text(filters.organization).toLowerCase(),presence=text(filters.organizationPresence).toLowerCase()||'any';return(Array.isArray(rows)?rows:[]).filter(row=>{if(search&&!`${text(row.name).toLowerCase()} ${text(row.userId)}`.includes(search))return false;if(belowMin(row,'end',minEnd)||belowMin(row,'man',minMan)||belowMin(row,'int',minInt))return false;if(onlineStatus&&text(row.onlineStatus).toLowerCase()!==onlineStatus)return false;const org=organizationInfo(row);if(organization&&(org.state!=='has'||!org.label.toLowerCase().includes(organization)))return false;if(presence==='has'&&org.state!=='has')return false;if(presence==='none'&&org.state!=='none')return false;return true;});}
+  function sortValue(row,key,now){if(key==='player')return text(row.name).toLowerCase()||null;if(NUMERIC_SORT_KEYS.includes(key)){const raw=row[key];if(raw===null||raw===undefined||raw==='')return null;const value=Number(raw);return Number.isFinite(value)?value:null;}if(key==='lastActive'){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return ts;const status=text(row.onlineStatus).toLowerCase();if(status==='online')return now+2;if(status==='idle')return now+1;if(status==='offline')return 0;return null;}return null;}
+  function sortTieBreak(a,b){const byName=text(a.name).localeCompare(text(b.name),undefined,{sensitivity:'base'});if(byName)return byName;return text(a.userId).localeCompare(text(b.userId),undefined,{numeric:true});}
+  function sortRows(rows,sortState=DEFAULT_SORT,now=Date.now()){const key=SORT_KEYS.has(text(sortState?.key))?text(sortState.key):DEFAULT_SORT.key;const sign=sortState?.direction==='desc'?-1:1;return[...(Array.isArray(rows)?rows:[])].sort((a,b)=>{const av=sortValue(a,key,now),bv=sortValue(b,key,now),am=av===null||av===undefined,bm=bv===null||bv===undefined;if(am!==bm)return am?1:-1;if(am&&bm)return sortTieBreak(a,b);const cmp=key==='player'?String(av).localeCompare(String(bv)):Number(av)-Number(bv);return cmp?cmp*sign:sortTieBreak(a,b);});}
+  function toggleSort(current,key){const nextKey=SORT_KEYS.has(text(key))?text(key):DEFAULT_SORT.key;if(text(current?.key)===nextKey)return{key:nextKey,direction:current?.direction==='asc'?'desc':'asc'};return{key:nextKey,direction:nextKey==='player'?'asc':'desc'};}
+  function normalizeResultsView(raw={}){const src=raw&&typeof raw.filters==='object'&&raw.filters?raw.filters:{};const filters={...DEFAULT_SEARCH_FILTERS};for(const key of Object.keys(DEFAULT_SEARCH_FILTERS))if(src[key]!==undefined&&src[key]!==null)filters[key]=text(src[key]);if(!['any','has','none'].includes(filters.organizationPresence))filters.organizationPresence='any';const key=SORT_KEYS.has(text(raw?.sort?.key))?text(raw.sort.key):DEFAULT_SORT.key;return{filters,sort:{key,direction:raw?.sort?.direction==='desc'?'desc':'asc'},resultPage:Math.max(0,Math.floor(number(raw?.resultPage,0))),profileId:text(raw?.profileId),profileVersion:text(raw?.profileVersion)};}
+
+  function dbGetAll(db,store){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>resolve([]);}catch{resolve([]);}});}
+  function dbGet(db,store,key){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>resolve(null);}catch{resolve(null);}});}
+  function dbWrite(db,store,op,arg,result,verb){return new Promise((resolve,reject)=>{try{const tx=db.transaction(store,'readwrite');tx.objectStore(store)[op](arg);tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error||new Error(`Failed to ${verb} ${store}.`));}catch(error){reject(error);}});}
+  function dbPut(db,store,value){return dbWrite(db,store,'put',value,value,'save');}
+  function dbDelete(db,store,key){return dbWrite(db,store,'delete',key,true,'delete from');}
+
+  function relativeLastActive(value,now=Date.now(),onlineStatus=''){const ts=Number(value);if(!Number.isFinite(ts)||ts<=0)return text(onlineStatus)||'Unknown';const seconds=Math.max(0,Math.floor((now-ts)/1000));if(seconds<60)return 'just now';if(seconds<3600)return `${Math.floor(seconds/60)}m ago`;if(seconds<86400)return `${Math.floor(seconds/3600)}h ago`;return `${Math.floor(seconds/86400)}d ago`;}
+  function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
+  function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus).toLowerCase();if(status==='online')return '<span class="ra-online-live">Online</span>';if(status==='idle')return '<span class="ra-online-idle">Idle</span>';if(status==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
+  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
+  function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
+  const known=value=>value!==null&&value!==undefined&&text(value)!==''&&Number.isFinite(Number(value));
+  function battleCell(row){const a=known(row.attacks30),r=known(row.rwHits30);if(!a&&!r)return '—';return `${a?Number(row.attacks30).toLocaleString():'—'} / ${r?Number(row.rwHits30).toLocaleString():'—'}`;}
+
+  // Criterion editor rows. prefix '' keeps Company's data-criterion-* attributes; 'faction-' keeps Faction's.
+  const CRITERION_FIELDS=Object.freeze(['level','ee','fit','activity30','xanax30','refills30','attacks30','rwHits30','networth']);
+  const CRITERION_OPERATORS=Object.freeze(['gte','gt','lte','lt','between','equals']);
+  function renderCriterionRow(raw={},scope='baseline',prefix='',defaultField='level'){
+    const a=`data-${prefix}criterion`,req={id:text(raw.id),label:text(raw.label),field:text(raw.field)||defaultField,operator:text(raw.operator)||'gte',kind:text(raw.kind)==='Hard'?'Hard':'Preferred',value:raw.value??'',weight:Number.isFinite(Number(raw.weight))?Number(raw.weight):1};
+    const options=(list,current)=>list.map(item=>`<option value="${item}" ${item===current?'selected':''}>${item}</option>`).join('');
+    return `<div class="ra-formgrid" ${a}-row ${a}-id="${esc(req.id)}"${prefix?` ${a}-scope="${esc(scope)}"`:''} style="grid-template-columns:1.2fr 1fr .8fr .8fr 1fr .7fr auto;align-items:end;margin:6px 0"><div class="ra-field"><label>Label</label><input ${a}-field="label" value="${esc(req.label)}"></div><div class="ra-field"><label>Field</label><select ${a}-field="field">${options(CRITERION_FIELDS,req.field)}</select></div><div class="ra-field"><label>Operator</label><select ${a}-field="operator">${options(CRITERION_OPERATORS,req.operator)}</select></div><div class="ra-field"><label>Type</label><select ${a}-field="kind"><option value="Hard" ${req.kind==='Hard'?'selected':''}>Hard</option><option value="Preferred" ${req.kind==='Preferred'?'selected':''}>Preferred</option></select></div><div class="ra-field"><label>Value</label><input ${a}-field="value" value="${esc(req.value)}"></div><div class="ra-field"><label>Weight</label><input ${a}-field="weight" type="number" min="0" step="0.1" value="${esc(req.weight)}"></div><button type="button" class="ra-btn ra-danger" data-${prefix}remove-criterion="${esc(scope)}">×</button></div>`;
+  }
+  function readCriteria(host,prefix=''){if(!host)return[];const a=`data-${prefix}criterion`;return[...host.querySelectorAll(`[${a}-row]`)].map((row,index)=>{const get=key=>row.querySelector(`[${a}-field="${key}"]`)?.value??'';const rawValue=get('value');const numericValue=rawValue!==''&&Number.isFinite(Number(rawValue))?Number(rawValue):rawValue;return{id:text(row.getAttribute(`${a}-id`))||makeId(`criterion-${index+1}`),label:text(get('label')),field:text(get('field')),operator:text(get('operator'))||'gte',kind:text(get('kind'))==='Hard'?'Hard':'Preferred',value:numericValue,weight:Math.max(0,number(get('weight'),1))};});}
+
+  // Results table. spec: {domain,label,orgHeader,orgPlaceholder,columns,contactedStages,messageCell,profileBar,headActions,extraButtons}
+  function sortHeader(domain,key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-${domain}-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
+  const STAT_COLUMNS={level:'Level',age:'Age',man:'MAN',int:'INT',end:'END',networth:'Net Worth',activity30:'30d Active',activeStreak:'Streak',xanax30:'Xanax 30d'};
+  function column(key,spec){
+    if(STAT_COLUMNS[key])return[[key,STAT_COLUMNS[key]],row=>stat(row[key])];
+    return({
+      player:[['player','Player'],row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="${spec.domain}">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`],
+      drug:['Drug Use',row=>esc(text(row.drugUse)||'—')],
+      battle:['Battle / RW',battleCell],
+      org:[spec.orgHeader,row=>esc(row.currentOrganizationLabel||'Unknown')],
+      lastActive:[['lastActive','Last Online'],lastOnlineHtml],
+      recruitmentFit:[['recruitmentFit','Recruit Fit'],recruitmentFitCell],
+      fit:['Recruit Fit',recruitmentFitCell],
+      source:['Source',provenanceCell],
+      contacted:['Contacted',row=>{if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';return spec.contactedStages.includes(text(row.pipelineStage).toLowerCase())?'Contacted':'Not yet';}],
+      message:['Message',spec.messageCell]
+    })[key];
+  }
+  function resultsTable(rows,keys,sort,spec,className){const cols=keys.map(key=>column(key,spec));const head=cols.map(([h])=>`<th>${Array.isArray(h)?sortHeader(spec.domain,h[0],h[1],sort):h}</th>`).join('');const body=rows.map(row=>`<tr>${cols.map(([,cell])=>`<td>${cell(row)}</td>`).join('')}</tr>`).join('');return `<table class="ra-table ra-core-results ${className}"><thead><tr>${head}</tr></thead><tbody>${body||`<tr><td colspan="${cols.length}">No matching ${spec.label} candidates.</td></tr>`}</tbody></table>`;}
+  function renderResults(rows=[],options={},spec){
+    rows=Array.isArray(rows)?rows:[];const d=spec.domain,L=spec.label,filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):rows.length;
+    const pagination=options.pagination||{page:0,pageCount:1,start:0,end:rows.length};const filteredTotal=Number.isFinite(Number(options.filteredTotal))?Number(options.filteredTotal):rows.length;
+    const rangeText=filteredTotal?`${Number(pagination.start||0)+1}-${Number(pagination.end||0)}`:'0';
+    const pager=`<div class="ra-actions"><button type="button" class="ra-btn" data-results-page="prev" ${Number(pagination.page||0)<=0?'disabled':''}>Previous</button><span class="ra-muted">${rangeText} of ${filteredTotal}</span><button type="button" class="ra-btn" data-results-page="next" ${Number(pagination.page||0)>=Number(pagination.pageCount||1)-1?'disabled':''}>Next</button></div>`;
+    const table=layout==='compact'?resultsTable(rows,['player','end','man','int','lastActive','fit','message'],sort,spec,'ra-results-compact'):resultsTable(rows,spec.columns,sort,spec,'ra-results-expanded');
+    const status=text(filters.onlineStatus).toLowerCase(),presence=filters.organizationPresence;
+    const input=(key,label,value,placeholder)=>`<div class="ra-field"><label>${label}</label><input id="ra-${d}-filter-${key}" value="${esc(value||'')}" placeholder="${placeholder}"></div>`;
+    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Find players, narrow the list with filters, then message the ones you want.</p></div>${spec.headActions||''}</div>${spec.profileBar||''}<div class="ra-formgrid ra-core-search-grid">${input('search','Name / ID',filters.search,'Player name or ID')}<div class="ra-field"><label>Status</label><select id="ra-${d}-filter-status"><option value="">Any</option>${['Online','Idle','Offline'].map(s=>`<option value="${s}" ${status===s.toLowerCase()?'selected':''}>${s}</option>`).join('')}</select></div>${input('organization',`Current ${L}`,filters.organization,spec.orgPlaceholder)}<div class="ra-field"><label>${L} Presence</label><select id="ra-${d}-filter-organization-presence"><option value="any" ${!presence||presence==='any'?'selected':''}>Any</option><option value="none" ${presence==='none'?'selected':''}>None</option><option value="has" ${presence==='has'?'selected':''}>Has ${L}</option></select></div>${input('end','END ≥',filters.minEnd,'e.g. 100k')}${input('man','MAN ≥',filters.minMan,'e.g. 50k')}${input('int','INT ≥',filters.minInt,'e.g. 50k')}</div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-${d}-search-apply">Search</button><button type="button" class="ra-btn" id="ra-${d}-search-clear">Clear</button>${spec.extraButtons||''}</div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} ${L} candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${table}</div><div class="ra-panel-foot">${pager}</div></section>`;
+  }
+
+  // Search & Results page controller. Each call builds an independent runtime, so Company and Faction
+  // keep their own filters, sort, paging and profile state.
+  // spec: {domain,label,logTag,routes,implemented,meta,organizationInfo,buildRows(app),selectProfile(app),beforePage(app,ctx),renderHtml(app,sorted,options,ctx),bindControls(),goPageSelector}
+  function createResultsPlatform(spec){
+    const d=spec.domain,route=`${d}-candidates`,IMPLEMENTED_ROUTES=new Set(spec.implemented);
+    const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},hofOffset:0,resultPage:0};
+    const isRoute=value=>spec.routes.includes(text(value));
+    function routeMeta(page){const [title,description]=spec.meta[text(page)]||spec.meta[`${d}-overview`];return{title,description};}
+    const filter=(rows,filters)=>filterRows(rows,filters,spec.organizationInfo);
+    function savedResultsView(app){const raw=app?._test?.state?.settings?.candidates?.resultsView?.[d];return raw&&typeof raw==='object'?normalizeResultsView(raw):null;}
+    async function persistResultsView(app){if(typeof app?.saveResultsView!=='function')return;const view=normalizeResultsView({filters:runtime.searchFilters,sort:runtime.sort,resultPage:runtime.resultPage,profileId:runtime.profileFiltersId,profileVersion:runtime.profileFiltersVersion});const key=JSON.stringify(view);if(key===runtime.savedResultsViewKey)return;runtime.savedResultsViewKey=key;await app.saveResultsView(d,view);}
+    async function persistRoute(app,page){const state=app?._test?.state;if(!state?.db)return false;state.page=page;state.settings=state.settings||{};state.settings.activePage=page;const meta=await dbGet(state.db,'meta','global')||{key:'global',settings:{}};meta.settings={...(meta.settings||{}),activePage:page};await dbPut(state.db,'meta',meta);return true;}
+    function claimRoute(app,page){const state=app?._test?.state,r=text(page);if(!state||!IMPLEMENTED_ROUTES.has(r))return false;state.page=r;state.settings=state.settings||{};state.settings.activePage=r;return true;}
+    function navigate(page,persist=true){const r=text(page);if(!runtime.app||!IMPLEMENTED_ROUTES.has(r))return Promise.resolve(false);if(typeof runtime.app.navigate==='function')return Promise.resolve(runtime.app.navigate(r,persist));claimRoute(runtime.app,r);return renderPage(r,{persist});}
+    async function rowFor(userId){const rows=await spec.buildRows(runtime.app);const row=rows.find(item=>text(item.userId)===text(userId));if(!row)throw new Error(`${spec.label} candidate was not found.`);return row;}
+    function reportError(error){console.error(spec.logTag,error);try{globalThis.alert?.(`${spec.label} Recruitment failed: ${error?.message||error}`);}catch{}}
+    const rerender=()=>renderPage(route,{persist:false});
+    function readVisibleSearchFilters(){const v=key=>text(document.getElementById(`ra-${d}-filter-${key}`)?.value);return{search:v('search'),minEnd:v('end'),minMan:v('man'),minInt:v('int'),onlineStatus:v('status'),organization:v('organization'),organizationPresence:v('organization-presence')||'any'};}
+    function bindContentControls(){
+      document.getElementById(`ra-${d}-search-apply`)?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters=readVisibleSearchFilters();try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates(d,runtime.searchFilters);await rerender();}catch(error){reportError(error);rerender().catch(reportError);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
+      document.getElementById(`ra-${d}-search-clear`)?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};rerender().catch(reportError);});
+      document.querySelectorAll(`#ra-content [data-${d}-sort]`).forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.getAttribute(`data-${d}-sort`));rerender().catch(reportError);};});
+      document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));rerender().catch(reportError);};});
+      document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(rerender).catch(reportError);};});
+      document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.(d,link.dataset.playerCard);};});
+      document.querySelectorAll(spec.goPageSelector).forEach(button=>{if(!isRoute(button.dataset.goPage))return;button.onclick=event=>{event?.preventDefault?.();navigate(button.dataset.goPage,true).catch(reportError);};});
+      spec.bindControls();
+    }
+    async function renderPage(page,options={}){
+      const app=runtime.app;page=text(page);
+      if(!app||!IMPLEMENTED_ROUTES.has(page))return false;
+      if(options.persist!==false)claimRoute(app,page);
+      const title=document.getElementById('ra-page-title'),desc=document.getElementById('ra-page-desc'),content=document.getElementById('ra-content');
+      if(!title||!desc||!content)throw new Error('Recruitment Agency shell is not mounted.');
+      const rows=await spec.buildRows(app);
+      const ctx=await spec.selectProfile(app);const selected=ctx.selected;const selectedId=text(selected?.profileId);const selectedVersion=text(selected?.updatedAt);
+      if(!runtime.profileFiltersInitialized||runtime.profileFiltersId!==selectedId||runtime.profileFiltersVersion!==selectedVersion){const saved=runtime.profileFiltersInitialized?null:savedResultsView(app);if(saved)runtime.sort=saved.sort;if(saved&&saved.profileId===selectedId&&saved.profileVersion===selectedVersion){runtime.searchFilters=saved.filters;runtime.resultPage=saved.resultPage;}else{runtime.searchFilters=selected?spec.profileSearchFilters(selected):{...DEFAULT_SEARCH_FILTERS};runtime.resultPage=0;}runtime.profileFiltersInitialized=true;runtime.profileFiltersId=selectedId;runtime.profileFiltersVersion=selectedVersion;}
+      const sortedAll=sortRows(filter(rows,runtime.searchFilters),runtime.sort).map(row=>({...row,currentOrganizationLabel:spec.organizationInfo(row).label}));
+      if(spec.beforePage)await spec.beforePage(app,ctx);
+      const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);
+      await persistResultsView(app).catch(error=>console.warn('[RA] Results view was not saved.',error));
+      const html=await spec.renderHtml(app,sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}},ctx);
+      if(typeof app.navigate==='function'&&text(app._test.state.page)!==page)return false;
+      const meta=routeMeta(page);title.textContent=meta.title;desc.textContent=meta.description;content.innerHTML=html;
+      document.querySelectorAll('#ra-nav [data-page]').forEach(button=>button.classList.toggle('active',button.dataset.page===page));bindContentControls();if(options.persist!==false)await persistRoute(app,page);return true;
+    }
+    function bindNav(){if(!runtime.app)return;document.querySelectorAll('#ra-nav [data-page]').forEach(button=>{const page=text(button.dataset.page);if(!IMPLEMENTED_ROUTES.has(page))return;if(!runtime.originalHandlers.has(button))runtime.originalHandlers.set(button,button.onclick||null);button.onclick=event=>{event?.preventDefault?.();navigate(page,true).catch(reportError);};});}
+    function syncNavigation(){bindNav();return true;}
+    function install(app,options={}){if(!app?._test?.state?.db)throw new Error('A mounted Recruitment Agency app with DB state is required.');uninstall();runtime.app=app;runtime.installed=true;runtime.profileFiltersInitialized=false;runtime.savedResultsViewKey='';runtime.profileFiltersId='';runtime.profileFiltersVersion='';bindNav();const nav=document.getElementById('ra-nav');if(nav&&typeof MutationObserver==='function'){runtime.observer=new MutationObserver(()=>bindNav());runtime.observer.observe(nav,{childList:true,subtree:true});}const page=text(app._test.state.page||app._test.state.settings?.activePage);if(options.renderInitial!==false&&IMPLEMENTED_ROUTES.has(page))renderPage(page,{persist:false}).catch(reportError);return true;}
+    function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.app=null;runtime.installed=false;}
+    return{runtime,route,IMPLEMENTED_ROUTES,isRoute,routeMeta,filterRows:filter,persistRoute,navigate,rowFor,reportError,rerender,readVisibleSearchFilters,renderPage,syncNavigation,install,uninstall};
+  }
+
+  return Object.freeze({
+    text,number,esc,makeId,
+    normalizeKind,normalizeRequirement,normalizeBaseline,compare,evaluateCriteria,
+    applyStoreDefinitions,normalizeDomainConfig,
+    DEFAULT_SEARCH_FILTERS,DEFAULT_SORT,RESULTS_PAGE_SIZE,SORT_KEYS,parseThreshold,organizationInfoFor,filterRows,sortRows,toggleSort,normalizeResultsView,
+    dbGetAll,dbGet,dbPut,dbDelete,
+    relativeLastActive,stat,lastOnlineHtml,recruitmentFitCell,provenanceCell,CRITERION_FIELDS,CRITERION_OPERATORS,renderCriterionRow,readCriteria,renderResults,
+    createResultsPlatform
+  });
+});
+
+/* bundled runtime: v46-company-core.js */
+(function(root,factory){
+  let Shared=root&&root.RA_V46RecruitmentShared;
+  if(!Shared&&typeof module==='object'&&module.exports)Shared=require('./v46-recruitment-shared');
+  const api=factory(Shared);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  if(root)root.RA_V46CompanyCore=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(Shared){
+  'use strict';
+  if(!Shared)throw new Error('RA_V46RecruitmentShared is required.');
+
+  const REQUIREMENT_KINDS=Object.freeze(['Hard','Preferred']);
+  const {text}=Shared;
 
   function waiverFor(requirementId,waivers=[]){
     return (Array.isArray(waivers)?waivers:[]).find(w=>text(w.requirementId)===text(requirementId)&&['active','review due'].includes(text(w.state).toLowerCase()))||null;
   }
 
-  function evaluateCriteria(criteria=[],facts={},waivers=[]){
-    const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
-    const results=normalized.map(req=>{
-      const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers):null;
-      return {...req,known:verdict.known,passed:verdict.passed,waived:Boolean(waiver),waiver,effectivePass:verdict.passed||Boolean(waiver)};
-    });
-    const hardFailures=results.filter(r=>r.kind==='Hard'&&r.known&&!r.passed);
-    const unknownHard=results.filter(r=>r.kind==='Hard'&&!r.known);
-    const unwaivedHardFailures=hardFailures.filter(r=>!r.waived);
-    const failures=results.filter(r=>r.known&&!r.passed);
-    const known=results.filter(r=>r.known);
-    const totalWeight=known.reduce((sum,r)=>sum+(r.weight||1),0);
-    const earned=known.filter(r=>r.passed).reduce((sum,r)=>sum+(r.weight||1),0);
-    const score=totalWeight?Math.round(earned/totalWeight*100):null;
-    const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
-    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
-  }
+  function evaluateCriteria(criteria=[],facts={},waivers=[]){return Shared.evaluateCriteria(criteria,facts,id=>waiverFor(id,waivers));}
 
   return Object.freeze({
-    REQUIREMENT_KINDS,normalizeBaseline,evaluateCriteria
+    REQUIREMENT_KINDS,normalizeBaseline:Shared.normalizeBaseline,evaluateCriteria
   });
 });
 
 /* bundled runtime: v46-company-storage.js */
 (function(root,factory){
-  let CompanyCore=root&&root.RA_V46CompanyCore;
-  if(!CompanyCore&&typeof module==='object'&&module.exports)CompanyCore=require('./v46-company-core');
-  const api=factory(CompanyCore);
+  let CompanyCore=root&&root.RA_V46CompanyCore,Shared=root&&root.RA_V46RecruitmentShared;
+  if(typeof module==='object'&&module.exports){CompanyCore=CompanyCore||require('./v46-company-core');Shared=Shared||require('./v46-recruitment-shared');}
+  const api=factory(CompanyCore,Shared);
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.RA_V46CompanyStorage=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(CompanyCore){
+})(typeof globalThis!=='undefined'?globalThis:this,function(CompanyCore,Shared){
   'use strict';
-  if(!CompanyCore)throw new Error('RA_V46CompanyCore is required.');
+  if(!CompanyCore||!Shared)throw new Error('RA_V46CompanyCore is required.');
 
   const DB_VERSION=14;
   const STORE_DEFINITIONS=Object.freeze({
@@ -2524,33 +2637,8 @@
     ])})
   });
 
-  function text(value){return String(value??'').trim();}
-  function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
-
-  function applyUpgrade(db){
-    for(const[storeName,definition]of Object.entries(STORE_DEFINITIONS)){
-      if(db.objectStoreNames.contains(storeName))continue;
-      const store=db.createObjectStore(storeName,{keyPath:definition.keyPath});
-      for(const index of definition.indexes)store.createIndex(index.name,index.keyPath,{unique:false});
-    }
-  }
-
-  function normalizeConfig(raw={}){
-    const thresholds={};
-    for(const[key,value]of Object.entries(raw.stageThresholds||{})){
-      const days=Math.max(0,Math.floor(number(value,0)));
-      if(days>0)thresholds[text(key)]=days;
-    }
-    const weights={};
-    for(const[key,value]of Object.entries(raw.opportunityWeights||{}))weights[text(key)]=Math.max(0,number(value,0));
-    return {
-      key:'company',
-      baseline:CompanyCore.normalizeBaseline(raw.baseline||{}),
-      stageThresholds:thresholds,
-      opportunityWeights:weights,
-      updatedAt:number(raw.updatedAt,Date.now())
-    };
-  }
+  function applyUpgrade(db){Shared.applyStoreDefinitions(db,STORE_DEFINITIONS);}
+  function normalizeConfig(raw={}){return Shared.normalizeDomainConfig(raw,'company');}
 
   function createRepositories(idb){
     if(!idb||!['get','put'].every(name=>typeof idb[name]==='function'))throw new Error('A compatible IndexedDB adapter is required.');
@@ -2568,22 +2656,18 @@
 
 /* bundled runtime: v46-company-ui.js */
 (function(root,factory){
-  const deps={CompanyCore:root&&root.RA_V46CompanyCore};
-  if(typeof module==='object'&&module.exports)deps.CompanyCore=require('./v46-company-core');
+  const deps={CompanyCore:root&&root.RA_V46CompanyCore,Shared:root&&root.RA_V46RecruitmentShared};
+  if(typeof module==='object'&&module.exports){deps.CompanyCore=require('./v46-company-core');deps.Shared=require('./v46-recruitment-shared');}
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.RA_V46CompanyUI=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {CompanyCore}=D;
-  if(!CompanyCore)throw new Error('CompanyCore is required.');
+  const {CompanyCore,Shared}=D;
+  if(!CompanyCore||!Shared)throw new Error('CompanyCore is required.');
   const COMPANY_STAGES=Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
-  const CRITERION_FIELDS=Object.freeze(['level','ee','fit','activity30','xanax30','refills30','attacks30','rwHits30','networth']);
-  const CRITERION_OPERATORS=Object.freeze(['gte','gt','lte','lt','between','equals']);
-
-  function text(value){return String(value??'').trim();}
-  function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+  const {text,esc}=Shared;
   function normalizeStage(value){const raw=text(value).toLowerCase();return COMPANY_STAGES.find(stage=>stage.toLowerCase()===raw)||'Not Contacted';}
 
   function buildCandidateRows(companyRecords=[],playerRecords=[],options={}){
@@ -2614,39 +2698,16 @@
 
 
 
-  function relativeLastActive(value,now=Date.now(),onlineStatus=''){const ts=Number(value);if(!Number.isFinite(ts)||ts<=0)return text(onlineStatus)||'Unknown';const seconds=Math.max(0,Math.floor((now-ts)/1000));if(seconds<60)return 'just now';if(seconds<3600)return `${Math.floor(seconds/60)}m ago`;if(seconds<86400)return `${Math.floor(seconds/3600)}h ago`;return `${Math.floor(seconds/86400)}d ago`;}
-  function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
-  function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
-  function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-company-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
-  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
-  function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
-  function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','hired'].includes(stage)?'Contacted':'Not yet';}
+  const COLUMNS=['player','level','age','man','int','end','drug','activity30','activeStreak','org','lastActive','recruitmentFit','source','contacted','message'];
   function renderCandidates(rows=[],options={}){
-    const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
     const profiles=Array.isArray(options.profiles)?options.profiles:[],activeProfileId=text(options.activeProfileId);
-    const pagination=options.pagination||{page:0,pageCount:1,start:0,end:(Array.isArray(rows)?rows:[]).length};const filteredTotal=Number.isFinite(Number(options.filteredTotal))?Number(options.filteredTotal):(Array.isArray(rows)?rows:[]).length;
-    const rangeText=filteredTotal?`${Number(pagination.start||0)+1}-${Number(pagination.end||0)}`:'0';
-    const pager=`<div class="ra-actions"><button type="button" class="ra-btn" data-results-page="prev" ${Number(pagination.page||0)<=0?'disabled':''}>Previous</button><span class="ra-muted">${rangeText} of ${filteredTotal}</span><button type="button" class="ra-btn" data-results-page="next" ${Number(pagination.page||0)>=Number(pagination.pageCount||1)-1?'disabled':''}>Next</button></div>`;
     const profileOptions=`<option value="" ${activeProfileId?'':'selected'}>No profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${text(profile.profileId)===activeProfileId?'selected':''}>${esc(profile.name)}</option>`).join('');
     const profileBar=`<div class="ra-actions ra-profile-bar"><label class="ra-muted" for="ra-company-profile-select">Recruitment profile</label><select id="ra-company-profile-select" class="ra-btn">${profileOptions}</select><button type="button" class="ra-btn" id="ra-company-profile-apply" ${profiles.length?'':'disabled'}>Apply Profile</button><button type="button" class="ra-btn" id="ra-company-profile-clear" ${activeProfileId?'':'hidden'}>Clear Profile</button><details class="ra-profile-more"><summary class="ra-btn">More…</summary><div class="ra-actions"><button type="button" class="ra-btn" id="ra-company-profile-save-search" ${profiles.length?'':'disabled'}>Save Search to Profile</button><button type="button" class="ra-btn" id="ra-company-profile-manage">Manage Profiles</button></div></details></div>`;
-    const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="company">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
     const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-company-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-company-recruit="${esc(row.userId)}">Message</button>`;
-    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.end)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${stat(row.activeStreak)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const resultsTable=layout==='compact'
-      ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Company candidates.</td></tr>'}</tbody></table>`
-      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>Employment</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="15">No matching Company candidates.</td></tr>'}</tbody></table>`;
-    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Find players, narrow the list with filters, then message the ones you want.</p></div></div>${profileBar}<div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-company-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-company-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Company</label><input id="ra-company-filter-organization" value="${esc(filters.organization||'')}" placeholder="Company name"></div><div class="ra-field"><label>Company Presence</label><select id="ra-company-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Company</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-company-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-company-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-company-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-company-search-apply">Search</button><button type="button" class="ra-btn" id="ra-company-search-clear">Clear</button><button type="button" class="ra-btn" id="ra-company-hof-discover" title="Import one bounded page of public work-stat HOF prospects without per-player enrichment">Discover Workstat Prospects</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Company candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
+    return Shared.renderResults(rows,options,{domain:'company',label:'Company',orgHeader:'Employment',orgPlaceholder:'Company name',columns:COLUMNS,contactedStages:['contacted','replied','hired'],messageCell,profileBar,extraButtons:'<button type="button" class="ra-btn" id="ra-company-hof-discover" title="Import one bounded page of public work-stat HOF prospects without per-player enrichment">Discover Workstat Prospects</button>'});
   }
 
-  function renderCriterionRow(raw={},scope='baseline'){
-    const req={id:text(raw.id),label:text(raw.label),field:text(raw.field)||'ee',operator:text(raw.operator)||'gte',kind:text(raw.kind)||'Preferred',value:raw.value??'',weight:Number.isFinite(Number(raw.weight))?Number(raw.weight):1};
-    return `<div class="ra-formgrid" data-criterion-row data-criterion-id="${esc(req.id)}" style="grid-template-columns:1.2fr 1fr .8fr .8fr 1fr .7fr auto;align-items:end;margin:6px 0"><div class="ra-field"><label>Label</label><input data-criterion-field="label" value="${esc(req.label)}"></div><div class="ra-field"><label>Field</label><select data-criterion-field="field">${CRITERION_FIELDS.map(field=>`<option value="${field}" ${field===req.field?'selected':''}>${field}</option>`).join('')}</select></div><div class="ra-field"><label>Operator</label><select data-criterion-field="operator">${CRITERION_OPERATORS.map(op=>`<option value="${op}" ${op===req.operator?'selected':''}>${op}</option>`).join('')}</select></div><div class="ra-field"><label>Type</label><select data-criterion-field="kind"><option value="Hard" ${req.kind==='Hard'?'selected':''}>Hard</option><option value="Preferred" ${req.kind!=='Hard'?'selected':''}>Preferred</option></select></div><div class="ra-field"><label>Value</label><input data-criterion-field="value" value="${esc(req.value)}"></div><div class="ra-field"><label>Weight</label><input data-criterion-field="weight" type="number" min="0" step="0.1" value="${esc(req.weight)}"></div><button type="button" class="ra-btn ra-danger" data-remove-criterion="${esc(scope)}">×</button></div>`;
-  }
-
-
-
-
+  function renderCriterionRow(raw={},scope='baseline'){return Shared.renderCriterionRow(raw,scope,'','ee');}
 
   function renderBaselineEditor(config={},options={}){
     const criteria=Array.isArray(config.baseline?.criteria)?config.baseline.criteria:[];
@@ -2661,13 +2722,15 @@
     CompanyCore:root&&root.RA_V46CompanyCore,
     CompanyUI:root&&root.RA_V46CompanyUI,
     Messaging:root&&root.RA_V45Messaging,
-    ResultsCore:root&&root.RA_ResultsCore
+    ResultsCore:root&&root.RA_ResultsCore,
+    Shared:root&&root.RA_V46RecruitmentShared
   };
   if(typeof module==='object'&&module.exports){
     deps.CompanyCore=require('./v46-company-core');
     deps.CompanyUI=require('./v46-company-ui');
     deps.Messaging=require('./v45-messaging');
     deps.ResultsCore=require('./results-core');
+    deps.Shared=require('./v46-recruitment-shared');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -2675,33 +2738,12 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {CompanyCore,CompanyUI,Messaging,ResultsCore}=D;
-  if(!CompanyCore||!CompanyUI||!Messaging||!ResultsCore)throw new Error('CompanyCore, CompanyUI, Messaging and ResultsCore are required.');
+  const {CompanyCore,CompanyUI,Messaging,ResultsCore,Shared}=D;
+  if(!CompanyCore||!CompanyUI||!Messaging||!ResultsCore||!Shared)throw new Error('CompanyCore, CompanyUI, Messaging and ResultsCore are required.');
 
+  const {text,makeId,dbGetAll,dbGet,dbPut,DEFAULT_SEARCH_FILTERS,RESULTS_PAGE_SIZE,sortRows,toggleSort}=Shared;
   const COMPANY_ROUTES=Object.freeze(['company-discover','company-candidates']);
-  const IMPLEMENTED_ROUTES=new Set(['company-candidates']);
-  const META=Object.freeze({
-    'company-discover':['Forum Discovery','Official Torn forum recruitment sources.'],
-    'company-candidates':['Company Candidates','Search and manage Company recruitment candidates.']
-  });
-
-  const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
-  const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
-  const RESULTS_PAGE_SIZE=100;
-  const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},hofOffset:0,resultPage:0};
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  function parseThreshold(value){const raw=text(value).toLowerCase().replace(/,/g,'');if(!raw)return null;const match=raw.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([kmb])?$/);if(!match)return null;const mult={k:1e3,m:1e6,b:1e9}[match[2]]||1;const out=Number(match[1])*mult;return Number.isFinite(out)?out:null;}
-  function organizationInfo(row={}){const player=row.playerRecord||{};const name=text(row.currentCompany||player.currentCompany);const rawId=row.currentCompanyId??player.currentCompanyId;if(name)return{state:'has',label:name};if(rawId!==null&&rawId!==undefined&&rawId!==''){const id=Number(rawId);if(Number.isFinite(id)){if(id===0)return{state:'none',label:'None'};if(id>0)return{state:'has',label:`Company #${id}`};}}return{state:'unknown',label:'Unknown'};}
-  function filterRows(rows,filters={}){const search=text(filters.search).toLowerCase(),minEnd=parseThreshold(filters.minEnd),minMan=parseThreshold(filters.minMan),minInt=parseThreshold(filters.minInt),onlineStatus=text(filters.onlineStatus).toLowerCase(),organization=text(filters.organization).toLowerCase(),presence=text(filters.organizationPresence).toLowerCase()||'any';return (Array.isArray(rows)?rows:[]).filter(row=>{if(search&&!`${text(row.name).toLowerCase()} ${text(row.userId)}`.includes(search))return false;if(minEnd!==null&&(!Number.isFinite(Number(row.end))||row.end===null||row.end===undefined||row.end===''||Number(row.end)<minEnd))return false;if(minMan!==null&&(!Number.isFinite(Number(row.man))||row.man===null||row.man===undefined||row.man===''||Number(row.man)<minMan))return false;if(minInt!==null&&(!Number.isFinite(Number(row.int))||row.int===null||row.int===undefined||row.int===''||Number(row.int)<minInt))return false;if(onlineStatus&&text(row.onlineStatus).toLowerCase()!==onlineStatus)return false;const org=organizationInfo(row);if(organization&&(org.state!=='has'||!org.label.toLowerCase().includes(organization)))return false;if(presence==='has'&&org.state!=='has')return false;if(presence==='none'&&org.state!=='none')return false;return true;});}
-  function sortValue(row,key,now){if(key==='player')return text(row.name).toLowerCase()||null;if(['level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit'].includes(key)){const raw=row[key];if(raw===null||raw===undefined||raw==='')return null;const value=Number(raw);return Number.isFinite(value)?value:null;}if(key==='lastActive'){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return ts;const status=text(row.onlineStatus).toLowerCase();if(status==='online')return now+2;if(status==='idle')return now+1;if(status==='offline')return 0;return null;}return null;}
-  function sortTieBreak(a,b){const byName=text(a.name).localeCompare(text(b.name),undefined,{sensitivity:'base'});if(byName)return byName;return text(a.userId).localeCompare(text(b.userId),undefined,{numeric:true});}
-  function sortRows(rows,sortState=DEFAULT_SORT,now=Date.now()){const key=SORT_KEYS.has(text(sortState?.key))?text(sortState.key):DEFAULT_SORT.key;const direction=sortState?.direction==='desc'?'desc':'asc';const sign=direction==='asc'?1:-1;return [...(Array.isArray(rows)?rows:[])].sort((a,b)=>{const av=sortValue(a,key,now),bv=sortValue(b,key,now),am=av===null||av===undefined,bm=bv===null||bv===undefined;if(am!==bm)return am?1:-1;if(am&&bm)return sortTieBreak(a,b);const cmp=key==='player'?String(av).localeCompare(String(bv)):Number(av)-Number(bv);return cmp?cmp*sign:sortTieBreak(a,b);});}
-  function toggleSort(current,key){const nextKey=SORT_KEYS.has(text(key))?text(key):DEFAULT_SORT.key;if(text(current?.key)===nextKey)return{key:nextKey,direction:current?.direction==='asc'?'desc':'asc'};return{key:nextKey,direction:nextKey==='player'?'asc':'desc'};}
-  function normalizeResultsView(raw={}){const src=raw&&typeof raw.filters==='object'&&raw.filters?raw.filters:{};const filters={...DEFAULT_SEARCH_FILTERS};for(const key of Object.keys(DEFAULT_SEARCH_FILTERS))if(src[key]!==undefined&&src[key]!==null)filters[key]=text(src[key]);if(!['any','has','none'].includes(filters.organizationPresence))filters.organizationPresence='any';const key=SORT_KEYS.has(text(raw?.sort?.key))?text(raw.sort.key):DEFAULT_SORT.key;return{filters,sort:{key,direction:raw?.sort?.direction==='desc'?'desc':'asc'},resultPage:Math.max(0,Math.floor(number(raw?.resultPage,0))),profileId:text(raw?.profileId),profileVersion:text(raw?.profileVersion)};}
-  function savedResultsView(app){const raw=app?._test?.state?.settings?.candidates?.resultsView?.company;return raw&&typeof raw==='object'?normalizeResultsView(raw):null;}
-  async function persistResultsView(app){if(typeof app?.saveResultsView!=='function')return;const view=normalizeResultsView({filters:runtime.searchFilters,sort:runtime.sort,resultPage:runtime.resultPage,profileId:runtime.profileFiltersId,profileVersion:runtime.profileFiltersVersion});const key=JSON.stringify(view);if(key===runtime.savedResultsViewKey)return;runtime.savedResultsViewKey=key;await app.saveResultsView('company',view);}
+  const organizationInfo=Shared.organizationInfoFor({player:'playerRecord',name:'currentCompany',id:'currentCompanyId',label:'Company'});
   function profileRequirements(profile={}){
     const criteria=profile?.criteria||{},out={};
     for(const [key,target] of [['man','minMan'],['int','minInt'],['end','minEnd']]){
@@ -2715,29 +2757,12 @@
     const saved=profile?.searchFilters?.company||{};
     const filters={...DEFAULT_SEARCH_FILTERS,...saved};
     const requirements=profileRequirements(profile);
-    if(profile.searchFiltersCustom!==true&&!text(saved.minMan)&&requirements.minMan)filters.minMan=String(requirements.minMan);
-    if(profile.searchFiltersCustom!==true&&!text(saved.minInt)&&requirements.minInt)filters.minInt=String(requirements.minInt);
-    if(profile.searchFiltersCustom!==true&&!text(saved.minEnd)&&requirements.minEnd)filters.minEnd=String(requirements.minEnd);
+    for(const key of ['minMan','minInt','minEnd'])if(profile.searchFiltersCustom!==true&&!text(saved[key])&&requirements[key])filters[key]=String(requirements[key]);
     return filters;
   }
-  let idSequence=0;
-  function makeId(prefix){
-    const uuid=globalThis.crypto?.randomUUID?.();
-    if(uuid)return `${prefix}-${uuid}`;
-    idSequence=(idSequence+1)%1000000;
-    return `${prefix}-${Date.now()}-${idSequence}`;
-  }
-
-  function isCompanyRoute(value){return COMPANY_ROUTES.includes(text(value));}
-  function routeMeta(route){const [title,description]=META[text(route)]||META['company-overview'];return{title,description};}
-
-  function dbGetAll(db,store){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>resolve([]);}catch{resolve([]);}});}
-  function dbGet(db,store,key){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>resolve(null);}catch{resolve(null);}});}
-  function dbPut(db,store,value){return new Promise((resolve,reject)=>{try{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value);tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error||new Error(`Failed to save ${store}.`));}catch(error){reject(error);}});}
 
   async function getConfig(app){if(app?._test?.companyRepositories?.config?.get)return app._test.companyRepositories.config.get();return(await dbGet(app._test.state.db,'companyRecruitmentConfig','company'))||{key:'company',baseline:{criteria:[]},stageThresholds:{},opportunityWeights:{}};}
   async function saveConfig(app,patch){if(app?._test?.companyRepositories?.config?.save)return app._test.companyRepositories.config.save(patch);const existing=await getConfig(app);const next={...existing,...patch,key:'company',updatedAt:Date.now()};await dbPut(app._test.state.db,'companyRecruitmentConfig',next);return next;}
-
 
   async function buildRows(app){
     const db=app._test.state.db;
@@ -2753,65 +2778,46 @@
     });
   }
 
+  const P=Shared.createResultsPlatform({
+    domain:'company',label:'Company',logTag:'[RA v4.6 Company]',routes:COMPANY_ROUTES,implemented:['company-candidates'],goPageSelector:'#ra-content [data-go-page]',
+    meta:{'company-discover':['Forum Discovery','Official Torn forum recruitment sources.'],'company-candidates':['Company Candidates','Search and manage Company recruitment candidates.']},
+    organizationInfo,buildRows,profileSearchFilters,
+    async selectProfile(app){return{selected:typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null};},
+    async beforePage(app,ctx){ctx.profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];ctx.activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;},
+    async renderHtml(app,sorted,options,ctx){const baselineHtml=CompanyUI.renderBaselineEditor(await getConfig(app),{open:runtime.baselineEditorOpen===true});return CompanyUI.renderCandidates(sorted,{...options,profiles:ctx.profiles,activeProfileId:ctx.activeProfile?.profileId||''})+baselineHtml;},
+    bindControls
+  });
+  const {runtime,renderPage,reportError}=P;
+  const readCriteria=host=>Shared.readCriteria(host);
 
-  async function persistRoute(app,page){const state=app?._test?.state;if(!state?.db)return false;state.page=page;state.settings=state.settings||{};state.settings.activePage=page;const meta=await dbGet(state.db,'meta','global')||{key:'global',settings:{}};meta.settings={...(meta.settings||{}),activePage:page};await dbPut(state.db,'meta',meta);return true;}
-  function claimRoute(app,page){const state=app?._test?.state,route=text(page);if(!state||!IMPLEMENTED_ROUTES.has(route))return false;state.page=route;state.settings=state.settings||{};state.settings.activePage=route;return true;}
-  function navigate(page,persist=true){const route=text(page);if(!runtime.app||!IMPLEMENTED_ROUTES.has(route))return Promise.resolve(false);if(typeof runtime.app.navigate==='function')return Promise.resolve(runtime.app.navigate(route,persist));claimRoute(runtime.app,route);return renderPage(route,{persist});}
-  function readCriteria(host){if(!host)return[];return[...host.querySelectorAll('[data-criterion-row]')].map((row,index)=>{const get=key=>row.querySelector(`[data-criterion-field="${key}"]`)?.value??'';const rawValue=get('value');const numericValue=rawValue!==''&&Number.isFinite(Number(rawValue))?Number(rawValue):rawValue;return{id:text(row.dataset.criterionId)||makeId(`criterion-${index+1}`),label:text(get('label')),field:text(get('field')),operator:text(get('operator'))||'gte',kind:text(get('kind'))==='Hard'?'Hard':'Preferred',value:numericValue,weight:Math.max(0,number(get('weight'),1))};});}
-  async function rowFor(userId){const rows=await buildRows(runtime.app);const row=rows.find(item=>text(item.userId)===text(userId));if(!row)throw new Error('Company candidate was not found.');return row;}
+  async function recruitPlayer(userId,override=false){const row=await P.rowFor(userId);if(row.companyRecord?.doNotContact===true&&override!==true)throw new Error('This candidate is marked Do Not Contact. Use the explicit override only when you deliberately intend to contact them.');if(override){if(typeof globalThis.confirm!=='function')throw new Error('Do Not Contact override confirmation is unavailable. Recruitment stopped.');if(!globalThis.confirm('This candidate is marked Do Not Contact. Override it for this recruitment chat only?'))return false;}if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');return runtime.app.recruitCandidate?.('company',text(userId),row.name,{overrideDnc:override,dncConfirmed:override});}
 
-  async function recruitPlayer(userId,override=false){const row=await rowFor(userId);if(row.companyRecord?.doNotContact===true&&override!==true)throw new Error('This candidate is marked Do Not Contact. Use the explicit override only when you deliberately intend to contact them.');if(override){if(typeof globalThis.confirm!=='function')throw new Error('Do Not Contact override confirmation is unavailable. Recruitment stopped.');if(!globalThis.confirm('This candidate is marked Do Not Contact. Override it for this recruitment chat only?'))return false;}if(typeof runtime.app?.recruitCandidate!=='function')throw new Error('Recruit workflow is unavailable.');return runtime.app.recruitCandidate?.('company',text(userId),row.name,{overrideDnc:override,dncConfirmed:override});}
-
-
-  function readVisibleSearchFilters(){return {search:text(document.getElementById('ra-company-filter-search')?.value),minEnd:text(document.getElementById('ra-company-filter-end')?.value),minMan:text(document.getElementById('ra-company-filter-man')?.value),minInt:text(document.getElementById('ra-company-filter-int')?.value),onlineStatus:text(document.getElementById('ra-company-filter-status')?.value),organization:text(document.getElementById('ra-company-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-company-filter-organization-presence')?.value)||'any'};}
-  function bindContentControls(){
-    document.getElementById('ra-company-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters=readVisibleSearchFilters();try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('company',runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);renderPage('company-candidates',{persist:false}).catch(reportError);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
-    document.getElementById('ra-company-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('company-candidates',{persist:false}).catch(reportError);});
-    document.getElementById('ra-company-profile-apply')?.addEventListener('click',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');const profile=await runtime.app.setActiveMatchProfile(id);runtime.resultPage=0;runtime.searchFilters=profileSearchFilters(profile);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
-    document.getElementById('ra-company-profile-clear')?.addEventListener('click',async()=>{try{if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');await runtime.app.setActiveMatchProfile('');runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
-    document.getElementById('ra-company-profile-save-search')?.addEventListener('click',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.saveCompanySearchProfile!=='function')throw new Error('Saving Match Profile searches is unavailable.');runtime.searchFilters=readVisibleSearchFilters();await runtime.app.saveCompanySearchProfile(id,runtime.searchFilters);await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}});
-    document.getElementById('ra-company-profile-manage')?.addEventListener('click',()=>runtime.app?.navigate?.('smart-match',true));
-    document.getElementById('ra-company-hof-discover')?.addEventListener('click',async event=>{const button=event?.currentTarget;try{if(button){button.disabled=true;button.textContent=runtime.hofOffset>0?'Loading next 100…':'Discovering…';}if(typeof runtime.app?.discoverWorkstatProspects!=='function')throw new Error('Work-stat HOF discovery is unavailable.');const result=await runtime.app.discoverWorkstatProspects({limit:100,offset:runtime.hofOffset});runtime.hofOffset=Math.max(runtime.hofOffset,Number(result?.nextOffset||runtime.hofOffset));await renderPage('company-candidates',{persist:false});}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent=runtime.hofOffset>0?'Discover Next 100':'Discover Workstat Prospects';}}});
-    document.querySelectorAll('#ra-content [data-company-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.companySort);renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('company-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('company',link.dataset.playerCard);};});
-    document.querySelectorAll('#ra-content [data-go-page]').forEach(button=>{if(!isCompanyRoute(button.dataset.goPage))return;button.onclick=event=>{event?.preventDefault?.();navigate(button.dataset.goPage,true).catch(reportError);};});
+  function bindControls(){
+    const on=(id,handler)=>document.getElementById(id)?.addEventListener('click',handler);
+    on('ra-company-profile-apply',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');const profile=await runtime.app.setActiveMatchProfile(id);runtime.resultPage=0;runtime.searchFilters=profileSearchFilters(profile);await P.rerender();}catch(error){reportError(error);}});
+    on('ra-company-profile-clear',async()=>{try{if(typeof runtime.app?.setActiveMatchProfile!=='function')throw new Error('Match Profiles are unavailable.');await runtime.app.setActiveMatchProfile('');runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await P.rerender();}catch(error){reportError(error);}});
+    on('ra-company-profile-save-search',async()=>{try{const id=text(document.getElementById('ra-company-profile-select')?.value);if(!id)throw new Error('Choose a Match Profile first.');if(typeof runtime.app?.saveCompanySearchProfile!=='function')throw new Error('Saving Match Profile searches is unavailable.');runtime.searchFilters=P.readVisibleSearchFilters();await runtime.app.saveCompanySearchProfile(id,runtime.searchFilters);await P.rerender();}catch(error){reportError(error);}});
+    on('ra-company-profile-manage',()=>runtime.app?.navigate?.('smart-match',true));
+    on('ra-company-hof-discover',async event=>{const button=event?.currentTarget;try{if(button){button.disabled=true;button.textContent=runtime.hofOffset>0?'Loading next 100…':'Discovering…';}if(typeof runtime.app?.discoverWorkstatProspects!=='function')throw new Error('Work-stat HOF discovery is unavailable.');const result=await runtime.app.discoverWorkstatProspects({limit:100,offset:runtime.hofOffset});runtime.hofOffset=Math.max(runtime.hofOffset,Number(result?.nextOffset||runtime.hofOffset));await P.rerender();}catch(error){reportError(error);}finally{if(button?.isConnected){button.disabled=false;button.textContent=runtime.hofOffset>0?'Discover Next 100':'Discover Workstat Prospects';}}});
     const baselineEditor=document.getElementById('ra-company-baseline-editor');
-    if(baselineEditor){baselineEditor.ontoggle=()=>{runtime.baselineEditorOpen=baselineEditor.open;};baselineEditor.onclick=event=>{const target=event.target;if(target?.closest?.('[data-remove-criterion]')){target.closest('[data-criterion-row]')?.remove();return;}if(target?.id==='ra-company-baseline-add'){document.getElementById('ra-company-baseline-criteria')?.insertAdjacentHTML('beforeend',CompanyUI.renderCriterionRow({id:makeId('baseline')},'baseline'));return;}if(target?.id==='ra-company-baseline-save'){runtime.baselineEditorOpen=true;saveConfig(runtime.app,{baseline:{criteria:readCriteria(document.getElementById('ra-company-baseline-criteria'))}}).then(()=>renderPage('company-candidates',{persist:false})).catch(reportError);}};}
+    if(baselineEditor){baselineEditor.ontoggle=()=>{runtime.baselineEditorOpen=baselineEditor.open;};baselineEditor.onclick=event=>{const target=event.target;if(target?.closest?.('[data-remove-criterion]')){target.closest('[data-criterion-row]')?.remove();return;}if(target?.id==='ra-company-baseline-add'){document.getElementById('ra-company-baseline-criteria')?.insertAdjacentHTML('beforeend',CompanyUI.renderCriterionRow({id:makeId('baseline')},'baseline'));return;}if(target?.id==='ra-company-baseline-save'){runtime.baselineEditorOpen=true;saveConfig(runtime.app,{baseline:{criteria:readCriteria(document.getElementById('ra-company-baseline-criteria'))}}).then(P.rerender).catch(reportError);}};}
     document.querySelectorAll('#ra-content [data-company-recruit]').forEach(button=>{button.onclick=()=>recruitPlayer(button.dataset.companyRecruit,false).catch(reportError);});
     document.querySelectorAll('#ra-content [data-company-recruit-override]').forEach(button=>{button.onclick=()=>recruitPlayer(button.dataset.companyRecruitOverride,true).catch(reportError);});
   }
 
-  function syncActiveNav(page){document.querySelectorAll('#ra-nav [data-page]').forEach(button=>button.classList.toggle('active',button.dataset.page===page));}
-  function reportError(error){console.error('[RA v4.6 Company]',error);try{globalThis.alert?.(`Company Recruitment failed: ${error?.message||error}`);}catch{}}
-
-  async function renderPage(page,options={}){
-    const app=runtime.app;page=text(page);
-    if(!app||!IMPLEMENTED_ROUTES.has(page))return false;
-    if(options.persist!==false)claimRoute(app,page);
-    const title=document.getElementById('ra-page-title'),desc=document.getElementById('ra-page-desc'),content=document.getElementById('ra-content');
-    if(!title||!desc||!content)throw new Error('Recruitment Agency shell is not mounted.');
-    const rows=await buildRows(app);
-    let html='';
-    if(page==='company-candidates'){const selected=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const selectedId=text(selected?.profileId);const selectedVersion=text(selected?.updatedAt);if(!runtime.profileFiltersInitialized||runtime.profileFiltersId!==selectedId||runtime.profileFiltersVersion!==selectedVersion){const saved=runtime.profileFiltersInitialized?null:savedResultsView(app);if(saved)runtime.sort=saved.sort;if(saved&&saved.profileId===selectedId&&saved.profileVersion===selectedVersion){runtime.searchFilters=saved.filters;runtime.resultPage=saved.resultPage;}else{runtime.searchFilters=selected?profileSearchFilters(selected):{...DEFAULT_SEARCH_FILTERS};runtime.resultPage=0;}runtime.profileFiltersInitialized=true;runtime.profileFiltersId=selectedId;runtime.profileFiltersVersion=selectedVersion;}const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];const activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);await persistResultsView(app).catch(error=>console.warn('[RA] Results view was not saved.',error));const baselineHtml=CompanyUI.renderBaselineEditor(await getConfig(app),{open:runtime.baselineEditorOpen===true});html=CompanyUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:activeProfile?.profileId||'',pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}})+baselineHtml;}
-    if(typeof app.navigate==='function'&&text(app._test.state.page)!==page)return false;
-    const meta=routeMeta(page);title.textContent=meta.title;desc.textContent=meta.description;content.innerHTML=html;
-    syncActiveNav(page);bindContentControls();if(options.persist!==false)await persistRoute(app,page);return true;
-  }
-
-  function bindNav(){if(!runtime.app)return;document.querySelectorAll('#ra-nav [data-page]').forEach(button=>{const page=text(button.dataset.page);if(!IMPLEMENTED_ROUTES.has(page))return;if(!runtime.originalHandlers.has(button))runtime.originalHandlers.set(button,button.onclick||null);button.onclick=event=>{event?.preventDefault?.();navigate(page,true).catch(reportError);};});}
-  function syncNavigation(){bindNav();return true;}
-  function install(app,options={}){if(!app?._test?.state?.db)throw new Error('A mounted Recruitment Agency app with DB state is required.');uninstall();runtime.app=app;runtime.installed=true;runtime.profileFiltersInitialized=false;runtime.savedResultsViewKey='';runtime.profileFiltersId='';runtime.profileFiltersVersion='';bindNav();const nav=document.getElementById('ra-nav');if(nav&&typeof MutationObserver==='function'){runtime.observer=new MutationObserver(()=>bindNav());runtime.observer.observe(nav,{childList:true,subtree:true});}const page=text(app._test.state.page||app._test.state.settings?.activePage);if(options.renderInitial!==false&&IMPLEMENTED_ROUTES.has(page))renderPage(page,{persist:false}).catch(reportError);return true;}
-  function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.app=null;runtime.installed=false;}
-
-  return Object.freeze({COMPANY_ROUTES,isCompanyRoute,routeMeta,install,uninstall,renderPage,syncNavigation,_test:{buildRows,persistRoute,dbGetAll,dbGet,dbPut,readCriteria,filterRows,sortRows,toggleSort,profileRequirements,profileSearchFilters,organizationInfo,RESULTS_PAGE_SIZE,IMPLEMENTED_ROUTES}});
+  return Object.freeze({COMPANY_ROUTES,isCompanyRoute:P.isRoute,routeMeta:P.routeMeta,install:P.install,uninstall:P.uninstall,renderPage,syncNavigation:P.syncNavigation,_test:{buildRows,persistRoute:P.persistRoute,dbGetAll,dbGet,dbPut,readCriteria,filterRows:P.filterRows,sortRows,toggleSort,profileRequirements,profileSearchFilters,organizationInfo,RESULTS_PAGE_SIZE,IMPLEMENTED_ROUTES:P.IMPLEMENTED_ROUTES}});
 });
 
 /* bundled runtime: v47-faction-core.js */
 (function(root,factory){
-  const api=factory();
+  let Shared=root&&root.RA_V46RecruitmentShared;
+  if(!Shared&&typeof module==='object'&&module.exports)Shared=require('./v46-recruitment-shared');
+  const api=factory(Shared);
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.RA_V47FactionCore=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
+})(typeof globalThis!=='undefined'?globalThis:this,function(Shared){
   'use strict';
+  if(!Shared)throw new Error('RA_V46RecruitmentShared is required.');
 
   const FACTION_STAGES=Object.freeze([
     'Prospect','Contacted','Replied','Evaluating','Invite Ready','Joined','Rejected','Deferred'
@@ -2819,31 +2825,8 @@
   const PROFILE_STATES=Object.freeze(['Draft','Active','Paused','Archived']);
   const REQUIREMENT_KINDS=Object.freeze(['Hard','Preferred']);
 
-  function text(value){return String(value??'').trim();}
-  function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
+  const {text,number,normalizeRequirement,normalizeBaseline,compare}=Shared;
   function clamp(value,min=0,max=100){return Math.max(min,Math.min(max,number(value)));}
-
-  function normalizeKind(value){return text(value).toLowerCase()==='hard'?'Hard':'Preferred';}
-  function normalizeRequirement(raw={},index=0){
-    const field=text(raw.field);
-    return {
-      id:text(raw.id)||`${field||'criterion'}-${index+1}`,
-      field,
-      operator:text(raw.operator||'gte').toLowerCase(),
-      value:raw.value,
-      value2:raw.value2,
-      kind:normalizeKind(raw.kind),
-      label:text(raw.label)||field||`Criterion ${index+1}`,
-      weight:Math.max(0,number(raw.weight,1))
-    };
-  }
-
-  function normalizeBaseline(config={}){
-    return {
-      criteria:(Array.isArray(config.criteria)?config.criteria:[]).map(normalizeRequirement),
-      updatedAt:number(config.updatedAt,0)
-    };
-  }
 
   const FACTION_SEARCH_FILTER_KEYS=Object.freeze(['search','minEnd','minMan','minInt','onlineStatus','organization','organizationPresence']);
   function normalizeFactionSearchFilters(input={}){
@@ -2873,30 +2856,6 @@
     };
   }
 
-  function compare(operator,actual,value,value2){
-    if(actual===undefined||actual===null||actual==='')return {known:false,passed:false};
-    const op=text(operator).toLowerCase();
-    if(op==='gte'||op==='gt'||op==='lte'||op==='lt'){
-      const a=Number(actual),b=Number(value);
-      if(!Number.isFinite(a)||!Number.isFinite(b))return {known:false,passed:false};
-      if(op==='gte')return {known:true,passed:a>=b};
-      if(op==='gt')return {known:true,passed:a>b};
-      if(op==='lte')return {known:true,passed:a<=b};
-      return {known:true,passed:a<b};
-    }
-    if(op==='between'){
-      const a=Number(actual),lo=Number(value),hi=Number(value2);
-      if(![a,lo,hi].every(Number.isFinite))return {known:false,passed:false};
-      return {known:true,passed:a>=Math.min(lo,hi)&&a<=Math.max(lo,hi)};
-    }
-    if(op==='contains')return {known:true,passed:text(actual).toLowerCase().includes(text(value).toLowerCase())};
-    if(op==='oneof'){
-      const allowed=(Array.isArray(value)?value:[value]).map(item=>text(item).toLowerCase());
-      return {known:true,passed:allowed.includes(text(actual).toLowerCase())};
-    }
-    return {known:true,passed:text(actual).toLowerCase()===text(value).toLowerCase()};
-  }
-
   function waiverFor(requirementId,waivers=[],scope={}){
     const wantedContext=text(scope.context||'baseline').toLowerCase();
     const wantedProfile=text(scope.profileId);
@@ -2910,32 +2869,7 @@
     })||null;
   }
 
-  function evaluateCriteria(criteria=[],facts={},waivers=[],scope={context:'baseline'}){
-    const normalized=(Array.isArray(criteria)?criteria:[]).map(normalizeRequirement);
-    const results=normalized.map(req=>{
-      const verdict=compare(req.operator,facts?.[req.field],req.value,req.value2);
-      const waiver=req.kind==='Hard'&&verdict.known&&!verdict.passed?waiverFor(req.id,waivers,scope):null;
-      return {
-        ...req,
-        known:verdict.known,
-        passed:verdict.passed,
-        waived:Boolean(waiver),
-        waiver,
-        effectivePass:verdict.passed||Boolean(waiver)
-      };
-    });
-    const hardFailures=results.filter(result=>result.kind==='Hard'&&result.known&&!result.passed);
-    const unknownHard=results.filter(result=>result.kind==='Hard'&&!result.known);
-    const unwaivedHardFailures=hardFailures.filter(result=>!result.waived);
-    const failures=results.filter(result=>result.known&&!result.passed);
-    const known=results.filter(result=>result.known);
-    const totalWeight=known.reduce((sum,result)=>sum+(result.weight||1),0);
-    const earned=known.filter(result=>result.passed).reduce((sum,result)=>sum+(result.weight||1),0);
-    const score=totalWeight?Math.round(earned/totalWeight*100):null;
-    const hardFailed=unwaivedHardFailures.length>0;
-    const eligibility=hardFailed?'NOT CURRENTLY ELIGIBLE':hardFailures.length?'Eligible by Waiver':unknownHard.length?'Unknown':'Eligible';
-    return {results,failures,hardFailures,unknownHard,unwaivedHardFailures,hardFailed,eligibility,score};
-  }
+  function evaluateCriteria(criteria=[],facts={},waivers=[],scope={context:'baseline'}){return Shared.evaluateCriteria(criteria,facts,id=>waiverFor(id,waivers,scope));}
 
   function ratioScore(req,facts){
     const rawActual=facts?.[req.field],rawTarget=req.value;
@@ -3002,14 +2936,14 @@
 
 /* bundled runtime: v47-faction-storage.js */
 (function(root,factory){
-  let FactionCore=root&&root.RA_V47FactionCore;
-  if(!FactionCore&&typeof module==='object'&&module.exports)FactionCore=require('./v47-faction-core');
-  const api=factory(FactionCore);
+  let FactionCore=root&&root.RA_V47FactionCore,Shared=root&&root.RA_V46RecruitmentShared;
+  if(typeof module==='object'&&module.exports){FactionCore=FactionCore||require('./v47-faction-core');Shared=Shared||require('./v46-recruitment-shared');}
+  const api=factory(FactionCore,Shared);
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.RA_V47FactionStorage=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(FactionCore){
+})(typeof globalThis!=='undefined'?globalThis:this,function(FactionCore,Shared){
   'use strict';
-  if(!FactionCore)throw new Error('RA_V47FactionCore is required.');
+  if(!FactionCore||!Shared)throw new Error('RA_V47FactionCore is required.');
 
   const DB_VERSION=15;
   const STORE_DEFINITIONS=Object.freeze({
@@ -3029,35 +2963,12 @@
     ])})
   });
 
-  function text(value){return String(value??'').trim();}
-  function number(value,fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback;}
-
+  const {text}=Shared;
   function applyUpgrade(db){
     if(!db||!db.objectStoreNames||typeof db.createObjectStore!=='function')throw new Error('A compatible IndexedDB database is required.');
-    for(const[storeName,definition]of Object.entries(STORE_DEFINITIONS)){
-      if(db.objectStoreNames.contains(storeName))continue;
-      const store=db.createObjectStore(storeName,{keyPath:definition.keyPath});
-      for(const index of definition.indexes)store.createIndex(index.name,index.keyPath,{unique:false});
-    }
+    Shared.applyStoreDefinitions(db,STORE_DEFINITIONS);
   }
-
-  function normalizeConfig(raw={}){
-    const thresholds={};
-    for(const[key,value]of Object.entries(raw.stageThresholds||{})){
-      const days=Math.max(0,Math.floor(number(value,0)));
-      if(days>0)thresholds[text(key)]=days;
-    }
-    const weights={};
-    for(const[key,value]of Object.entries(raw.opportunityWeights||{}))weights[text(key)]=Math.max(0,number(value,0));
-    return {
-      key:'faction',
-      baseline:FactionCore.normalizeBaseline(raw.baseline||{}),
-      stageThresholds:thresholds,
-      opportunityWeights:weights,
-      activeResultsProfileId:text(raw.activeResultsProfileId),
-      updatedAt:number(raw.updatedAt,Date.now())
-    };
-  }
+  function normalizeConfig(raw={}){return Shared.normalizeDomainConfig(raw,'faction',{activeResultsProfileId:text(raw.activeResultsProfileId)});}
 
   function createRepositories(idb,core=FactionCore){
     if(!idb||!['get','getAll','put'].every(name=>typeof idb[name]==='function'))throw new Error('A compatible IndexedDB adapter is required.');
@@ -3106,22 +3017,18 @@
 
 /* bundled runtime: v47-faction-ui.js */
 (function(root,factory){
-  let FactionCore=root&&root.RA_V47FactionCore;
-  if(!FactionCore&&typeof module==='object'&&module.exports)FactionCore=require('./v47-faction-core');
-  const api=factory(FactionCore);
+  let FactionCore=root&&root.RA_V47FactionCore,Shared=root&&root.RA_V46RecruitmentShared;
+  if(typeof module==='object'&&module.exports){FactionCore=FactionCore||require('./v47-faction-core');Shared=Shared||require('./v46-recruitment-shared');}
+  const api=factory(FactionCore,Shared);
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.RA_V47FactionUI=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(FactionCore){
+})(typeof globalThis!=='undefined'?globalThis:this,function(FactionCore,Shared){
   'use strict';
-  if(!FactionCore)throw new Error('FactionCore is required.');
+  if(!FactionCore||!Shared)throw new Error('FactionCore is required.');
 
   const FACTION_STAGES=FactionCore.FACTION_STAGES;
-  const CRITERION_FIELDS=Object.freeze(['level','ee','fit','activity30','xanax30','refills30','attacks30','rwHits30','networth']);
-  const CRITERION_OPERATORS=Object.freeze(['gte','gt','lte','lt','between','equals']);
+  const {CRITERION_FIELDS,CRITERION_OPERATORS,text,esc}=Shared;
   const PROFILE_STATES=FactionCore.PROFILE_STATES;
-
-  const text=value=>String(value??'').trim();
-  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
   function normalizeStage(value){const raw=text(value).toLowerCase();return FACTION_STAGES.find(stage=>stage.toLowerCase()===raw)||'Prospect';}
 
@@ -3202,38 +3109,17 @@
 
 
 
-  function relativeLastActive(value,now=Date.now(),onlineStatus=''){const ts=Number(value);if(!Number.isFinite(ts)||ts<=0)return text(onlineStatus)||'Unknown';const seconds=Math.max(0,Math.floor((now-ts)/1000));if(seconds<60)return 'just now';if(seconds<3600)return `${Math.floor(seconds/60)}m ago`;if(seconds<86400)return `${Math.floor(seconds/3600)}h ago`;return `${Math.floor(seconds/86400)}d ago`;}
-  function stat(value){if(value===null||value===undefined||text(value)==='')return '—';const n=Number(value);return Number.isFinite(n)?n.toLocaleString():'—';}
-  function lastOnlineHtml(row={}){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return esc(relativeLastActive(row.lastActive,Date.now(),row.onlineStatus));const status=text(row.onlineStatus);if(status.toLowerCase()==='online')return '<span class="ra-online-live">Online</span>';if(status.toLowerCase()==='idle')return '<span class="ra-online-idle">Idle</span>';if(status.toLowerCase()==='offline')return '<span class="ra-online-offline">Offline</span>';return 'Unknown';}
-  function sortHeader(key,label,sort={}){const active=text(sort.key)===key;const marker=active?(sort.direction==='desc'?' ▼':' ▲'):'';return `<button type="button" class="ra-sort-button${active?' active':''}" data-faction-sort="${key}" aria-pressed="${active?'true':'false'}">${esc(label)}${marker}</button>`;}
-  function recruitmentFitCell(row={}){if(row.recruitmentFit===null||row.recruitmentFit===undefined||text(row.recruitmentFit)==='')return '<span class="ra-muted">—</span>';const value=Number(row.recruitmentFit);if(!Number.isFinite(value))return '<span class="ra-muted">—</span>';const confidence=text(row.recruitmentConfidence)||'Low';return `<span title="Recruitment Fit · ${esc(confidence)} confidence"><b>${value.toFixed(1)}</b><small class="ra-muted"> ${esc(confidence)}</small></span>`;}
-  function provenanceCell(row={}){const p=row.prospectProvenance||{};const source=Array.isArray(p.sources)&&p.sources.length?p.sources[0]:'Unknown';const state=text(row.prospectState)||text(p.state)||'Known Candidate';return `<span title="${esc(state)}"><b>${esc(source)}</b><small class="ra-muted"> · ${esc(state)}</small></span>`;}
-  function contactedLabel(row={}){if(Array.isArray(row.outcomes)&&row.outcomes.length)return 'Contacted';const stage=text(row.pipelineStage).toLowerCase();return ['contacted','replied','evaluating','invite ready','joined'].includes(stage)?'Contacted':'Not yet';}
+  const COLUMNS=['player','level','age','end','man','int','networth','drug','activity30','battle','activeStreak','xanax30','org','lastActive','recruitmentFit','source','contacted','message'];
   function renderCandidates(rows=[],options={}){
-    const filters=options.filters||{},sort=options.sort||{key:'player',direction:'asc'},layout=options.layout==='compact'?'compact':'expanded';const total=Number.isFinite(Number(options.total))?Number(options.total):(Array.isArray(rows)?rows:[]).length;
     const profiles=(Array.isArray(options.profiles)?options.profiles:[]).map(FactionCore.normalizeSpecialistProfile);
     const activeProfileId=text(options.activeProfileId);
-    const pagination=options.pagination||{page:0,pageCount:1,start:0,end:(Array.isArray(rows)?rows:[]).length};const filteredTotal=Number.isFinite(Number(options.filteredTotal))?Number(options.filteredTotal):(Array.isArray(rows)?rows:[]).length;
-    const rangeText=filteredTotal?`${Number(pagination.start||0)+1}-${Number(pagination.end||0)}`:'0';
-    const pager=`<div class="ra-actions"><button type="button" class="ra-btn" data-results-page="prev" ${Number(pagination.page||0)<=0?'disabled':''}>Previous</button><span class="ra-muted">${rangeText} of ${filteredTotal}</span><button type="button" class="ra-btn" data-results-page="next" ${Number(pagination.page||0)>=Number(pagination.pageCount||1)-1?'disabled':''}>Next</button></div>`;
     const profileOptions=`<option value="" ${activeProfileId?'':'selected'}>No profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${profile.profileId===activeProfileId?'selected':''}>${esc(profile.name||profile.profileId)}${profile.status==='Active'?'':' · '+esc(profile.status)}</option>`).join('');
-    const playerCell=row=>`<a class="ra-link" href="#" data-player-card="${esc(row.userId)}" data-player-domain="faction">${esc(row.name)}</a><small class="ra-muted"> ${esc(row.userId)}</small>`;
     const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">Message</button>`;
-    const battle=row=>{const attackKnown=row.attacks30!==null&&row.attacks30!==undefined&&text(row.attacks30)!==''&&Number.isFinite(Number(row.attacks30));const rwKnown=row.rwHits30!==null&&row.rwHits30!==undefined&&text(row.rwHits30)!==''&&Number.isFinite(Number(row.rwHits30));if(!attackKnown&&!rwKnown)return '—';return `${attackKnown?Number(row.attacks30).toLocaleString():'—'} / ${rwKnown?Number(row.rwHits30).toLocaleString():'—'}`;};
-    const expandedBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.level)}</td><td>${stat(row.age)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${stat(row.networth)}</td><td>${esc(text(row.drugUse)||'—')}</td><td>${stat(row.activity30)}</td><td>${battle(row)}</td><td>${stat(row.activeStreak)}</td><td>${stat(row.xanax30)}</td><td>${esc(row.currentOrganizationLabel||'Unknown')}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${provenanceCell(row)}</td><td>${esc(contactedLabel(row))}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const compactBody=(Array.isArray(rows)?rows:[]).map(row=>`<tr><td>${playerCell(row)}</td><td>${stat(row.end)}</td><td>${stat(row.man)}</td><td>${stat(row.int)}</td><td>${lastOnlineHtml(row)}</td><td>${recruitmentFitCell(row)}</td><td>${messageCell(row)}</td></tr>`).join('');
-    const resultsTable=layout==='compact'
-      ? `<table class="ra-table ra-core-results ra-results-compact"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>Recruit Fit</th><th>Message</th></tr></thead><tbody>${compactBody||'<tr><td colspan="7">No matching Faction candidates.</td></tr>'}</tbody></table>`
-      : `<table class="ra-table ra-core-results ra-results-expanded"><thead><tr><th>${sortHeader('player','Player',sort)}</th><th>${sortHeader('level','Level',sort)}</th><th>${sortHeader('age','Age',sort)}</th><th>${sortHeader('end','END',sort)}</th><th>${sortHeader('man','MAN',sort)}</th><th>${sortHeader('int','INT',sort)}</th><th>${sortHeader('networth','Net Worth',sort)}</th><th>Drug Use</th><th>${sortHeader('activity30','30d Active',sort)}</th><th>Battle / RW</th><th>${sortHeader('activeStreak','Streak',sort)}</th><th>${sortHeader('xanax30','Xanax 30d',sort)}</th><th>Faction</th><th>${sortHeader('lastActive','Last Online',sort)}</th><th>${sortHeader('recruitmentFit','Recruit Fit',sort)}</th><th>Source</th><th>Contacted</th><th>Message</th></tr></thead><tbody>${expandedBody||'<tr><td colspan="18">No matching Faction candidates.</td></tr>'}</tbody></table>`;
-    return `<section class="ra-panel ra-search-panel"><div class="ra-panel-head"><div><h3>Search</h3><p>Find players, narrow the list with filters, then message the ones you want.</p></div><div class="ra-actions"><select id="ra-faction-results-profile" class="ra-btn" aria-label="Faction recruitment profile">${profileOptions}</select><button type="button" class="ra-btn" id="ra-faction-profile-apply">Apply Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-clear" ${activeProfileId?'':'hidden'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-save-search" ${activeProfileId?'':'hidden'}>Save Search</button></div></div><div class="ra-formgrid ra-core-search-grid"><div class="ra-field"><label>Name / ID</label><input id="ra-faction-filter-search" value="${esc(filters.search||'')}" placeholder="Player name or ID"></div><div class="ra-field"><label>Status</label><select id="ra-faction-filter-status"><option value="">Any</option><option value="Online" ${text(filters.onlineStatus).toLowerCase()==='online'?'selected':''}>Online</option><option value="Idle" ${text(filters.onlineStatus).toLowerCase()==='idle'?'selected':''}>Idle</option><option value="Offline" ${text(filters.onlineStatus).toLowerCase()==='offline'?'selected':''}>Offline</option></select></div><div class="ra-field"><label>Current Faction</label><input id="ra-faction-filter-organization" value="${esc(filters.organization||'')}" placeholder="Faction name or ID"></div><div class="ra-field"><label>Faction Presence</label><select id="ra-faction-filter-organization-presence"><option value="any" ${!filters.organizationPresence||filters.organizationPresence==='any'?'selected':''}>Any</option><option value="none" ${filters.organizationPresence==='none'?'selected':''}>None</option><option value="has" ${filters.organizationPresence==='has'?'selected':''}>Has Faction</option></select></div><div class="ra-field"><label>END ≥</label><input id="ra-faction-filter-end" value="${esc(filters.minEnd||'')}" placeholder="e.g. 100k"></div><div class="ra-field"><label>MAN ≥</label><input id="ra-faction-filter-man" value="${esc(filters.minMan||'')}" placeholder="e.g. 50k"></div><div class="ra-field"><label>INT ≥</label><input id="ra-faction-filter-int" value="${esc(filters.minInt||'')}" placeholder="e.g. 50k"></div></div><div class="ra-actions"><button type="button" class="ra-btn ra-primary" id="ra-faction-search-apply">Search</button><button type="button" class="ra-btn" id="ra-faction-search-clear">Clear</button></div></section><section class="ra-panel ra-results-panel"><div class="ra-panel-head"><div><h3>Results</h3><p>${filteredTotal} matching of ${total} Faction candidate(s).</p></div><div class="ra-actions"><button type="button" class="ra-btn ${layout==='expanded'?'ra-primary':''}" data-results-layout="expanded">Expanded</button><button type="button" class="ra-btn ${layout==='compact'?'ra-primary':''}" data-results-layout="compact">Compact</button></div></div><div class="ra-table-wrap">${resultsTable}</div><div class="ra-panel-foot">${pager}</div></section>`;
+    const headActions=`<div class="ra-actions"><select id="ra-faction-results-profile" class="ra-btn" aria-label="Faction recruitment profile">${profileOptions}</select><button type="button" class="ra-btn" id="ra-faction-profile-apply">Apply Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-clear" ${activeProfileId?'':'hidden'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-save-search" ${activeProfileId?'':'hidden'}>Save Search</button></div>`;
+    return Shared.renderResults(rows,options,{domain:'faction',label:'Faction',orgHeader:'Faction',orgPlaceholder:'Faction name or ID',columns:COLUMNS,contactedStages:['contacted','replied','evaluating','invite ready','joined'],messageCell,headActions});
   }
 
-  function renderCriterionRow(raw={},scope='baseline'){
-    const req={id:text(raw.id),label:text(raw.label),field:text(raw.field)||'level',operator:text(raw.operator)||'gte',kind:text(raw.kind)==='Hard'?'Hard':'Preferred',value:raw.value??'',weight:Number.isFinite(Number(raw.weight))?Number(raw.weight):1};
-    return `<div class="ra-formgrid" data-faction-criterion-row data-faction-criterion-id="${esc(req.id)}" data-faction-criterion-scope="${esc(scope)}" style="grid-template-columns:1.2fr 1fr .8fr .8fr 1fr .7fr auto;align-items:end;margin:6px 0"><div class="ra-field"><label>Label</label><input data-faction-criterion-field="label" value="${esc(req.label)}"></div><div class="ra-field"><label>Field</label><select data-faction-criterion-field="field">${CRITERION_FIELDS.map(field=>`<option value="${field}" ${field===req.field?'selected':''}>${field}</option>`).join('')}</select></div><div class="ra-field"><label>Operator</label><select data-faction-criterion-field="operator">${CRITERION_OPERATORS.map(op=>`<option value="${op}" ${op===req.operator?'selected':''}>${op}</option>`).join('')}</select></div><div class="ra-field"><label>Type</label><select data-faction-criterion-field="kind"><option value="Hard" ${req.kind==='Hard'?'selected':''}>Hard</option><option value="Preferred" ${req.kind==='Preferred'?'selected':''}>Preferred</option></select></div><div class="ra-field"><label>Value</label><input data-faction-criterion-field="value" value="${esc(req.value)}"></div><div class="ra-field"><label>Weight</label><input data-faction-criterion-field="weight" type="number" min="0" step="0.1" value="${esc(req.weight)}"></div><button type="button" class="ra-btn ra-danger" data-faction-remove-criterion="${esc(scope)}">×</button></div>`;
-  }
-
-
+  function renderCriterionRow(raw={},scope='baseline'){return Shared.renderCriterionRow(raw,scope,'faction-','level');}
 
   function renderProfileEditor({config={},profiles=[],open=false}={}){
     const baseline=FactionCore.normalizeBaseline(config.baseline||{});
@@ -3260,13 +3146,15 @@
     FactionCore:root&&root.RA_V47FactionCore,
     FactionUI:root&&root.RA_V47FactionUI,
     Messaging:root&&root.RA_V45Messaging,
-    ResultsCore:root&&root.RA_ResultsCore
+    ResultsCore:root&&root.RA_ResultsCore,
+    Shared:root&&root.RA_V46RecruitmentShared
   };
   if(typeof module==='object'&&module.exports){
     deps.FactionCore=require('./v47-faction-core');
     deps.FactionUI=require('./v47-faction-ui');
     deps.Messaging=require('./v45-messaging');
     deps.ResultsCore=require('./results-core');
+    deps.Shared=require('./v46-recruitment-shared');
   }
   const api=factory(deps);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -3274,42 +3162,12 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(D){
   'use strict';
 
-  const {FactionCore,FactionUI,Messaging,ResultsCore}=D;
-  if(!FactionCore||!FactionUI||!Messaging||!ResultsCore)throw new Error('Faction platform dependencies are required.');
+  const {FactionCore,FactionUI,Messaging,ResultsCore,Shared}=D;
+  if(!FactionCore||!FactionUI||!Messaging||!ResultsCore||!Shared)throw new Error('Faction platform dependencies are required.');
 
+  const {text,makeId,dbGetAll,dbGet,dbPut,dbDelete,DEFAULT_SEARCH_FILTERS,RESULTS_PAGE_SIZE,sortRows,toggleSort}=Shared;
   const FACTION_ROUTES=Object.freeze(['faction-candidates']);
-  const IMPLEMENTED_ROUTES=new Set(FACTION_ROUTES);
-  const META=Object.freeze({
-    'faction-candidates':['Faction Candidates','Search and manage Faction recruitment candidates.']
-  });
-  const DEFAULT_SEARCH_FILTERS=Object.freeze({search:'',minEnd:'',minMan:'',minInt:'',onlineStatus:'',organization:'',organizationPresence:'any'});
-  const DEFAULT_SORT=Object.freeze({key:'player',direction:'asc'});
-  const RESULTS_PAGE_SIZE=100;
-  const SORT_KEYS=new Set(['player','level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit','lastActive']);
-  const runtime={app:null,observer:null,originalHandlers:new Map(),installed:false,searchFilters:{...DEFAULT_SEARCH_FILTERS},sort:{...DEFAULT_SORT},resultPage:0};
-
-  const text=value=>String(value??'').trim();
-  const number=(value,fallback=0)=>{const n=Number(value);return Number.isFinite(n)?n:fallback;};
-  function parseThreshold(value){const raw=text(value).toLowerCase().replace(/,/g,'');if(!raw)return null;const match=raw.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([kmb])?$/);if(!match)return null;const mult={k:1e3,m:1e6,b:1e9}[match[2]]||1;const out=Number(match[1])*mult;return Number.isFinite(out)?out:null;}
-  function organizationInfo(row={}){const player=row.player||{};const name=text(row.factionName||player.factionName);const rawId=row.factionId??player.factionId;if(name)return{state:'has',label:name};if(rawId!==null&&rawId!==undefined&&rawId!==''){const id=Number(rawId);if(Number.isFinite(id)){if(id===0)return{state:'none',label:'None'};if(id>0)return{state:'has',label:`Faction #${id}`};}}return{state:'unknown',label:'Unknown'};}
-  function filterRows(rows,filters={}){const search=text(filters.search).toLowerCase(),minEnd=parseThreshold(filters.minEnd),minMan=parseThreshold(filters.minMan),minInt=parseThreshold(filters.minInt),onlineStatus=text(filters.onlineStatus).toLowerCase(),organization=text(filters.organization).toLowerCase(),presence=text(filters.organizationPresence).toLowerCase()||'any';return (Array.isArray(rows)?rows:[]).filter(row=>{if(search&&!`${text(row.name).toLowerCase()} ${text(row.userId)}`.includes(search))return false;if(minEnd!==null&&(!Number.isFinite(Number(row.end))||row.end===null||row.end===undefined||row.end===''||Number(row.end)<minEnd))return false;if(minMan!==null&&(!Number.isFinite(Number(row.man))||row.man===null||row.man===undefined||row.man===''||Number(row.man)<minMan))return false;if(minInt!==null&&(!Number.isFinite(Number(row.int))||row.int===null||row.int===undefined||row.int===''||Number(row.int)<minInt))return false;if(onlineStatus&&text(row.onlineStatus).toLowerCase()!==onlineStatus)return false;const org=organizationInfo(row);if(organization&&(org.state!=='has'||!org.label.toLowerCase().includes(organization)))return false;if(presence==='has'&&org.state!=='has')return false;if(presence==='none'&&org.state!=='none')return false;return true;});}
-  function sortValue(row,key,now){if(key==='player')return text(row.name).toLowerCase()||null;if(['level','age','end','man','int','activity30','activeStreak','networth','xanax30','recruitmentFit'].includes(key)){const raw=row[key];if(raw===null||raw===undefined||raw==='')return null;const value=Number(raw);return Number.isFinite(value)?value:null;}if(key==='lastActive'){const ts=Number(row.lastActive);if(Number.isFinite(ts)&&ts>0)return ts;const status=text(row.onlineStatus).toLowerCase();if(status==='online')return now+2;if(status==='idle')return now+1;if(status==='offline')return 0;return null;}return null;}
-  function sortTieBreak(a,b){const byName=text(a.name).localeCompare(text(b.name),undefined,{sensitivity:'base'});if(byName)return byName;return text(a.userId).localeCompare(text(b.userId),undefined,{numeric:true});}
-  function sortRows(rows,sortState=DEFAULT_SORT,now=Date.now()){const key=SORT_KEYS.has(text(sortState?.key))?text(sortState.key):DEFAULT_SORT.key;const direction=sortState?.direction==='desc'?'desc':'asc';const sign=direction==='asc'?1:-1;return [...(Array.isArray(rows)?rows:[])].sort((a,b)=>{const av=sortValue(a,key,now),bv=sortValue(b,key,now),am=av===null||av===undefined,bm=bv===null||bv===undefined;if(am!==bm)return am?1:-1;if(am&&bm)return sortTieBreak(a,b);const cmp=key==='player'?String(av).localeCompare(String(bv)):Number(av)-Number(bv);return cmp?cmp*sign:sortTieBreak(a,b);});}
-  function toggleSort(current,key){const nextKey=SORT_KEYS.has(text(key))?text(key):DEFAULT_SORT.key;if(text(current?.key)===nextKey)return{key:nextKey,direction:current?.direction==='asc'?'desc':'asc'};return{key:nextKey,direction:nextKey==='player'?'asc':'desc'};}
-  function normalizeResultsView(raw={}){const src=raw&&typeof raw.filters==='object'&&raw.filters?raw.filters:{};const filters={...DEFAULT_SEARCH_FILTERS};for(const key of Object.keys(DEFAULT_SEARCH_FILTERS))if(src[key]!==undefined&&src[key]!==null)filters[key]=text(src[key]);if(!['any','has','none'].includes(filters.organizationPresence))filters.organizationPresence='any';const key=SORT_KEYS.has(text(raw?.sort?.key))?text(raw.sort.key):DEFAULT_SORT.key;return{filters,sort:{key,direction:raw?.sort?.direction==='desc'?'desc':'asc'},resultPage:Math.max(0,Math.floor(number(raw?.resultPage,0))),profileId:text(raw?.profileId),profileVersion:text(raw?.profileVersion)};}
-  function savedResultsView(app){const raw=app?._test?.state?.settings?.candidates?.resultsView?.faction;return raw&&typeof raw==='object'?normalizeResultsView(raw):null;}
-  async function persistResultsView(app){if(typeof app?.saveResultsView!=='function')return;const view=normalizeResultsView({filters:runtime.searchFilters,sort:runtime.sort,resultPage:runtime.resultPage,profileId:runtime.profileFiltersId,profileVersion:runtime.profileFiltersVersion});const key=JSON.stringify(view);if(key===runtime.savedResultsViewKey)return;runtime.savedResultsViewKey=key;await app.saveResultsView('faction',view);}
-  let idSequence=0;
-  function makeId(prefix){
-    const uuid=globalThis.crypto?.randomUUID?.();
-    if(uuid)return `${prefix}-${uuid}`;
-    idSequence=(idSequence+1)%1000000;
-    return `${prefix}-${Date.now()}-${idSequence}`;
-  }
-
-  function isFactionRoute(value){return FACTION_ROUTES.includes(text(value));}
-  function routeMeta(route){const [title,description]=META[text(route)]||META['faction-overview'];return{title,description};}
+  const organizationInfo=Shared.organizationInfoFor({player:'player',name:'factionName',id:'factionId',label:'Faction'});
   function profileSearchFilters(profile={}){
     const saved=FactionCore.normalizeFactionSearchFilters(profile?.searchFilters||{});
     const out={...DEFAULT_SEARCH_FILTERS,...saved};
@@ -3325,18 +3183,11 @@
     return id?(Array.isArray(profiles)?profiles:[]).map(FactionCore.normalizeSpecialistProfile).find(profile=>profile.profileId===id)||null:null;
   }
 
-  function dbGetAll(db,store){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>resolve([]);}catch{resolve([]);}});}
-  function dbGet(db,store,key){return new Promise(resolve=>{try{const q=db.transaction(store,'readonly').objectStore(store).get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>resolve(null);}catch{resolve(null);}});}
-  function dbPut(db,store,value){return new Promise((resolve,reject)=>{try{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value);tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error||new Error(`Failed to save ${store}.`));}catch(error){reject(error);}});}
-  function dbDelete(db,store,key){return new Promise((resolve,reject)=>{try{const tx=db.transaction(store,'readwrite');tx.objectStore(store).delete(key);tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error||new Error(`Failed to delete from ${store}.`));}catch(error){reject(error);}});}
-
   async function getConfig(app){if(app?._test?.factionRepositories?.config?.get)return app._test.factionRepositories.config.get();return(await dbGet(app._test.state.db,'factionRecruitmentConfig','faction'))||{key:'faction',baseline:{criteria:[]},stageThresholds:{},opportunityWeights:{}};}
   async function saveConfig(app,patch){if(app?._test?.factionRepositories?.config?.save)return app._test.factionRepositories.config.save(patch);const existing=await getConfig(app);const next={...existing,...patch,key:'faction',updatedAt:Date.now()};await dbPut(app._test.state.db,'factionRecruitmentConfig',next);return next;}
   async function getProfiles(app){if(app?._test?.factionRepositories?.profiles?.list)return app._test.factionRepositories.profiles.list();return dbGetAll(app._test.state.db,'factionSpecialistProfiles');}
   async function saveProfile(app,profile){if(app?._test?.factionRepositories?.profiles?.save)return app._test.factionRepositories.profiles.save(profile);const next=FactionCore.normalizeSpecialistProfile({...profile,profileId:text(profile.profileId)||makeId('profile'),updatedAt:Date.now()});await dbPut(app._test.state.db,'factionSpecialistProfiles',next);return next;}
   async function removeProfile(app,profileId){if(app?._test?.factionRepositories?.profiles?.remove)return app._test.factionRepositories.profiles.remove(profileId);return dbDelete(app._test.state.db,'factionSpecialistProfiles',text(profileId));}
-
-
 
   async function buildRows(app){
     const db=app._test.state.db;
@@ -3346,39 +3197,20 @@
     return FactionUI.buildCandidateRows(factionRecords,players,{baseline:config.baseline||{},profiles}).map(row=>{const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.player||{};const selectedEvaluation=activeProfile?(row.profileEvaluations||[]).find(item=>text(item.profileId)===activeProfile.profileId):null;const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),candidateLocal:candidate,eligibilityScore:selectedEvaluation?.matchScore??null,eligibility:selectedEvaluation?.eligibility??null};const intelligence=ResultsCore.recruitmentFit(enriched,{domain:'faction',useEligibility:Boolean(activeProfile)});return{...enriched,recruitmentFit:intelligence.score,recruitmentConfidence:intelligence.confidence,recruitmentFitBreakdown:intelligence.components,prospectProvenance:intelligence.provenance,prospectState:intelligence.provenance.state,intelligenceFreshness:intelligence.provenance.freshness,activeRecruitmentProfileId:activeProfile?.profileId||'',activeRecruitmentProfileName:activeProfile?.name||''};});
   }
 
-
-  async function persistRoute(app,page){
-    const state=app?._test?.state;if(!state?.db)return false;
-    state.page=page;state.settings=state.settings||{};state.settings.activePage=page;
-    const meta=await dbGet(state.db,'meta','global')||{key:'global',settings:{}};
-    meta.settings={...(meta.settings||{}),activePage:page};
-    await dbPut(state.db,'meta',meta);
-    return true;
-  }
-
-  function claimRoute(app,page){const state=app?._test?.state,route=text(page);if(!state||!IMPLEMENTED_ROUTES.has(route))return false;state.page=route;state.settings=state.settings||{};state.settings.activePage=route;return true;}
-  function navigate(page,persist=true){const route=text(page);if(!runtime.app||!IMPLEMENTED_ROUTES.has(route))return Promise.resolve(false);if(typeof runtime.app.navigate==='function')return Promise.resolve(runtime.app.navigate(route,persist));claimRoute(runtime.app,route);return renderPage(route,{persist});}
-
-  function readCriteria(host){
-    if(!host)return[];
-    return[...host.querySelectorAll('[data-faction-criterion-row]')].map((row,index)=>{
-      const get=key=>row.querySelector(`[data-faction-criterion-field="${key}"]`)?.value??'';
-      const rawValue=get('value');const numericValue=rawValue!==''&&Number.isFinite(Number(rawValue))?Number(rawValue):rawValue;
-      return{id:text(row.dataset.factionCriterionId)||makeId(`criterion-${index+1}`),label:text(get('label')),field:text(get('field')),operator:text(get('operator'))||'gte',kind:text(get('kind'))==='Hard'?'Hard':'Preferred',value:numericValue,weight:Math.max(0,number(get('weight'),1))};
-    });
-  }
-
-  async function rowFor(userId){const rows=await buildRows(runtime.app);const row=rows.find(item=>text(item.userId)===text(userId));if(!row)throw new Error('Faction candidate was not found.');return row;}
-
-
-
-
+  const P=Shared.createResultsPlatform({
+    domain:'faction',label:'Faction',logTag:'[RA v4.7 Faction]',routes:FACTION_ROUTES,implemented:FACTION_ROUTES,goPageSelector:'[data-go-page]',
+    meta:{'faction-candidates':['Faction Candidates','Search and manage Faction recruitment candidates.']},
+    organizationInfo,buildRows,profileSearchFilters,
+    async selectProfile(app){const [config,profiles]=await Promise.all([getConfig(app),getProfiles(app)]);return{config,profiles,selected:activeResultsProfile(config,profiles)};},
+    renderHtml(app,sorted,options,{config,profiles}){return FactionUI.renderCandidates(sorted,{...options,profiles,activeProfileId:text(config.activeResultsProfileId)})+FactionUI.renderProfileEditor({config,profiles,open:runtime.profileEditorOpen===true});},
+    bindControls
+  });
+  const {runtime,renderPage,reportError}=P;
+  const readCriteria=host=>Shared.readCriteria(host,'faction-');
 
   async function saveBaselineFromUi(){const host=document.getElementById('ra-faction-baseline-criteria');return saveConfig(runtime.app,{baseline:{criteria:readCriteria(host)}});}
   async function createProfile(){return saveProfile(runtime.app,{profileId:makeId('profile'),name:'New Specialist Profile',status:'Draft',criteria:[],notes:''});}
   async function saveProfileFromCard(profileId){const card=document.querySelector(`[data-faction-profile-card="${profileId}"]`);if(!card)throw new Error('Specialist profile was not found.');const profiles=await getProfiles(runtime.app);const existing=profiles.find(profile=>text(profile.profileId)===text(profileId));if(!existing)throw new Error('Specialist profile was not found.');const criteriaHost=card.querySelector('[data-faction-profile-criteria]');return saveProfile(runtime.app,{...existing,name:text(card.querySelector('[data-faction-profile-field="name"]')?.value),status:text(card.querySelector('[data-faction-profile-field="status"]')?.value)||'Draft',notes:text(card.querySelector('[data-faction-profile-field="notes"]')?.value),criteria:readCriteria(criteriaHost)});}
-
-
 
   function recruitPlayer(row,override=false){
     if(row.doNotContact&&!override)throw new Error('This player is marked Do Not Contact. Use the deliberate override control if contact is still required.');
@@ -3387,14 +3219,10 @@
     return runtime.app.recruitCandidate?.('faction',row.userId,row.name,{overrideDnc:override,dncConfirmed:override});
   }
 
-
-  function syncActiveNav(page){document.querySelectorAll('#ra-nav [data-page]').forEach(button=>button.classList.toggle('active',button.dataset.page===page));}
-  function reportError(error){console.error('[RA v4.7 Faction]',error);try{globalThis.alert?.(`Faction Recruitment failed: ${error?.message||error}`);}catch{}}
-
   function addCriterionRow(host,scope){if(!host)return;host.insertAdjacentHTML('beforeend',FactionUI.renderCriterionRow({id:makeId('criterion'),field:'level',operator:'gte',kind:'Preferred',weight:1},scope));}
   function bindProfileEditor(){
     const editor=document.getElementById('ra-faction-profile-editor');if(!editor)return;
-    const rerender=async work=>{try{runtime.profileEditorOpen=true;await work();await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}};
+    const rerender=async work=>{try{runtime.profileEditorOpen=true;await work();await P.rerender();}catch(error){reportError(error);}};
     editor.ontoggle=()=>{runtime.profileEditorOpen=editor.open;};
     editor.onclick=event=>{
       const target=event.target?.closest?.('button');if(!target)return;const data=target.dataset;
@@ -3408,72 +3236,19 @@
     };
   }
 
-
-  function readVisibleSearchFilters(){return {search:text(document.getElementById('ra-faction-filter-search')?.value),minEnd:text(document.getElementById('ra-faction-filter-end')?.value),minMan:text(document.getElementById('ra-faction-filter-man')?.value),minInt:text(document.getElementById('ra-faction-filter-int')?.value),onlineStatus:text(document.getElementById('ra-faction-filter-status')?.value),organization:text(document.getElementById('ra-faction-filter-organization')?.value),organizationPresence:text(document.getElementById('ra-faction-filter-organization-presence')?.value)||'any'};}
-  function bindContentControls(){
-    document.getElementById('ra-faction-search-apply')?.addEventListener('click',async event=>{const button=event?.currentTarget;runtime.resultPage=0;runtime.searchFilters=readVisibleSearchFilters();try{if(button){button.disabled=true;button.textContent='Searching…';}if(typeof runtime.app?.searchCandidates!=='function')throw new Error('Active candidate search is unavailable.');await runtime.app.searchCandidates('faction',runtime.searchFilters);await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);renderPage('faction-candidates',{persist:false}).catch(reportError);}finally{if(button?.isConnected){button.disabled=false;button.textContent='Search';}}});
-    document.getElementById('ra-faction-search-clear')?.addEventListener('click',()=>{runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};renderPage('faction-candidates',{persist:false}).catch(reportError);});
-    document.getElementById('ra-faction-profile-apply')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);const profiles=await getProfiles(runtime.app);const profile=profileId?profiles.find(item=>text(item.profileId)===profileId):null;if(profileId&&!profile)throw new Error('Faction specialist profile was not found.');await saveConfig(runtime.app,{activeResultsProfileId:profileId});runtime.resultPage=0;runtime.searchFilters=profile?profileSearchFilters(profile):{...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
-    document.getElementById('ra-faction-profile-clear')?.addEventListener('click',async()=>{try{await saveConfig(runtime.app,{activeResultsProfileId:''});runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
-    document.getElementById('ra-faction-profile-save-search')?.addEventListener('click',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);if(!profileId)throw new Error('Choose a Faction specialist profile first.');const profiles=await getProfiles(runtime.app);const profile=profiles.find(item=>text(item.profileId)===profileId);if(!profile)throw new Error('Faction specialist profile was not found.');runtime.searchFilters=readVisibleSearchFilters();await saveProfile(runtime.app,{...profile,searchFilters:runtime.searchFilters,searchFiltersCustom:true});await saveConfig(runtime.app,{activeResultsProfileId:profileId});await renderPage('faction-candidates',{persist:false});}catch(error){reportError(error);}});
-    document.querySelectorAll('#ra-content [data-faction-sort]').forEach(button=>{button.onclick=()=>{runtime.resultPage=0;runtime.sort=toggleSort(runtime.sort,button.dataset.factionSort);renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-page]').forEach(button=>{button.onclick=()=>{runtime.resultPage=Math.max(0,runtime.resultPage+(button.dataset.resultsPage==='next'?1:-1));renderPage('faction-candidates',{persist:false}).catch(reportError);};});document.querySelectorAll('#ra-content [data-results-layout]').forEach(button=>{button.onclick=()=>{if(typeof runtime.app?.setResultsLayout!=='function')return;runtime.app.setResultsLayout(button.dataset.resultsLayout).then(()=>renderPage('faction-candidates',{persist:false})).catch(reportError);};});document.querySelectorAll('#ra-content [data-player-card]').forEach(link=>{link.onclick=event=>{event.preventDefault();runtime.app?.openPlayerCard?.('faction',link.dataset.playerCard);};});
-    document.querySelectorAll('[data-go-page]').forEach(button=>{const route=text(button.dataset.goPage);if(isFactionRoute(route))button.onclick=event=>{event?.preventDefault?.();navigate(route,true).catch(reportError);};});
+  function bindControls(){
+    const on=(id,handler)=>document.getElementById(id)?.addEventListener('click',handler);
+    on('ra-faction-profile-apply',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);const profiles=await getProfiles(runtime.app);const profile=profileId?profiles.find(item=>text(item.profileId)===profileId):null;if(profileId&&!profile)throw new Error('Faction specialist profile was not found.');await saveConfig(runtime.app,{activeResultsProfileId:profileId});runtime.resultPage=0;runtime.searchFilters=profile?profileSearchFilters(profile):{...DEFAULT_SEARCH_FILTERS};await P.rerender();}catch(error){reportError(error);}});
+    on('ra-faction-profile-clear',async()=>{try{await saveConfig(runtime.app,{activeResultsProfileId:''});runtime.resultPage=0;runtime.searchFilters={...DEFAULT_SEARCH_FILTERS};await P.rerender();}catch(error){reportError(error);}});
+    on('ra-faction-profile-save-search',async()=>{try{const profileId=text(document.getElementById('ra-faction-results-profile')?.value);if(!profileId)throw new Error('Choose a Faction specialist profile first.');const profiles=await getProfiles(runtime.app);const profile=profiles.find(item=>text(item.profileId)===profileId);if(!profile)throw new Error('Faction specialist profile was not found.');runtime.searchFilters=P.readVisibleSearchFilters();await saveProfile(runtime.app,{...profile,searchFilters:runtime.searchFilters,searchFiltersCustom:true});await saveConfig(runtime.app,{activeResultsProfileId:profileId});await P.rerender();}catch(error){reportError(error);}});
     bindProfileEditor();
-    document.querySelectorAll('[data-faction-recruit]').forEach(button=>button.onclick=()=>rowFor(button.dataset.factionRecruit).then(row=>recruitPlayer(row,false)).catch(reportError));
-    document.querySelectorAll('[data-faction-recruit-override]').forEach(button=>button.onclick=()=>rowFor(button.dataset.factionRecruitOverride).then(row=>recruitPlayer(row,true)).catch(reportError));
-
-
-
-
-
-
-
-
-
+    document.querySelectorAll('[data-faction-recruit]').forEach(button=>button.onclick=()=>P.rowFor(button.dataset.factionRecruit).then(row=>recruitPlayer(row,false)).catch(reportError));
+    document.querySelectorAll('[data-faction-recruit-override]').forEach(button=>button.onclick=()=>P.rowFor(button.dataset.factionRecruitOverride).then(row=>recruitPlayer(row,true)).catch(reportError));
   }
-
-  async function renderPage(page,options={}){
-    const app=runtime.app;page=text(page);
-    if(!app||!IMPLEMENTED_ROUTES.has(page))return false;
-    if(options.persist!==false)claimRoute(app,page);
-    const title=document.getElementById('ra-page-title'),desc=document.getElementById('ra-page-desc'),content=document.getElementById('ra-content');
-    if(!title||!desc||!content)throw new Error('Recruitment Agency shell is not mounted.');
-    const rows=await buildRows(app);
-    let html='';
-
-    if(page==='faction-candidates'){const [config,profiles]=await Promise.all([getConfig(app),getProfiles(app)]);const selected=activeResultsProfile(config,profiles);const selectedId=text(selected?.profileId);const selectedVersion=text(selected?.updatedAt);if(!runtime.profileFiltersInitialized||runtime.profileFiltersId!==selectedId||runtime.profileFiltersVersion!==selectedVersion){const saved=runtime.profileFiltersInitialized?null:savedResultsView(app);if(saved)runtime.sort=saved.sort;if(saved&&saved.profileId===selectedId&&saved.profileVersion===selectedVersion){runtime.searchFilters=saved.filters;runtime.resultPage=saved.resultPage;}else{runtime.searchFilters=selected?profileSearchFilters(selected):{...DEFAULT_SEARCH_FILTERS};runtime.resultPage=0;}runtime.profileFiltersInitialized=true;runtime.profileFiltersId=selectedId;runtime.profileFiltersVersion=selectedVersion;}const filtered=filterRows(rows,runtime.searchFilters);const sortedAll=sortRows(filtered,runtime.sort).map(row=>({...row,currentOrganizationLabel:organizationInfo(row).label}));const pageCount=Math.max(1,Math.ceil(sortedAll.length/RESULTS_PAGE_SIZE));runtime.resultPage=Math.min(Math.max(0,runtime.resultPage),pageCount-1);const start=runtime.resultPage*RESULTS_PAGE_SIZE;const sorted=sortedAll.slice(start,start+RESULTS_PAGE_SIZE);await persistResultsView(app).catch(error=>console.warn('[RA] Results view was not saved.',error));html=FactionUI.renderCandidates(sorted,{filters:runtime.searchFilters,sort:runtime.sort,total:rows.length,filteredTotal:sortedAll.length,layout:app._test.state.settings?.candidates?.resultsLayout,profiles,activeProfileId:text(config.activeResultsProfileId),pagination:{page:runtime.resultPage,pageSize:RESULTS_PAGE_SIZE,pageCount,start,end:start+sorted.length}})+FactionUI.renderProfileEditor({config,profiles,open:runtime.profileEditorOpen===true});}
-    if(typeof app.navigate==='function'&&text(app._test.state.page)!==page)return false;
-    const meta=routeMeta(page);title.textContent=meta.title;desc.textContent=meta.description;content.innerHTML=html;
-    syncActiveNav(page);bindContentControls();if(options.persist!==false)await persistRoute(app,page);return true;
-  }
-
-  function bindNav(){
-    if(!runtime.app)return;
-    document.querySelectorAll('#ra-nav [data-page]').forEach(button=>{
-      const page=text(button.dataset.page);if(!IMPLEMENTED_ROUTES.has(page))return;
-      if(!runtime.originalHandlers.has(button))runtime.originalHandlers.set(button,button.onclick||null);
-      button.onclick=event=>{event?.preventDefault?.();navigate(page,true).catch(reportError);};
-    });
-  }
-  function syncNavigation(){bindNav();return true;}
-  function install(app,options={}){
-    if(!app?._test?.state?.db)throw new Error('A mounted Recruitment Agency app with DB state is required.');
-    uninstall();runtime.app=app;runtime.installed=true;runtime.profileFiltersInitialized=false;runtime.savedResultsViewKey='';runtime.profileFiltersId='';runtime.profileFiltersVersion='';bindNav();
-    const nav=document.getElementById('ra-nav');if(nav&&typeof MutationObserver==='function'){runtime.observer=new MutationObserver(()=>bindNav());runtime.observer.observe(nav,{childList:true,subtree:true});}
-    const page=text(app._test.state.page||app._test.state.settings?.activePage);if(options.renderInitial!==false&&IMPLEMENTED_ROUTES.has(page))renderPage(page,{persist:false}).catch(reportError);
-    return true;
-  }
-  function uninstall(){runtime.observer?.disconnect?.();runtime.observer=null;for(const[button,handler]of runtime.originalHandlers.entries())if(button?.isConnected)button.onclick=handler;runtime.originalHandlers.clear();runtime.app=null;runtime.installed=false;}
 
   return Object.freeze({
-    FACTION_ROUTES,
-    isFactionRoute,
-    routeMeta,
-    install,
-    uninstall,
-    renderPage,
-    syncNavigation,
-    _test:{IMPLEMENTED_ROUTES,buildRows,persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,readCriteria,profileSearchFilters,activeResultsProfile,filterRows,sortRows,toggleSort,organizationInfo,RESULTS_PAGE_SIZE}
+    FACTION_ROUTES,isFactionRoute:P.isRoute,routeMeta:P.routeMeta,install:P.install,uninstall:P.uninstall,renderPage,syncNavigation:P.syncNavigation,
+    _test:{IMPLEMENTED_ROUTES:P.IMPLEMENTED_ROUTES,buildRows,persistRoute:P.persistRoute,dbGetAll,dbGet,dbPut,dbDelete,getConfig,getProfiles,readCriteria,profileSearchFilters,activeResultsProfile,filterRows:P.filterRows,sortRows,toggleSort,organizationInfo,RESULTS_PAGE_SIZE}
   });
 });
 
