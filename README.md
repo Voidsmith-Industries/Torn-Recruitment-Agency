@@ -1,8 +1,14 @@
 # Torn Recruitment Agency
 
-R4G3RUNN3R's Recruitment Agency **v4.9.0** is a streamlined Torn recruitment workspace built around one core flow: Search → Results → Last Online → Message. Search actively acquires candidates from configured Torn recruitment forum feeds and Torn's official v2 user search, then filters the combined local candidate intelligence by END / MAN / INT and the other Search controls. Company and Faction recruitment remain isolated workflows over one shared Player Intelligence identity. Scout, Smart Match, Forum Discovery, Global Intelligence and Data are optional tools that are off by default and can be enabled under Settings → **Optional Features**.
+R4G3RUNN3R's Recruitment Agency **v4.9.1** is a streamlined Torn recruitment workspace built around one core flow: Search → Results → Last Online → Message. Search actively acquires candidates from configured Torn recruitment forum feeds and Torn's official v2 user search (using your Search filters), then filters the combined local candidate intelligence by END / MAN / INT and the other Search controls. END / MAN / INT are not public in Torn's API, so players found through it show those stats as Unknown until they are known, and stay listed. Company and Faction recruitment remain isolated workflows over one shared Player Intelligence identity. Scout, Smart Match, Forum Discovery and Data are optional tools that are off by default and can be enabled under Settings → **Optional Features**.
 
 The Scout, Results, Global Intelligence, Smart Match, Forum Discovery, Company Recruitment, and Faction Recruitment modules are clean-room implementations. They do not call, authenticate against, or depend on `rs.dnonetwork.com` or another proprietary Recruit Scout grading backend.
+
+## What's new in v4.9.1
+
+- **Search now uses your filters with Torn.** Company/Faction presence and Status are sent to Torn's user search (None → not in a company/faction, Has → in one; Online → active now, Idle or Any → recently active, Offline → active within about an hour). Each Search brings back up to 100 players (4 pages); **Search more** fetches the next 100 with the same filters.
+- **Players whose stats aren't public stay listed.** Torn's API does not publish END / MAN / INT, so players found through it show them as Unknown (—) and sort last instead of being hidden by an END / MAN / INT minimum. Players whose known stat is below the minimum are still hidden.
+- **Global Intelligence is hidden** until a Voidsmith-hosted service exists, so you are no longer asked for an endpoint. Nothing is sent anywhere; existing local data and settings are kept. The userscript no longer declares `@connect` for Google Apps Script.
 
 ## What's new in v4.9.0
 
@@ -18,7 +24,7 @@ The separate recruitment workflow pages are gone: **Overview, Today, Pipeline, V
 - A single top-level **Company / Faction mode selector**; the sidebar shows only the active recruitment domain.
 - v4.9 **Match Profile** selection and the explainable **Recruitment Fit** score on Results (unknown evidence stays unknown rather than counting as zero; Recruitment Fit is separate from Scout Fit).
 - On the Faction Search page, the **Requirements & Specialist Profiles** editor (Faction baseline plus specialist profiles); on the Company Search page, the **Eligibility baseline** panel.
-- Optional tools, all off by default: **Scout**, **Smart Match**, **Forum Discovery**, **Global Intelligence** (and **Data**).
+- Optional tools, all off by default: **Scout**, **Smart Match**, **Forum Discovery** (and **Data**). Global Intelligence was also kept in v4.9.0 and is hidden from v4.9.1.
 
 ### Fixed
 
@@ -42,6 +48,8 @@ A single Torn player ID maps to one local candidate record. Forum discovery, man
 Results show player identity, END, MAN, INT, Last Online, Current Company/Faction, Recruitment Fit and Message. Player, END, MAN, INT and Last Online headers sort locally; missing values stay at the bottom in either direction. A compact layout moves the extra details into the Player Card.
 
 Search filters are player name / ID, Online / Idle / Offline status, current Company/Faction and membership presence (Any / None / Has, with missing facts kept as Unknown), plus minimum END, MAN and INT. Thresholds accept plain values and compact `k`, `m`, or `b` suffixes. Pressing Search first refreshes the selected recruitment forum sources and queries Torn user search, then applies the filters. Sorting never makes a Torn API or forum request. Last Online uses the most recent exact activity observation when known, otherwise the Torn Online / Idle / Offline state supplied by user search, and otherwise `Unknown`.
+
+Pressing **Search** sends those filters to Torn's v2 user search: membership presence None/Has becomes `notInCompany`/`inCompany` (Company) or `notInFaction`/`inFaction` (Faction), and Status becomes a last-action window (Online → `lastActionNow`, Idle or Any → `lastActionRecent`, Offline → `lastActionHourAgo`; a name search adds no window unless you pick a Status). Each Search fetches up to 4 pages of 25 (100 players) through the shared rate-limited scheduler, and **Search more** continues from Torn's cursor for the next 100; changing the filters or pressing Search again starts over. A numeric Name / ID looks up that exact profile. Torn's user search returns only name, level, status and faction, so END / MAN / INT stay Unknown for those players: a minimum hides a player only when their known stat is below it.
 
 Opening a Torn profile, forum source or player card **does not change** recruitment stage.
 
@@ -130,34 +138,13 @@ Each component is linear and capped at its normalized weight:
 
 Weights are normalized to 100 automatically.
 
-## Global Intelligence
+## Global Intelligence (hidden)
 
-Global Intelligence optionally contributes and reuses sanitized historical Torn player observations through a Google Apps Script web app backed by a private Google Sheet.
-
-The shared schema is deliberately strict. Only these fields are eligible to leave the browser:
+Global Intelligence is hidden from v4.9.1 until a Voidsmith-hosted service exists; it will return as a separate project. There is no Global Intelligence page, Optional Features toggle or Settings section, and the userscript sends no observations anywhere. Saved settings (including any old endpoint) and the local `globalLatest`, `globalHistory` and `globalSyncQueue` stores are kept untouched. Scout still records sanitized observations locally, limited to this whitelist:
 
 `playerId, name, observedAt, level, ee, activity30, xanax30, refills30, attacks30, rwHits30, networth, fit, fitType, lastActive, scoutStatus, sourceVersion`
 
-The following remain local and are not part of the Global Intelligence schema:
-
-- Torn API key
-- forum text
-- forum source URLs/history
-- pipeline stage
-- recruiter notes
-- salary/pay negotiations
-- availability overrides
-- Smart Match Profiles
-- Match Score and Match breakdown
-- prepared/default recruitment messages
-- local workflow state
-- Google credentials
-
-Fresh Scout measurements are stored locally first. Sanitized observations may then be queued for Global Intelligence. A Global Intelligence failure does not turn a successful local Scout measurement into a failure.
-
-The reproducible Apps Script service lives in [`global/google-apps-script/`](global/google-apps-script/). Follow [`global/google-apps-script/README.md`](global/google-apps-script/README.md) to deploy it and configure the `/exec` endpoint under **Settings → Global Intelligence**.
-
-The userscript remains functional without a Global Intelligence endpoint.
+The earlier Google Apps Script service remains in [`global/google-apps-script/`](global/google-apps-script/) for reference only.
 
 ## Local storage and DB15
 
@@ -192,17 +179,16 @@ v4.9 Settings keeps the essentials first and moves everything else under Advance
 5. Scout
 6. Candidates
 7. Smart Match
-8. Global Intelligence
-9. Data & Reset
-10. Danger Zone
+8. Data & Reset
+9. Danger Zone
 
-**Optional Features** turns on Forum Discovery, Scout, Smart Match, Global Intelligence and Data. All are off by default. Search & Results remains available regardless of optional-module choices.
+**Optional Features** turns on Forum Discovery, Scout, Smart Match and Data. All are off by default. Search & Results remains available regardless of optional-module choices.
 
 ## Install
 
 Install the bundled release from https://voidsmithindustries.com/torn/install/recruitment-agency.user.js in Tampermonkey or another compatible userscript manager. `@updateURL` and `@downloadURL` both point to that URL; GitHub remains the source/history and contribution repository rather than the install/update authority.
 
-The public userscript metadata version is **4.9.0** and carries the dedicated inline SVG magnifying-glass icon. The release identity is aligned: `@version`, the wrapper's `INSTALLER_VERSION` (shown in the title bar and used by the duplicate-instance owner guard), its `EXPECTED_APP_VERSION` runtime guard and the application's `SCRIPT_VERSION` are all 4.9.0. The shipped file [`dist/recruitment-agency.user.js`](dist/recruitment-agency.user.js) is built by `npm run build`, which inlines the local `src/` modules and minifies them; it contains no `@require` lines. The source wrapper [`R4G3RUNN3R-Recruitment-Agency.user.js`](R4G3RUNN3R-Recruitment-Agency.user.js) is the development entry point for that build and is not meant to be installed directly.
+The public userscript metadata version is **4.9.1** and carries the dedicated inline SVG magnifying-glass icon. The release identity is aligned: `@version`, the wrapper's `INSTALLER_VERSION` (shown in the title bar and used by the duplicate-instance owner guard), its `EXPECTED_APP_VERSION` runtime guard and the application's `SCRIPT_VERSION` are all 4.9.1. The shipped file [`dist/recruitment-agency.user.js`](dist/recruitment-agency.user.js) is built by `npm run build`, which inlines the local `src/` modules and minifies them; it contains no `@require` lines. The source wrapper [`R4G3RUNN3R-Recruitment-Agency.user.js`](R4G3RUNN3R-Recruitment-Agency.user.js) is the development entry point for that build and is not meant to be installed directly.
 
 A Torn API key is stored only in the browser database used by Recruitment Agency. Torn API requests are made directly from the browser through the application scheduler.
 
@@ -216,10 +202,11 @@ npm test
 npm run syntax
 ```
 
-The regression suite covers Company/Faction workflow isolation, additive DB11→DB15 upgrades, Faction baseline and specialist matching, shared Player Intelligence boundaries, the Global Intelligence whitelist, API pacing, private-chat Message preparation with zero automated Send/Enter submission, route ownership and stale-render rejection, per-workspace Results persistence, the sidebar dock, the minified dist booting in a real browser, release version agreement, a dist size gate, and JavaScript syntax.
+The regression suite covers Company/Faction workflow isolation, additive DB11→DB15 upgrades, Faction baseline and specialist matching, shared Player Intelligence boundaries, the Global Intelligence whitelist and its hidden state, Torn user-search filter and cursor mapping, Unknown-stat Results, API pacing, private-chat Message preparation with zero automated Send/Enter submission, route ownership and stale-render rejection, per-workspace Results persistence, the sidebar dock, the minified dist booting in a real browser, release version agreement, a dist size gate, and JavaScript syntax.
 
 ## Version history
 
+- **v4.9.1** - core Search sends the Company/Faction presence and Status filters to Torn v2 user search, fetches up to 100 players per Search (cursor paging) with **Search more** for the next 100, keeps players with Unknown END/MAN/INT listed (sorted last) instead of hiding them under a stat minimum; hides Global Intelligence (no page, toggle, endpoint setting or network code; data kept) and drops the Google Apps Script `@connect` lines; all version constants agree at 4.9.1
 - **v4.9.0** - trims the app to the core Search → Results → Last Online → Message flow, removing the separate workflow pages (Overview, Today, Pipeline, Vacancies, Requirements page, Campaigns, Follow-ups, Timeline, Stage Aging, Contact Outcomes, Recruitment Sessions, Talent Pool, Reactivation, Opportunity Queue, Compare, Logs); keeps optional Scout, Smart Match, Forum Discovery and Global Intelligence, the Match Profile / Recruitment Fit / Company-Faction selector and the Faction requirements and Company eligibility baseline panels; fixes navigation snap-back, persists Results filters/sort/page per workspace, docks under ReviveRelay with a header icon, closes on Escape, builds nothing while closed; ships a minified ~247 KB file; all version constants agree at 4.9.0
 - **v4.8.4** - presentation-only metadata patch adding the Voidsmith magnifying-glass userscript icon over the v4.8.3 runtime
 - **v4.8.3** - distribution-only patch moving install/update to https://voidsmithindustries.com/torn/install/recruitment-agency.user.js
