@@ -33,7 +33,7 @@ test('Tampermonkey-like isolated world keeps Faction Requirements active through
     for(const file of MODULES)await isolatedEval(client,contextId,fs.readFileSync(path.join(ROOT,'src',file),'utf8'));
     assert.equal(await isolatedEval(client,contextId,'typeof RA_V45App'),'object');
     await isolatedEval(client,contextId,BOOT);
-    await page.waitForFunction(()=>document.getElementById('ra-app'),{timeout:10000});
+    await page.waitForFunction(()=>document.querySelector('#ra-sidebar-launcher,#ra-launch'),{timeout:10000});
 
     const launcher=await visibleLauncher(page);
     assert.ok(launcher);await physicalClick(page,launcher);

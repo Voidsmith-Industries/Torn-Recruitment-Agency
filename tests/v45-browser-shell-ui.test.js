@@ -82,14 +82,15 @@ test('v4.5.4 shell scrolls, hides duplicate Settings and safely maximizes/restor
     for(const file of MODULES) await page.addScriptTag({content:fs.readFileSync(path.join(ROOT,'src',file),'utf8')});
     await page.addScriptTag({content:sourceCompatibleBoot(ROOT)});
 
+    await page.waitForSelector('#ra-sidebar-launcher,#ra-launch',{timeout:10000});
+    const launcher=await page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'})||'');
+    assert.ok(launcher,'visible launcher should exist');
+    await physicalClick(page,launcher);
     await page.waitForSelector('#ra-maximize',{timeout:10000});
     await page.waitForFunction(()=>!document.querySelector('#ra-nav [data-page="settings"]'),{timeout:5000});
     assert.equal(await page.$('[data-page="settings"]'),null,'Settings must not be duplicated in sidebar navigation');
     assert.ok(await page.$('#ra-settings-button'),'title-bar Settings must remain');
 
-    const launcher=await page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(selector=>{const el=document.querySelector(selector);return el&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'})||'');
-    assert.ok(launcher,'visible launcher should exist');
-    await physicalClick(page,launcher);
     assert.equal(await page.$eval('#ra-app',el=>getComputedStyle(el).display),'block');
 
     await physicalClick(page,'#ra-settings-button');

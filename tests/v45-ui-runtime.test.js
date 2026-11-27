@@ -59,10 +59,10 @@ test('v4.5 application mounts and primary navigation responds to real clicks', a
   const App = require('../src/v45-app');
   assert.equal(await App.start({ indexedDB }), true);
 
+  assert.equal(document.getElementById('ra-app'), null, 'application shell is built lazily on first open');
+  document.getElementById('ra-launch').click();
   const app = document.getElementById('ra-app');
   assert.ok(app, 'application shell should be mounted');
-
-  document.getElementById('ra-launch').click();
   assert.equal(app.style.display, 'block', 'fallback launcher should open the application');
 
   async function openPage(page, expectedTitle, expectedControl) {

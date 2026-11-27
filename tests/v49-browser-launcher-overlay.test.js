@@ -44,7 +44,7 @@ async function withPage(variant, viewport, fn){
     if(variant.beforeBoot) await page.evaluate(variant.beforeBoot);
     for(const file of MODULES) await page.addScriptTag({content:fs.readFileSync(path.join(ROOT,'src',file),'utf8')});
     await page.addScriptTag({content:sourceCompatibleBoot(ROOT)});
-    await page.waitForFunction(()=>window.RA_V45App?._test?.state?.mounted===true && !!document.getElementById('ra-app'),{timeout:15000});
+    await page.waitForFunction(()=>window.RA_V45App?._test?.state?.mounted===true && !!document.querySelector('#ra-launch,#ra-status-launcher'),{timeout:15000});
     await page.evaluate(()=>new Promise(r=>setTimeout(r,100)));
     await fn(page);
   }finally{
@@ -199,4 +199,45 @@ test('Torn DOM churn does not trigger a full-document launcher scan per mutation
     const scans = await page.evaluate(()=>window.__raScans);
     assert.ok(scans<=5,`expected throttled launcher scans, got ${scans}`);
   });
+});
+
+// Owner performance requirement: while the panel is closed RA adds only its launcher to Torn,
+// observes no document-wide subtree, and schedules no timers.
+const instrumentHost = () => {
+  window.__raObserved = [];
+  const observe = MutationObserver.prototype.observe;
+  MutationObserver.prototype.observe = function(target, options){ window.__raObserved.push({id:target.id||target.nodeName, subtree:!!options?.subtree}); return observe.call(this, target, options); };
+  window.__raTimers = 0; window.__countTimers = false;
+  const st = window.setTimeout, si = window.setInterval;
+  window.setTimeout = function(...args){ if(window.__countTimers) window.__raTimers++; return st.apply(this, args); };
+  window.setInterval = function(...args){ if(window.__countTimers) window.__raTimers++; return si.apply(this, args); };
+};
+const idleTimers = page => page.evaluate(async()=>{ await new Promise(r=>setTimeout(r,400)); window.__raTimers=0; window.__countTimers=true; await new Promise(r=>requestAnimationFrame(()=>r())); const wait=Date.now()+1500; while(Date.now()<wait) await new Promise(r=>requestAnimationFrame(()=>r())); window.__countTimers=false; return window.__raTimers; });
+const raFootprint = page => page.evaluate(()=>({
+  nodes:[...document.querySelectorAll('*')].filter(el=>el.closest('[id^="ra-"]')).length,
+  css:[...document.querySelectorAll('style')].filter(el=>/^ra-/.test(el.id)).reduce((n,el)=>n+el.textContent.length,0),
+  heavy:['ra-app','ra-hover','ra-context','ra-help-popover','ra-toastbox','ra-v45-css','ra-v454-shell-css'].filter(id=>document.getElementById(id))
+}));
+
+test('closed panel: only launcher nodes, no document-wide subtree observer, no timers', {timeout:90000}, async()=>{
+  for(const [variant, viewport] of [[{header:true,beforeBoot:instrumentHost}, DESKTOP],[{beforeBoot:instrumentHost}, DESKTOP],[{header:true,mobile:true,beforeBoot:instrumentHost}, MOBILE]]){
+    await withPage(variant, viewport, async page=>{
+      const closed = await raFootprint(page);
+      assert.deepEqual(closed.heavy, [], 'app shell, overlays and app CSS must not exist before first open');
+      assert.ok(closed.nodes<=8, `closed panel must add only launcher nodes, got ${closed.nodes}`);
+      assert.ok(closed.css<=2048, `closed panel CSS must be tiny, got ${closed.css} chars`);
+      const observed = await page.evaluate(()=>window.__raObserved);
+      assert.deepEqual(observed.filter(o=>o.subtree&&['HTML','BODY','#document'].includes(o.id)), [], `no subtree observer on document/body: ${JSON.stringify(observed)}`);
+      assert.equal(await idleTimers(page), 0, 'no timers while the panel is closed');
+      const launcher = await shown(page,'#ra-status-launcher button') ? '#ra-status-launcher button' : '#ra-launch';
+      await physicalClick(page, launcher);
+      await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent?.length>0,{timeout:10000});
+      assert.equal(await appOpen(page), true, 'first open builds and shows the app');
+      await physicalClick(page,'#ra-close');
+      assert.equal(await appOpen(page), false);
+      assert.equal(await idleTimers(page), 0, 'no timers after closing the panel');
+      await physicalClick(page, launcher);
+      assert.equal(await appOpen(page), true, 'reopen works');
+    });
+  }
 });

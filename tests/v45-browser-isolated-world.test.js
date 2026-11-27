@@ -22,7 +22,7 @@ test('Chrome isolated userscript world can mount the public bootstrap and receiv
  for(const file of MODULES){const src=fs.readFileSync(path.join(ROOT,'src',file),'utf8');await isolatedEval(client,contextId,src);}
  assert.equal(await isolatedEval(client,contextId,`typeof RA_V45App`),'object');
  await isolatedEval(client,contextId,BOOT);
- await page.waitForFunction(()=>{if(!document.getElementById('ra-app'))return false;return ['#ra-sidebar-launcher','#ra-launch'].some(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';});},{timeout:10000});
+ await page.waitForFunction(()=>{return ['#ra-sidebar-launcher','#ra-launch'].some(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';});},{timeout:10000});
  assert.deepEqual(await isolatedEval(client,contextId,`__errors`),[]);
  const launcher=await page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden'})||'');assert.ok(launcher);await physicalClick(page,launcher);assert.equal(await page.$eval('#ra-app',e=>getComputedStyle(e).display),'block');
  await physicalClick(page,'[data-page="company-candidates"]');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Candidates',{timeout:10000});

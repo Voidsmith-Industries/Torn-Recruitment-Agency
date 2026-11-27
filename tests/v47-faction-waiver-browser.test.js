@@ -31,7 +31,7 @@ test('Faction waiver UI persists an individual baseline exception, preserves fai
   await deleteDb();
   const dom=installDom();
   const App=freshApp();
-  assert.equal(await App.start({indexedDB}),true);
+  assert.equal(await App.start({indexedDB}),true);await App._test.openApp();
 
   await App._test.repositories.players.ensure('123',{name:'Alpha',level:40},'waiver-browser-test',100);
   await App._test.repositories.faction.ensure('123',{pipelineStage:'Evaluating',waivers:[]},{source:'waiver-browser-test',observedAt:100});

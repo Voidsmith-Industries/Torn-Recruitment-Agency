@@ -25,7 +25,7 @@ async function withApp(run){
   const dom=installDom();
   const App=freshApp();
   try{
-    assert.equal(await App.start({indexedDB}),true);
+    assert.equal(await App.start({indexedDB}),true);await App._test.openApp();
     assert.equal(App._test.state.page,'company-candidates');
     await run(App,dom);
   }finally{

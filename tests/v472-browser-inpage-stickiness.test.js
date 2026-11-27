@@ -91,7 +91,7 @@ test('public bootstrap keeps Faction Requirements active while its own in-page c
     await page.setViewport({ width: 1440, height: 900 });
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle0' });
     await page.addScriptTag({ content: BOOT });
-    await page.waitForSelector('#ra-app', { timeout: 10000 });
+    await page.waitForSelector('#ra-sidebar-launcher,#ra-launch', { timeout: 10000 });
 
     const launcher = await page.evaluate(() => {
       for (const selector of ['#ra-sidebar-launcher', '#ra-launch']) {
