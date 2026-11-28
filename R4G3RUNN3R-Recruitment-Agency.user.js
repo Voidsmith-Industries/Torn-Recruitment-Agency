@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         R4G3RUNN3R's Recruitment Agency
 // @namespace    r4g3runn3r.recruitment.agency
-// @version      4.8.4
+// @version      4.9.2
 // @description  Sortable Company and Faction recruitment search with status, organisation, work-stat and Last Online filters plus safe messaging.
 // @author       R4G3RUNN3R[3877028]
 // @icon         data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%2311170d%22%2F%3E%3Ccircle%20cx%3D%2228%22%20cy%3D%2228%22%20r%3D%2213%22%20fill%3D%22none%22%20stroke%3D%22%23f3f7ee%22%20stroke-width%3D%226%22%2F%3E%3Cpath%20d%3D%22M37.5%2037.5L50%2050%22%20fill%3D%22none%22%20stroke%3D%22%23d9ff52%22%20stroke-width%3D%227%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E
@@ -9,8 +9,6 @@
 // @match        https://www.torn.com/*
 // @noframes
 // @grant        GM_xmlhttpRequest
-// @connect      script.google.com
-// @connect      script.googleusercontent.com
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/scout-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/results-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/global-core.js
@@ -23,21 +21,14 @@
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-domain-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-storage-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-navigation.js
+// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-recruitment-shared.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-storage.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-operations.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-workflow.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-workflow-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-opportunity-ui.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v46-company-platform.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-core.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-storage.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-operations.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-workflow.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-workflow-ui.js
-// @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-opportunity-ui.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v47-faction-platform.js
 // @require      https://raw.githubusercontent.com/Voidsmith-Industries/Torn-Recruitment-Agency/912b070ec11b68b4cdc0337b1971a8ccc3554a13/src/v45-app.js
 // @downloadURL  https://voidsmithindustries.com/torn/install/recruitment-agency.user.js
@@ -46,10 +37,10 @@
 
 (() => {
   'use strict';
-  const INSTALLER_VERSION = '4.8.4';
-  const EXPECTED_APP_VERSION = '4.8.3';
+  const INSTALLER_VERSION = '4.9.2';
+  const EXPECTED_APP_VERSION = '4.9.2';
   const DOM_GUARD = 'data-r4g3-ra-v45-owner';
-  const RA_ROOT_SELECTOR = '#ra-app,#ra-hover,#ra-context,#ra-help-popover';
+  const RA_ROOT_SELECTOR = '#ra-app,#ra-help-popover';
   const SHELL_STYLE_ID = 'ra-v454-shell-css';
   const shellUiState = {maximized:false, restoreGeometry:null, navObserver:null};
 
@@ -446,11 +437,19 @@
     return;
   }
 
-  const restoreResizeObserver = installShellResizeGuard();
-  app.start().then(() => {
+  // The app shell is built lazily on first open; guard its ResizeObserver and enhance it at that moment.
+  let restoreResizeObserver = () => {};
+  window.addEventListener('ra:app-mounting', () => { restoreResizeObserver = installShellResizeGuard(); });
+  window.addEventListener('ra:app-mounted', () => {
     restoreResizeObserver();
-    enhanceShellUi(app);
-  }).catch(error => {
+    try {
+      enhanceShellUi(app);
+    } catch (error) {
+      console.error(`[RA] ${INSTALLER_VERSION} shell enhancement failed.`, error);
+      try { alert(`Recruitment Agency could not start: ${error?.message || error}`); } catch {}
+    }
+  });
+  app.start().catch(error => {
     restoreResizeObserver();
     clearDomGuard();
     console.error(`[RA] ${INSTALLER_VERSION} failed to start.`, error);

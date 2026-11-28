@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { minify } = require('terser');
 
 const ROOT = path.resolve(__dirname, '..');
 const SOURCE = path.join(ROOT, 'R4G3RUNN3R-Recruitment-Agency.user.js');
@@ -35,11 +36,39 @@ const modules = moduleFiles.map(({ name, file }) => {
   return `\n/* bundled runtime: ${name} */\n${source}\n`;
 }).join('');
 
-const output = `${bundledHeader}\n\n${modules}\n/* userscript bootstrap */\n${bootstrap.trim()}\n`;
-fs.mkdirSync(DIST_DIR, { recursive: true });
-fs.writeFileSync(DIST, output, 'utf8');
+// The shipped release is minified: whitespace/comments removed, dead code
+// compressed and function-local names mangled. Top-level and global names
+// (RA_* module globals, GM_* grants) and all property names are left intact,
+// and the ==UserScript== metadata block is emitted byte-for-byte, unminified.
+// No eval or packing. Terser is pinned exactly in package.json so the output
+// is deterministic (same input -> same bytes); CI diffs a rebuild against dist.
+const TERSER_OPTIONS = Object.freeze({
+  ecma: 2020,
+  module: false,
+  toplevel: false,
+  compress: { passes: 2, toplevel: false, unsafe: false },
+  mangle: { toplevel: false, eval: false, properties: false },
+  format: { comments: false, ascii_only: false, beautify: false, semicolons: true },
+  sourceMap: false
+});
 
-const remoteRequires = output.match(/^\/\/ @require\s+/gm) || [];
-if (remoteRequires.length) throw new Error('Bundled release still contains remote @require directives.');
+async function main() {
+  const body = `${modules}\n${bootstrap.trim()}\n`;
+  const result = await minify(body, TERSER_OPTIONS);
+  if (!result || typeof result.code !== 'string' || !result.code.length) throw new Error('Minifier produced no output.');
+  const output = `${bundledHeader}\n\n${result.code}\n`;
 
-process.stdout.write(`${DIST}\n`);
+  fs.mkdirSync(DIST_DIR, { recursive: true });
+  fs.writeFileSync(DIST, output, 'utf8');
+
+  const remoteRequires = output.match(/^\/\/ @require\s+/gm) || [];
+  if (remoteRequires.length) throw new Error('Bundled release still contains remote @require directives.');
+  if (!output.startsWith(`${bundledHeader}\n`)) throw new Error('Userscript metadata block was not preserved verbatim.');
+
+  process.stdout.write(`${DIST}\n`);
+}
+
+main().catch(error => {
+  process.stderr.write(`${error && error.stack || error}\n`);
+  process.exitCode = 1;
+});

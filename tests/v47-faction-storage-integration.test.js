@@ -7,8 +7,7 @@ const app=fs.readFileSync(path.join(__dirname,'..','src','v45-app.js'),'utf8');
 const pkg=JSON.parse(fs.readFileSync(path.join(__dirname,'..','package.json'),'utf8'));
 
 const FACTION_MODULES=[
-  'v47-faction-core','v47-faction-storage','v47-faction-ui','v47-faction-operations',
-  'v47-faction-workflow','v47-faction-workflow-ui','v47-faction-opportunity-ui','v47-faction-platform'
+  'v47-faction-core','v47-faction-storage','v47-faction-ui','v47-faction-platform'
 ];
 
 test('app wires every Faction runtime dependency and uses DB15 as the database target',()=>{

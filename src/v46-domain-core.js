@@ -7,10 +7,21 @@
 
   const SHARED_PLAYER_FIELDS = Object.freeze([
     'name','level','age','ee','man','int','end','total','factionId','factionName',
-    'currentCompany','currentCompanyId','currentCompanyRating','currentCompanyPosition','companyCheckedAt',
+    'currentCompany','currentCompanyId','currentCompanyRating','currentCompanyPosition','companyCheckedAt','companyPresence',
     'networth','fit','fitType','lastActive','onlineStatus','lastScoutAt','lastGlobalAt','lastObservedAt',
-    'activity30','activeStreak','bestActiveStreak','xanax30','refills30','attacks30','rwHits30','scoutStatus'
+    'activity30','activeStreak','bestActiveStreak','xanax30','refills30','attacks30','rwHits30','scoutStatus','scoutStatsVersion'
   ]);
+  // Before 4.9.2 Scout parsed Torn v2 personalstats as flat v1 keys, so every Scout metric it saved (and Global observations
+  // built from it) was 0. Records without scoutStatsVersion 2 keep those zeros aside in legacyScoutFields and read as Unknown.
+  const LEGACY_SCOUT_FIELDS = Object.freeze(['fit','activity30','xanax30','refills30','attacks30','rwHits30','networth','activeStreak','bestActiveStreak']);
+  function quarantineLegacyScoutFields(player = {}) {
+    if (!player || player.scoutStatsVersion === 2 || (player.lastScoutAt == null && player.lastGlobalAt == null)) return {changed:false,next:player};
+    const next = {...player}, aside = {...(player.legacyScoutFields || {})};let changed = false;
+    for (const key of LEGACY_SCOUT_FIELDS) if (player[key] !== null && player[key] !== '' && Number(player[key]) === 0) { aside[key] = player[key];next[key] = null;changed = true; }
+    if (Object.prototype.hasOwnProperty.call(aside,'fit') && next.fit === null && next.fitType != null) { aside.fitType = next.fitType;next.fitType = null; }
+    if (changed) next.legacyScoutFields = aside;
+    return {changed,next};
+  }
 
   const COMPANY_STAGES = Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
   const FACTION_STAGES = Object.freeze(['Prospect','Contacted','Replied','Evaluating','Invite Ready','Joined','Rejected','Deferred']);
@@ -77,5 +88,5 @@
   function legacyCandidateToCompany(record = {}, observedAt = Date.now(), options = {}) { return normalizeCompanyRecruitment(record, observedAt, options); }
   function legacyCandidateToFaction(record = {}, observedAt = Date.now(), options = {}) { const mapped = {...record};if (options.ambiguous !== true) mapped.pipelineStage = LEGACY_TO_FACTION_STAGE[normalizeCompanyStage(record.pipelineStage)] || 'Prospect';return normalizeFactionRecruitment(mapped, observedAt, options); }
 
-  return Object.freeze({SHARED_PLAYER_FIELDS,COMPANY_STAGES,FACTION_STAGES,AVAILABILITY_VALUES,LEGACY_TO_FACTION_STAGE,normalizeUserId,mergePlayerIntelligence,normalizeCompanyRecruitment,normalizeFactionRecruitment,classifyLegacyDomains,legacyCandidateToCompany,legacyCandidateToFaction});
+  return Object.freeze({SHARED_PLAYER_FIELDS,LEGACY_SCOUT_FIELDS,quarantineLegacyScoutFields,COMPANY_STAGES,FACTION_STAGES,AVAILABILITY_VALUES,LEGACY_TO_FACTION_STAGE,normalizeUserId,mergePlayerIntelligence,normalizeCompanyRecruitment,normalizeFactionRecruitment,classifyLegacyDomains,legacyCandidateToCompany,legacyCandidateToFaction});
 });

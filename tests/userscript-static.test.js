@@ -6,26 +6,33 @@ const root=path.join(__dirname,'..');
 const boot=fs.readFileSync(path.join(root,'R4G3RUNN3R-Recruitment-Agency.user.js'),'utf8');
 const app=fs.readFileSync(path.join(root,'src/v45-app.js'),'utf8');
 const PINNED_RUNTIME='912b070ec11b68b4cdc0337b1971a8ccc3554a13';
-const RELEASE_FILES=['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-operations.js','v46-company-workflow.js','v46-company-workflow-ui.js','v46-company-opportunity-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-operations.js','v47-faction-workflow.js','v47-faction-workflow-ui.js','v47-faction-opportunity-ui.js','v47-faction-platform.js','v45-app.js'];
+const RELEASE_FILES=['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-recruitment-shared.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js','v45-app.js'];
 
-test('public userscript is the v4.8.4 icon release with immutable v4.8.3 core requires',()=>{
-  assert.match(boot,/@version\s+4\.8\.4/);
+test('public userscript is the v4.9.2 release and keeps its immutable module requires',()=>{
+  assert.match(boot,/@version\s+4\.9\.2/);
   assert.match(boot,/@noframes/);
   assert.match(boot,/@icon\s+data:image\/svg\+xml,/);
   for(const file of RELEASE_FILES){
     assert.ok(boot.includes(`/${PINNED_RUNTIME}/src/${file}`),`pinned ${file}`);
   }
   assert.doesNotMatch(boot,/@require\s+https:\/\/raw\.githubusercontent\.com\/R4G3RUNN3R\/Torn-Recruitment-Agency\/main\/src\//);
-  assert.match(boot,/INSTALLER_VERSION\s*=\s*'4\.8\.4'/);
-  assert.match(boot,/EXPECTED_APP_VERSION\s*=\s*'4\.8\.3'/);
+  assert.match(boot,/INSTALLER_VERSION\s*=\s*'4\.9\.2'/);
+  assert.match(boot,/EXPECTED_APP_VERSION\s*=\s*'4\.9\.2'/);
+  const header=boot.match(/@version\s+(\S+)/)[1];
+  const installer=boot.match(/INSTALLER_VERSION\s*=\s*'([^']+)'/)[1];
+  const expected=boot.match(/EXPECTED_APP_VERSION\s*=\s*'([^']+)'/)[1];
+  const runtime=app.match(/SCRIPT_VERSION\s*=\s*'([^']+)'/)[1];
+  assert.equal(installer,header,'INSTALLER_VERSION must equal @version');
+  assert.equal(expected,header,'EXPECTED_APP_VERSION must equal @version');
+  assert.equal(runtime,expected,'src SCRIPT_VERSION must satisfy the wrapper runtime guard');
   assert.match(boot,/app\.SCRIPT_VERSION/);
   assert.match(boot,/app\.start\(\)/);
 });
 
-test('v4.8.4 loads Company and Faction dependencies before the source application',()=>{
+test('v4.9.2 loads Company and Faction dependencies before the source application',()=>{
   const appIndex=boot.indexOf(`/src/v45-app.js`);
   assert.ok(appIndex>0);
-  for(const file of ['v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-operations.js','v46-company-workflow.js','v46-company-workflow-ui.js','v46-company-opportunity-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-operations.js','v47-faction-workflow.js','v47-faction-workflow-ui.js','v47-faction-opportunity-ui.js','v47-faction-platform.js']){
+  for(const file of ['v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-recruitment-shared.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js']){
     const index=boot.indexOf(`/src/${file}`);
     assert.ok(index>=0&&index<appIndex,`${file} must load before v45-app.js`);
   }
@@ -34,7 +41,7 @@ test('v4.8.4 loads Company and Faction dependencies before the source applicatio
   assert.ok(boot.indexOf('/src/v47-faction-platform.js')<appIndex,'FactionPlatform must load before v45-app.js');
 });
 
-test('v4.8.4 preserves the direct and addEventListener click bridge',()=>{
+test('v4.9.2 preserves the direct and addEventListener click bridge',()=>{
   assert.match(boot,/function installClickListenerBridge\(\)/);
   assert.match(boot,/registry = new WeakMap\(\)/);
   assert.match(boot,/EventTarget\.prototype\.addEventListener/);
@@ -50,7 +57,7 @@ test('v4.8.4 preserves the direct and addEventListener click bridge',()=>{
   assert.match(boot,/clickBridge\.invoke\(action, event\)/);
 });
 
-test('v4.8.4 guards the shared DOM against duplicate worlds and legacy RA UI',()=>{
+test('v4.9.2 guards the shared DOM against duplicate worlds and legacy RA UI',()=>{
   assert.match(boot,/DOM_GUARD\s*=\s*'data-r4g3-ra-v45-owner'/);
   assert.match(boot,/root\.getAttribute\(DOM_GUARD\)/);
   assert.match(boot,/root\.setAttribute\(DOM_GUARD, INSTALLER_VERSION\)/);
@@ -59,7 +66,7 @@ test('v4.8.4 guards the shared DOM against duplicate worlds and legacy RA UI',()
   for(const id of ['ra-styles','ra-panel','ra-results-panel','ra-config-modal','ra-dock-fallback','ra-launcher']) assert.ok(boot.includes(`'${id}'`),`legacy cleanup ${id}`);
 });
 
-test('v4.8.4 keeps scrollable content, title-bar-only Settings and safe maximize restore',()=>{
+test('v4.9.2 keeps scrollable content, title-bar-only Settings and safe maximize restore',()=>{
   assert.match(boot,/SHELL_STYLE_ID\s*=\s*'ra-v454-shell-css'/);
   assert.match(boot,/function stripSidebarSettings\(\)/);
   assert.match(boot,/#ra-nav \[data-page=\"settings\"\]/);
@@ -75,7 +82,7 @@ test('v4.8.4 keeps scrollable content, title-bar-only Settings and safe maximize
   assert.match(boot,/resize:none!important/);
 });
 
-test('v4.8.4 protects dark-theme table and Settings contrast from Torn host CSS',()=>{
+test('v4.9.2 protects dark-theme table and Settings contrast from Torn host CSS',()=>{
   assert.match(boot,/#ra-app \.ra-table tbody td\{color:var\(--ra-text\)!important\}/);
   assert.match(boot,/#ra-app \.ra-table tbody td \.ra-muted\{color:var\(--ra-muted\)!important\}/);
   assert.match(boot,/#ra-app \.ra-table tbody td \.ra-btn,[\s\S]*color:var\(--ra-text\)!important/);
@@ -102,6 +109,6 @@ test('source app targets additive DB15 over DB13 and DB14 foundations and shared
 
 test('v4.8 keeps Smart Match local and messaging manual',()=>{assert.match(app,/Smart Match.*zero Torn API calls/i);assert.match(app,/private chat[\s\S]*press Send/i);assert.doesNotMatch(app,/autoSubmit\s*:\s*true/);assert.doesNotMatch(app,/pipelineStage\s*=\s*['"]Contacted['"]s*;.*message/s);});
 
-test('Settings is a real routed page and Danger Zone uses inline biohazard SVG',()=>{assert.match(app,/id=\"ra-settings-button\"/);assert.match(app,/document\.getElementById\('ra-settings-button'\)\.onclick=\(\)=>route\('settings'\)/);for(const section of ['General','Recruitment','Scout','Candidates','Smart Match','Global Intelligence','Data & Reset','Danger Zone'])assert.ok(app.includes(section));assert.match(app,/function biohazardSvg/);assert.match(app,/NUKE IT ALL!/);assert.match(app,/Type NUKE to confirm/);});
+test('Settings is a real routed page and Danger Zone uses inline biohazard SVG',()=>{assert.match(app,/id=\"ra-settings-button\"/);assert.match(app,/document\.getElementById\('ra-settings-button'\)\.onclick=\(\)=>route\('settings'\)/);for(const section of ['General','Recruitment','Scout','Candidates','Smart Match','Data & Reset','Danger Zone'])assert.ok(app.includes(section));assert.match(app,/function biohazardSvg/);assert.match(app,/NUKE IT ALL!/);assert.match(app,/Type NUKE to confirm/);});
 
-test('candidate workspace, drawer, context menu, hover and pipeline are operational',()=>{for(const token of ['renderCandidates','renderPipeline','openDrawer','openContextMenu','openCandidateHover','ra-inline-stage','data-drop-stage','shiftKey'])assert.ok(app.includes(token),token);assert.deepEqual(require('../src/v45-runtime').PIPELINE_STAGES,['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);});
+test('legacy v4.5 candidate table, context menu, hover and pipeline are gone; discovery links open the Player Card',()=>{for(const token of ['function renderCandidates','function renderPipeline','function openDrawer','function openContextMenu','function openCandidateHover','function migrateLegacyUsers','ra-inline-stage','data-drop-stage',"id='ra-context'","id='ra-hover'"])assert.equal(app.includes(token),false,token);assert.match(app,/data-detail-domain=/);assert.match(app,/function bindCandidateInteractions\(\)\{[^\n]*openPlayerCard\(/);});

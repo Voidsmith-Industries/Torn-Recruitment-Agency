@@ -144,59 +144,6 @@ test('inactive specialist profiles are ignored by automatic suggestion', () => {
   assert.equal(result.suggestedProfileId, 'active');
 });
 
-test('Faction opportunity exposes a deterministic explainable breakdown', () => {
-  const Core = requireFaction();
-  const result = Core.computeOpportunity({
-    match: 90,
-    fit: 80,
-    availability: 'Available',
-    lastActiveAgeHours: 4,
-    intelligenceFreshness: 'Fresh',
-    followUpDue: true,
-    contactPenalty: 20
-  }, {
-    match: 30,
-    fit: 20,
-    availability: 15,
-    activity: 15,
-    freshness: 10,
-    followUp: 10,
-    contactPenalty: 10
-  });
-
-  assert.equal(result.score, 91);
-  assert.match(result.explanation, /Match:/);
-  assert.match(result.explanation, /Fit:/);
-  assert.match(result.explanation, /Contact penalty: -2/);
-});
-
-test('Faction Today queue recognizes Replied, overdue follow-up, stale stage and high opportunity independently', () => {
-  const Core = requireFaction();
-  const now = Date.UTC(2026, 7, 25, 12, 0, 0);
-  const rows = Core.buildTodayQueue([
-    {
-      userId: '10',
-      pipelineStage: 'Replied',
-      stageChangedAt: now - 10 * 86400000,
-      followUps: [{ followUpId: 'f1', dueAt: now - 1000, state: 'Pending' }]
-    }
-  ], {
-    now,
-    stageThresholds: { Replied: 7 },
-    opportunities: { '10': 90 }
-  });
-
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].priority, 100);
-  assert.deepEqual(rows[0].reasons, [
-    'Reply waiting',
-    'Overdue follow-up (1)',
-    'Stale stage',
-    'High opportunity'
-  ]);
-});
-
-
 test('Faction specialist profiles preserve normalized saved Results filters', () => {
   const Core=requireFaction();
   const profile=Core.normalizeSpecialistProfile({
@@ -223,7 +170,6 @@ test('unknown Faction criteria and specialist evidence remain unscored',()=>{
   assert.equal(result.matchScore,null);
 });
 
-
 test('unknown hard Faction requirement is Unknown, not a failure',()=>{
   const Core=requireFaction();
   const criteria=[{id:'rw',field:'rwHits30',operator:'gte',value:50,kind:'Hard',weight:1}];
@@ -239,11 +185,3 @@ test('unknown hard Faction requirement is Unknown, not a failure',()=>{
   assert.equal(profile.matchScore,null);
 });
 
-test('Faction Opportunity is unknown when no substantive evidence is known',()=>{
-  const Core=requireFaction();
-  const result=Core.computeOpportunity({
-    match:null,fit:null,availability:'Unknown',lastActiveAgeHours:null,intelligenceFreshness:'Unknown',followUpDue:false,contactPenalty:0
-  },{match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
-  assert.equal(result.score,null);
-  assert.equal(result.rawScore,null);
-});

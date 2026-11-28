@@ -31,7 +31,7 @@ function freshApp(){
 test('v4.8 domain switch and core route persist without exposing optional navigation by default',async()=>{
   const dom1=installDom();
   const App1=freshApp();
-  assert.equal(await App1.start({indexedDB}),true);
+  assert.equal(await App1.start({indexedDB}),true);await App1._test.openApp();
 
   assert.equal(document.querySelector('[data-nav-toggle="company-recruitment"]'),null);
   assert.equal(document.querySelector('[data-nav-toggle="faction-recruitment"]'),null);
@@ -48,18 +48,18 @@ test('v4.8 domain switch and core route persist without exposing optional naviga
   let meta=await readMeta(App1._test.state.db);
   assert.equal(meta.settings.activeDomain,'faction');
   assert.equal(meta.settings.activePage,'faction-candidates');
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   App1._test.state.db.close();
   dom1.window.close();
 
   const dom2=installDom();
   const App2=freshApp();
-  assert.equal(await App2.start({indexedDB}),true);
+  assert.equal(await App2.start({indexedDB}),true);await App2._test.openApp();
   await tick(80);
   meta=await readMeta(App2._test.state.db);
   assert.equal(meta.settings.activeDomain,'faction');
   assert.equal(meta.settings.activePage,'faction-candidates');
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   App2._test.state.db.close();
   dom2.window.close();
 });

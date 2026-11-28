@@ -3,34 +3,31 @@ const assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom');
 const Platform=require('../src/v46-company-platform');
 
-const EXPECTED_ROUTES=[
-  'company-overview','company-today','company-discover','company-candidates','company-pipeline',
-  'company-vacancies','company-campaigns','company-followups','company-timeline','company-stage-aging',
-  'company-contact-outcomes','company-recruitment-sessions','company-talent-pool','company-reactivation',
-  'company-opportunity','company-compare'
-];
+const EXPECTED_ROUTES=['company-discover','company-candidates'];
 
-test('Company platform owns the complete approved Company route set',()=>{
+test('Company platform owns Company Search & Results and names Forum Discovery',()=>{
   assert.deepEqual(Platform.COMPANY_ROUTES,EXPECTED_ROUTES);
   for(const route of EXPECTED_ROUTES){
     assert.equal(Platform.isCompanyRoute(route),true);
     const meta=Platform.routeMeta(route);
-    assert.ok(meta.title.startsWith('Company '));
+    assert.ok(meta.title.length>0);
     assert.ok(meta.description.length>0);
   }
   assert.equal(Platform.isCompanyRoute('scout'),false);
-  assert.equal(Platform.isCompanyRoute('faction-overview'),false);
+  for(const removed of ['company-overview','company-pipeline','company-vacancies','company-compare'])assert.equal(Platform.isCompanyRoute(removed),false,removed);
+  assert.equal(Platform.isCompanyRoute('faction-candidates'),false);
+  assert.deepEqual([...Platform._test.IMPLEMENTED_ROUTES],['company-candidates']);
 });
 
 test('Company platform installs only on a mounted v4.6-capable app and keeps Faction workflow outside its scope',async()=>{
-  const dom=new JSDOM('<!doctype html><html><body><div id="ra-app"><h2 id="ra-page-title"></h2><p id="ra-page-desc"></p><div id="ra-nav"><button data-page="company-overview">Overview</button><button data-page="scout">Scout</button></div><div id="ra-content"></div></div></body></html>',{url:'https://www.torn.com/'});
+  const dom=new JSDOM('<!doctype html><html><body><div id="ra-app"><h2 id="ra-page-title"></h2><p id="ra-page-desc"></p><div id="ra-nav"><button data-page="company-candidates">Search</button><button data-page="scout">Scout</button></div><div id="ra-content"></div></div></body></html>',{url:'https://www.torn.com/'});
   global.window=dom.window;global.document=dom.window.document;global.MutationObserver=dom.window.MutationObserver;
   const fakeDb={transaction(){throw new Error('DB should not be touched until rendering');}};
   const app={_test:{state:{db:fakeDb,settings:{activePage:'scout'},page:'scout'},companyRepositories:{}}};
   const installed=Platform.install(app,{renderInitial:false});
   assert.equal(installed,true);
   assert.equal(document.querySelector('[data-page="scout"]').onclick,null,'shared Scout navigation remains owned by the base app');
-  assert.equal(typeof document.querySelector('[data-page="company-overview"]').onclick,'function','Company navigation is owned by v4.6 platform');
+  assert.equal(typeof document.querySelector('[data-page="company-candidates"]').onclick,'function','Company navigation is owned by v4.6 platform');
   Platform.uninstall();
   dom.window.close();
 });

@@ -24,7 +24,7 @@ test('v4.5.4 shell layer owns scroll constraints, settings cleanup and maximize 
   assert.match(boot,/function installMaximizedDragGuard\(\)/);
 });
 
-test('v4.8 optional navigation keeps Logs hidden unless explicitly enabled in Advanced mode',()=>{const N=require('../src/v46-navigation');assert.equal(N.visibleGroups({complexity:'simple',optionalModules:{logs:true}}).flatMap(g=>g.pages).some(p=>p.id==='logs'),false);assert.equal(N.visibleGroups({complexity:'advanced',optionalModules:{logs:false}}).flatMap(g=>g.pages).some(p=>p.id==='logs'),false);assert.equal(N.visibleGroups({complexity:'advanced',optionalModules:{logs:true}}).flatMap(g=>g.pages).some(p=>p.id==='logs'),true);});
+test('the Logs page is removed even when an old logs flag is saved',()=>{const N=require('../src/v46-navigation');assert.equal(N.ROUTES.includes('logs'),false);assert.equal(N.visibleGroups({complexity:'advanced',optionalModules:{logs:true}}).flatMap(g=>g.pages).some(p=>p.id==='logs'),false);});
 
 test('collapsible navigation is button-based and keeps Settings outside the sidebar',()=>{assert.match(app,/data-nav-toggle/);assert.match(app,/aria-expanded/);assert.match(app,/data-nav-group/);assert.match(app,/V46Navigation\.toggleExpandedGroup/);assert.match(app,/document\.getElementById\('ra-settings-button'\)\.onclick=\(\)=>route\('settings'\)/);});
 

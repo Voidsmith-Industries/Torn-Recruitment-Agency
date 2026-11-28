@@ -44,16 +44,6 @@ test('DB14 upgrade creates Company stores without deleting pre-existing DB13 sto
   db.close();
 });
 
-test('vacancy repository normalizes, persists and lists active vacancies without API concerns',async()=>{
-  const db=await openDb();
-  const repos=CompanyStorage.createRepositories(adapter(db),CompanyCore);
-  await repos.vacancies.save({id:'sales',name:'Sales',status:'Open',openings:2});
-  await repos.vacancies.save({id:'old',name:'Old',status:'Archived'});
-  assert.equal((await repos.vacancies.get('sales')).openings,2);
-  assert.deepEqual((await repos.vacancies.listActive()).map(v=>v.vacancyId),['sales']);
-  db.close();
-});
-
 test('config repository persists baseline, stage thresholds and Opportunity weights under one Company config record',async()=>{
   const db=await openDb();
   const repos=CompanyStorage.createRepositories(adapter(db),CompanyCore);
@@ -65,14 +55,3 @@ test('config repository persists baseline, stage thresholds and Opportunity weig
   db.close();
 });
 
-test('campaign and recruitment-session repositories keep separate durable entities',async()=>{
-  const db=await openDb();
-  const repos=CompanyStorage.createRepositories(adapter(db),CompanyCore);
-  const campaign=await repos.campaigns.save({campaignId:'c1',title:'August Hiring',candidateIds:['1','2','2'],vacancyId:'sales',status:'Active'});
-  const session=await repos.sessions.save({sessionId:'s1',candidateIds:['2','1'],cursor:0,status:'Active'});
-  assert.deepEqual(campaign.candidateIds,['1','2']);
-  assert.deepEqual(session.candidateIds,['2','1']);
-  assert.equal((await repos.campaigns.list()).length,1);
-  assert.equal((await repos.sessions.list()).length,1);
-  db.close();
-});

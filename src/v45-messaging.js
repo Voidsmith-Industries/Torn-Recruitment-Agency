@@ -8,7 +8,6 @@
   'use strict';
   if (!ForumCore) throw new Error('RA_ForumCore is required.');
 
-  const PLACEHOLDERS = Object.freeze(['name','player_id','looking_for','company_name','current_company','match_score','fit_score']);
   const COMPANY_RECRUITMENT_PLACEHOLDERS = Object.freeze(['name','company_name','company_type']);
   const FACTION_RECRUITMENT_PLACEHOLDERS = Object.freeze(['name','faction_name']);
   const TORN_CHAT_MAX_LENGTH = 840;
@@ -19,9 +18,6 @@
 
   function text(value) { return String(value ?? '').trim(); }
 
-  function approvedValues(input = {}) {
-    return Object.fromEntries(PLACEHOLDERS.map(key => [key, text(input[key])]));
-  }
 
   function cleanPreparedText(value) {
     return String(value || '')
@@ -35,11 +31,6 @@
       .trim();
   }
 
-  function prepareMessage(template, input = {}) {
-    const values = approvedValues(input);
-    const prepared = ForumCore.substituteMessage(String(template || ''), values);
-    return cleanPreparedText(prepared);
-  }
 
   function recruitmentPlaceholders(domain) {
     const normalized = text(domain).toLowerCase();
@@ -168,25 +159,9 @@
     return {...queued,userId:expected,preparedText,transport:'private-chat',autoSubmit:false};
   }
 
-  function composeUrl(userId) {
-    const id = text(userId);
-    return /^\d+$/.test(id) ? `https://www.torn.com/messages.php#/p=compose&XID=${id}` : '';
-  }
 
-  function messagePlan(template, input = {}) {
-    const userId = text(input.player_id || input.userId);
-    if (!/^\d+$/.test(userId)) throw new Error('A valid Torn player ID is required.');
-    return {
-      userId,
-      preparedText:prepareMessage(template,{...input,player_id:userId}),
-      composeUrl:composeUrl(userId),
-      autoSubmit:false,
-      stageChange:null
-    };
-  }
 
   return Object.freeze({
-    PLACEHOLDERS,
     COMPANY_RECRUITMENT_PLACEHOLDERS,
     FACTION_RECRUITMENT_PLACEHOLDERS,
     TORN_CHAT_MAX_LENGTH,
@@ -194,9 +169,7 @@
     PRIVATE_CHAT_DRAFT_TTL_MS,
     DEFAULT_COMPANY_RECRUITMENT_MESSAGE,
     DEFAULT_FACTION_RECRUITMENT_MESSAGE,
-    approvedValues,
     cleanPreparedText,
-    prepareMessage,
     recruitmentPlaceholders,
     prepareRecruitmentMessage,
     companyRecruitmentEligibility,
@@ -204,8 +177,6 @@
     profileUrl,
     recruitmentChatPlan,
     queuePrivateChatDraft,
-    consumePrivateChatDraft,
-    composeUrl,
-    messagePlan
+    consumePrivateChatDraft
   });
 });

@@ -59,10 +59,10 @@ test('v4.5 application mounts and primary navigation responds to real clicks', a
   const App = require('../src/v45-app');
   assert.equal(await App.start({ indexedDB }), true);
 
+  assert.equal(document.getElementById('ra-app'), null, 'application shell is built lazily on first open');
+  document.getElementById('ra-launch').click();
   const app = document.getElementById('ra-app');
   assert.ok(app, 'application shell should be mounted');
-
-  document.getElementById('ra-launch').click();
   assert.equal(app.style.display, 'block', 'fallback launcher should open the application');
 
   async function openPage(page, expectedTitle, expectedControl) {
@@ -77,14 +77,14 @@ test('v4.5 application mounts and primary navigation responds to real clicks', a
     }
   }
 
-  await openPage('company-candidates', 'Company Candidates', '#ra-content .ra-table');
+  await openPage('company-candidates', 'Company Search & Results', '#ra-content .ra-table');
 
   const factionSwitch = document.getElementById('ra-workspace-toggle');
   assert.ok(factionSwitch, 'workspace dropdown should exist');
   factionSwitch.click();
   document.querySelector('[data-workspace-domain="faction"]').click();
-  await waitFor(() => document.getElementById('ra-page-title')?.textContent === 'Faction Candidates');
-  assert.equal(document.getElementById('ra-page-title').textContent, 'Faction Candidates');
+  await waitFor(() => document.getElementById('ra-page-title')?.textContent === 'Faction Search & Results');
+  assert.equal(document.getElementById('ra-page-title').textContent, 'Faction Search & Results');
   assert.ok(document.querySelector('[data-page="faction-candidates"]'), 'Faction core route should exist after switching domains');
 
   document.getElementById('ra-settings-button').click();

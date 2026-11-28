@@ -6,24 +6,6 @@
   'use strict';
 
   const DB_VERSION = 12;
-  const PAGE_GROUPS = Object.freeze([
-    Object.freeze({label:'RECRUITMENT', pages:Object.freeze([
-      Object.freeze({id:'overview', label:'Overview'}),
-      Object.freeze({id:'discover', label:'Discover'}),
-      Object.freeze({id:'candidates', label:'Candidates'}),
-      Object.freeze({id:'pipeline', label:'Pipeline'})
-    ])}),
-    Object.freeze({label:'INTELLIGENCE', pages:Object.freeze([
-      Object.freeze({id:'scout', label:'Scout'}),
-      Object.freeze({id:'smart-match', label:'Smart Match'}),
-      Object.freeze({id:'global-intelligence', label:'Global Intelligence'})
-    ])}),
-    Object.freeze({label:'APPLICATION', pages:Object.freeze([
-      Object.freeze({id:'settings', label:'Settings'}),
-      Object.freeze({id:'data', label:'Data'}),
-      Object.freeze({id:'logs', label:'Logs', advancedOnly:true})
-    ])})
-  ]);
 
   const PIPELINE_STAGES = Object.freeze(['Not Contacted','Shortlisted','Contacted','Replied','Hired','Rejected']);
   const AVAILABILITY_VALUES = Object.freeze(['Available','Unavailable','Unknown']);
@@ -44,30 +26,12 @@
     discovery:{title:'Discovery',body:'Imports explicit recruitment intent from configured Torn forum sources. Forum text and workflow data remain local.'},
     sync:{title:'Sync Forum Posts',body:'Uses the shared Torn API scheduler. Completed pages are saved before the sanitized continuation checkpoint is advanced.'},
     fillCompanies:{title:'Fill Companies',body:'Looks up current company data sequentially through the shared scheduler. It never changes pipeline stage.'},
-    pipeline:{title:'Pipeline / Stage',body:'Stage changes only when you explicitly move a candidate, use the context menu, or edit the stage field.'},
     messagePlayer:{title:'Recruit Player',body:'Freshly checks the target through Torn v2, prepares the saved Company or Faction private-chat template, opens the player profile and fills Torn private chat. You still press Send.'},
     defaultMessage:{title:'Recruitment Templates',body:'Company and Faction private-chat templates are saved separately and remain browser-local.'},
     data:{title:'Data',body:'Shows local IndexedDB counts and export/reset controls. No workspace backup/import system is added in v4.5.'},
-    logs:{title:'Logs',body:'Shows sanitized application events only. API keys, private messages, recruiter notes and forum bodies are excluded.'}
   });
 
   const PRIVATE_LOG_FIELDS = new Set(['apiKey','key','messageBody','forumBody','rawText','recruiterNote','defaultMessage','preparedMessage','companyRecruitmentMessage','factionRecruitmentMessage']);
-
-  function normalizePage(value, complexity = 'simple') {
-    const requested = String(value || '').trim().toLowerCase();
-    const pages = PAGE_GROUPS.flatMap(group => group.pages);
-    const found = pages.find(page => page.id === requested);
-    if (!found) return 'overview';
-    if (found.advancedOnly && complexity !== 'advanced') return 'overview';
-    return found.id;
-  }
-
-  function visiblePages(complexity = 'simple') {
-    return PAGE_GROUPS.map(group => ({
-      label:group.label,
-      pages:group.pages.filter(page => !page.advancedOnly || complexity === 'advanced').map(page => ({...page}))
-    }));
-  }
 
   function normalizeStage(value) {
     const raw = String(value || '').trim().toLowerCase();
@@ -94,24 +58,6 @@
       latestForumSourceId:String(record.latestForumSourceId || ''),
       updatedAt:record.updatedAt || new Date().toISOString()
     };
-  }
-
-  function dbUpgradePlan() {
-    return Object.freeze({
-      version:DB_VERSION,
-      stores:Object.freeze({
-        forumSources:Object.freeze({
-          keyPath:'sourceId',
-          indexes:Object.freeze([
-            Object.freeze({name:'userId', keyPath:'userId'}),
-            Object.freeze({name:'postedAt', keyPath:'postedAt'}),
-            Object.freeze({name:'sourceType', keyPath:'sourceType'}),
-            Object.freeze({name:'threadId', keyPath:'threadId'})
-          ])
-        }),
-        forumSyncState:Object.freeze({keyPath:'feedId', indexes:Object.freeze([])})
-      })
-    });
   }
 
   function normalizeRecruitmentSettings(input = {}) {
@@ -156,19 +102,8 @@
     };
   }
 
-  function kpiCounts(candidates = [], highMatchThreshold = 80) {
-    const rows = Array.isArray(candidates) ? candidates : [];
-    return {
-      active:rows.filter(row => String(row.status || 'active').toLowerCase() !== 'inactive').length,
-      highMatch:rows.filter(row => Number(row.matchScore) >= Number(highMatchThreshold || 80)).length,
-      shortlisted:rows.filter(row => normalizeStage(row.pipelineStage) === 'Shortlisted').length,
-      replied:rows.filter(row => normalizeStage(row.pipelineStage) === 'Replied').length
-    };
-  }
-
   return Object.freeze({
     DB_VERSION,
-    PAGE_GROUPS,
     PIPELINE_STAGES,
     AVAILABILITY_VALUES,
     STAGE_COLORS,
@@ -177,15 +112,11 @@
     DEFAULT_COMPANY_RECRUITMENT_MESSAGE,
     DEFAULT_FACTION_RECRUITMENT_MESSAGE,
     HELP_REGISTRY,
-    normalizePage,
-    visiblePages,
     normalizeStage,
     normalizeAvailability,
     normalizeCandidateRecord,
-    dbUpgradePlan,
     normalizeRecruitmentSettings,
     sanitizeLogDetails,
-    makeLogEntry,
-    kpiCounts
+    makeLogEntry
   });
 });

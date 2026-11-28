@@ -10,12 +10,9 @@ const ROOT = path.join(__dirname, '..');
 const MODULES = [
   'scout-core.js', 'results-core.js', 'global-core.js', 'match-core.js', 'forum-core.js',
   'v45-runtime.js', 'v45-candidates.js', 'v45-discovery.js', 'v45-messaging.js',
-  'v46-domain-core.js', 'v46-storage-core.js', 'v46-navigation.js', 'v46-company-core.js',
-  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-operations.js',
-  'v46-company-workflow.js', 'v46-company-workflow-ui.js', 'v46-company-opportunity-ui.js',
-  'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
-  'v47-faction-ui.js', 'v47-faction-operations.js', 'v47-faction-workflow.js',
-  'v47-faction-workflow-ui.js', 'v47-faction-opportunity-ui.js', 'v47-faction-platform.js',
+  'v46-domain-core.js', 'v46-storage-core.js', 'v46-navigation.js', 'v46-recruitment-shared.js', 'v46-company-core.js',
+  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
+  'v47-faction-ui.js', 'v47-faction-platform.js',
   'v45-app.js'
 ];
 const BOOT = sourceCompatibleBoot(ROOT);
@@ -80,7 +77,6 @@ test('public v4.7.2 runtime remains physically clickable on the real Torn host p
     await page.addScriptTag({ content: BOOT });
 
     await page.waitForFunction(() => {
-      if (!document.getElementById('ra-app')) return false;
       return ['#ra-sidebar-launcher', '#ra-launch'].some(selector => {
         const el = document.querySelector(selector);
         return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
@@ -100,13 +96,13 @@ test('public v4.7.2 runtime remains physically clickable on the real Torn host p
     assert.equal(await page.$eval('#ra-app', el => getComputedStyle(el).display), 'block');
 
     await physicalClick(page, '[data-page="company-candidates"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Search & Results', { timeout: 10000 });
     await physicalClick(page, '#ra-workspace-toggle');
     await physicalClick(page, '[data-workspace-domain="faction"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Search & Results', { timeout: 10000 });
     await physicalClick(page, '#ra-workspace-toggle');
     await physicalClick(page, '[data-workspace-domain="company"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Search & Results', { timeout: 10000 });
 
     await physicalClick(page, '#ra-settings-button');
     await page.waitForFunction(

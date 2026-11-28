@@ -6,13 +6,9 @@ let Platform=null;
 try{Platform=require('../src/v47-faction-platform');}catch{}
 function platform(){assert.ok(Platform,'Faction platform module should exist');return Platform;}
 
-const EXPECTED_ROUTES=[
-  'faction-overview','faction-today','faction-discover','faction-candidates','faction-pipeline',
-  'faction-requirements','faction-campaigns','faction-followups','faction-timeline','faction-stage-aging',
-  'faction-contact-outcomes','faction-recruitment-sessions','faction-reactivation','faction-opportunity','faction-compare'
-];
+const EXPECTED_ROUTES=['faction-candidates'];
 
-test('Faction platform owns the complete approved Faction route set only',()=>{
+test('Faction platform owns only the Faction Search & Results route',()=>{
   const P=platform();
   assert.deepEqual(P.FACTION_ROUTES,EXPECTED_ROUTES);
   for(const route of EXPECTED_ROUTES){
@@ -21,29 +17,30 @@ test('Faction platform owns the complete approved Faction route set only',()=>{
     assert.ok(meta.title.startsWith('Faction '));
     assert.ok(meta.description.length>0);
   }
-  assert.equal(P.isFactionRoute('company-overview'),false);
+  for(const removed of ['faction-overview','faction-requirements','faction-discover','faction-pipeline'])assert.equal(P.isFactionRoute(removed),false,removed);
+  assert.equal(P.isFactionRoute('company-candidates'),false);
   assert.equal(P.isFactionRoute('scout'),false);
 });
 
 test('Faction platform installs only on Faction navigation and leaves Company/shared handlers alone',()=>{
-  const dom=new JSDOM('<!doctype html><html><body><div id="ra-app"><h2 id="ra-page-title"></h2><p id="ra-page-desc"></p><div id="ra-nav"><button data-page="company-overview">Company</button><button data-page="faction-overview">Faction</button><button data-page="scout">Scout</button></div><div id="ra-content"></div></div></body></html>',{url:'https://www.torn.com/'});
+  const dom=new JSDOM('<!doctype html><html><body><div id="ra-app"><h2 id="ra-page-title"></h2><p id="ra-page-desc"></p><div id="ra-nav"><button data-page="company-candidates">Company</button><button data-page="faction-candidates">Faction</button><button data-page="scout">Scout</button></div><div id="ra-content"></div></div></body></html>',{url:'https://www.torn.com/'});
   global.window=dom.window;global.document=dom.window.document;global.MutationObserver=dom.window.MutationObserver;
   const fakeDb={transaction(){throw new Error('DB should not be touched until rendering');}};
-  const app={_test:{state:{db:fakeDb,settings:{activePage:'company-overview'},page:'company-overview'},repositories:{},factionRepositories:{}}};
+  const app={_test:{state:{db:fakeDb,settings:{activePage:'company-candidates'},page:'company-candidates'},repositories:{},factionRepositories:{}}};
   const P=platform();
   assert.equal(P.install(app,{renderInitial:false}),true);
-  assert.equal(document.querySelector('[data-page="company-overview"]').onclick,null);
+  assert.equal(document.querySelector('[data-page="company-candidates"]').onclick,null);
   assert.equal(document.querySelector('[data-page="scout"]').onclick,null);
-  assert.equal(typeof document.querySelector('[data-page="faction-overview"]').onclick,'function');
+  assert.equal(typeof document.querySelector('[data-page="faction-candidates"]').onclick,'function');
   P.uninstall();
   dom.window.close();
 });
 
 test('Faction platform exposes synchronous navigation rebinding for rebuilt sidebars',()=>{
-  const dom=new JSDOM('<!doctype html><html><body><div id="ra-app"><div id="ra-nav"><button data-page="faction-overview">Faction</button></div><div id="ra-content"></div></div></body></html>',{url:'https://www.torn.com/'});
+  const dom=new JSDOM('<!doctype html><html><body><div id="ra-app"><div id="ra-nav"><button data-page="faction-candidates">Faction</button></div><div id="ra-content"></div></div></body></html>',{url:'https://www.torn.com/'});
   global.window=dom.window;global.document=dom.window.document;global.MutationObserver=dom.window.MutationObserver;
   const fakeDb={transaction(){throw new Error('DB should not be touched until rendering');}};
-  const app={_test:{state:{db:fakeDb,settings:{},page:'company-overview'},repositories:{},factionRepositories:{}}};
+  const app={_test:{state:{db:fakeDb,settings:{},page:'company-candidates'},repositories:{},factionRepositories:{}}};
   const P=platform();
   P.install(app,{renderInitial:false});
   const nav=document.getElementById('ra-nav');

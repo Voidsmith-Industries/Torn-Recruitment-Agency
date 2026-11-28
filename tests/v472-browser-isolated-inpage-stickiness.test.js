@@ -8,7 +8,7 @@ const puppeteer=require('puppeteer-core');
 const sourceCompatibleBoot=require('./source-compatible-boot');
 
 const ROOT=path.join(__dirname,'..');
-const MODULES=['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-operations.js','v46-company-workflow.js','v46-company-workflow-ui.js','v46-company-opportunity-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-operations.js','v47-faction-workflow.js','v47-faction-workflow-ui.js','v47-faction-opportunity-ui.js','v47-faction-platform.js','v45-app.js'];
+const MODULES=['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-recruitment-shared.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js','v45-app.js'];
 const BOOT=sourceCompatibleBoot(ROOT);
 
 function chromePath(){for(const cmd of ['google-chrome-stable','google-chrome','chromium-browser','chromium']){try{return execFileSync('which',[cmd],{encoding:'utf8'}).trim();}catch{}}throw new Error('No Chrome/Chromium executable found.');}
@@ -20,7 +20,7 @@ async function visibleLauncher(page){
   return page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';})||'');
 }
 
-test('Tampermonkey-like isolated world keeps Faction Requirements active through in-page actions',{timeout:60000},async()=>{
+test('Tampermonkey-like isolated world keeps Faction Search active through profile editor actions',{timeout:60000},async()=>{
   const server=await serve();const port=server.address().port;
   const browser=await puppeteer.launch({executablePath:chromePath(),headless:true,args:['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']});
   try{
@@ -33,23 +33,24 @@ test('Tampermonkey-like isolated world keeps Faction Requirements active through
     for(const file of MODULES)await isolatedEval(client,contextId,fs.readFileSync(path.join(ROOT,'src',file),'utf8'));
     assert.equal(await isolatedEval(client,contextId,'typeof RA_V45App'),'object');
     await isolatedEval(client,contextId,BOOT);
-    await page.waitForFunction(()=>document.getElementById('ra-app'),{timeout:10000});
+    await page.waitForFunction(()=>document.querySelector('#ra-sidebar-launcher,#ra-launch'),{timeout:10000});
 
     const launcher=await visibleLauncher(page);
     assert.ok(launcher);await physicalClick(page,launcher);
 
-    await isolatedEval(client,contextId,`(async()=>{RA_V45App._test.state.settings.optionalModules.factionRequirements=true;await RA_V45App._test.navigate('faction-requirements',false);return true;})()`,true);
-    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Faction Requirements',{timeout:10000});
+    await isolatedEval(client,contextId,`(async()=>{await RA_V45App._test.navigate('faction-candidates',false);return true;})()`,true);
+    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Faction Search & Results',{timeout:10000});
+    await physicalClick(page,'#ra-faction-profile-editor > summary');
 
     const beforeCriteria=await page.$$eval('#ra-faction-baseline-criteria [data-faction-criterion-row]',els=>els.length);
     await physicalClick(page,'#ra-faction-baseline-add');
     await page.waitForFunction(expected=>document.querySelectorAll('#ra-faction-baseline-criteria [data-faction-criterion-row]').length===expected+1,{timeout:10000},beforeCriteria);
-    assert.equal(await page.$eval('#ra-page-title',el=>el.textContent),'Faction Requirements');
+    assert.equal(await page.$eval('#ra-page-title',el=>el.textContent),'Faction Search & Results');
 
     const beforeProfiles=await page.$$eval('[data-faction-profile-card]',els=>els.length);
     await physicalClick(page,'#ra-faction-profile-new');
     await page.waitForFunction(expected=>document.querySelectorAll('[data-faction-profile-card]').length===expected+1,{timeout:10000},beforeProfiles);
-    assert.equal(await page.$eval('#ra-page-title',el=>el.textContent),'Faction Requirements');
+    assert.equal(await page.$eval('#ra-page-title',el=>el.textContent),'Faction Search & Results');
     assert.deepEqual(await isolatedEval(client,contextId,'__errors'),[]);
   }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 });

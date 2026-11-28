@@ -72,8 +72,6 @@ test('Faction support-store mutations cannot create or alter Company recruitment
   const before=await idb.get('companyRecruitment','123');
   await factionRepos.config.save({baseline:{criteria:[{id:'level',field:'level',kind:'Hard',operator:'gte',value:50}]}});
   await factionRepos.profiles.save({profileId:'rw',name:'RW Fighter',status:'Active',criteria:[]});
-  await factionRepos.campaigns.save({campaignId:'c1',title:'RW Push',candidateIds:['123'],profileId:'rw',status:'Active'});
-  await factionRepos.sessions.save({sessionId:'s1',candidateIds:['123'],status:'Draft'});
   const after=await idb.get('companyRecruitment','123');
   assert.deepEqual(after,before);
   db.close();

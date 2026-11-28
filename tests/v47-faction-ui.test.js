@@ -40,62 +40,27 @@ test('manual specialist pin is preserved while automatic best profile can change
   assert.equal(row.profileEvaluations.find(item=>item.profileId==='chain').matchScore,60);
 });
 
-test('Faction overview and Today models stay read-only and use Faction semantics',()=>{
-  const before=structuredClone(faction);
-  const rows=ui().buildCandidateRows(faction,players,{baseline,profiles});
-  const overview=ui().buildOverviewModel(rows,profiles);
-  assert.equal(overview.totalCandidates,2);
-  assert.equal(overview.activeCandidates,2);
-  assert.equal(overview.stageCounts.Replied,1);
-  assert.equal(overview.stageCounts.Evaluating,1);
-  assert.equal(overview.eligible,1);
-  assert.equal(overview.notCurrentlyEligible,1);
-  assert.equal(overview.activeProfiles,2);
-  const today=ui().buildTodayModel(rows,{now:4000,stageThresholds:{Evaluating:0},opportunities:{101:90,202:20}});
-  assert.deepEqual(today.map(item=>item.userId),['101','202']);
-  assert.ok(today[0].reasons.includes('Reply waiting'));
-  assert.ok(today[1].reasons.some(reason=>reason.startsWith('Overdue follow-up')));
-  assert.deepEqual(faction,before);
-});
-
-test('Faction pipeline contains exactly the eight approved Faction stages and never Company-only stages',()=>{
-  const U=ui();
-  const rows=U.buildCandidateRows(faction,players,{baseline,profiles});
-  const model=U.buildPipelineModel(rows);
-  assert.deepEqual(Object.keys(model),FactionCore.FACTION_STAGES);
-  assert.equal(Object.hasOwn(model,'Hired'),false);
-  assert.equal(Object.hasOwn(model,'Shortlisted'),false);
-  const html=U.renderPipeline(model);
-  assert.match(html,/data-faction-stage="Invite Ready"/);
-  assert.match(html,/data-faction-stage="Deferred"/);
-  assert.doesNotMatch(html,/data-faction-stage="Hired"/);
-});
-
-test('Requirements page exposes Faction Baseline Hard Preferred controls and specialist lifecycle controls',()=>{
-  const html=ui().renderRequirementsPage({config:{baseline},profiles});
+test('slim profile editor exposes Faction Baseline and specialist lifecycle controls without waivers',()=>{
+  const html=ui().renderProfileEditor({config:{baseline},profiles});
+  assert.match(html,/<details[^>]*id="ra-faction-profile-editor"/);
   assert.match(html,/Faction Baseline/);
   assert.match(html,/Hard/);
   assert.match(html,/Preferred/);
   assert.match(html,/id="ra-faction-baseline-save"/);
   assert.match(html,/id="ra-faction-profile-new"/);
   assert.match(html,/data-faction-profile-save="rw"/);
-  assert.match(html,/Draft/);
-  assert.match(html,/Active/);
-  assert.match(html,/Paused/);
-  assert.match(html,/Archived/);
+  assert.match(html,/data-faction-profile-delete="rw"/);
+  for(const state of ['Draft','Active','Paused','Archived'])assert.match(html,new RegExp(state));
+  assert.doesNotMatch(html,/waiver/i);
 });
 
-test('Faction HTML renderers escape player content and link only to Faction routes',()=>{
+test('Faction HTML renderers escape player content and never link to Company routes',()=>{
   const rows=ui().buildCandidateRows([faction[0]],[{...players[0],name:'<Alpha>'}],{baseline,profiles});
-  const overview=ui().renderOverview(ui().buildOverviewModel(rows,profiles));
   const candidates=ui().renderCandidates(rows);
-  assert.match(overview,/data-go-page="faction-today"/);
-  assert.match(overview,/data-go-page="faction-requirements"/);
   assert.match(candidates,/&lt;Alpha&gt;/);
   assert.doesNotMatch(candidates,/<Alpha>/);
   assert.doesNotMatch(candidates,/company-/i);
 });
-
 
 test('Faction Results renders specialist profile controls without mixing Company profiles',()=>{
   const html=ui().renderCandidates([],{
@@ -110,7 +75,6 @@ test('Faction Results renders specialist profile controls without mixing Company
   assert.match(html,/id="ra-faction-profile-save-search"/);
   assert.doesNotMatch(html,/ra-company-profile/);
 });
-
 
 test('Faction Results pagination shows filtered range without rendering the full result set',()=>{
   const rows=Array.from({length:2},(_,i)=>({userId:String(i+1),name:'F'+i,pipelineStage:'Prospect',factionRecord:{domain:'faction'},prospectProvenance:{sources:[]}}));

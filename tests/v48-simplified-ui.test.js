@@ -28,8 +28,8 @@ test('v4.8 optional modules appear only when explicitly enabled', () => {
       data: true
     }
   });
-  assert.deepEqual(byGroup(groups, 'company-recruitment').pages.map(page => page.id), ['company-candidates', 'company-pipeline', 'company-followups']);
-  assert.deepEqual(byGroup(groups, 'faction-recruitment').pages.map(page => page.id), ['faction-candidates', 'faction-pipeline']);
+  assert.deepEqual(byGroup(groups, 'company-recruitment').pages.map(page => page.id), ['company-candidates'], 'removed workflow flags no longer add pages');
+  assert.deepEqual(byGroup(groups, 'faction-recruitment').pages.map(page => page.id), ['faction-candidates']);
   assert.deepEqual(byGroup(groups, 'intelligence').pages.map(page => page.id), ['scout', 'smart-match']);
   assert.deepEqual(byGroup(groups, 'application').pages.map(page => page.id), ['data']);
 });
@@ -45,7 +45,7 @@ test('Company search/results keeps END MAN INT, last-online activity and direct 
   assert.match(html, /id="ra-company-filter-int"/);
   assert.match(html, />Last Online</);
   assert.match(html, /5m ago/);
-  assert.match(html, /data-company-recruit="123"[^>]*>Message</);
+  assert.match(html, /data-company-recruit="123"[^>]*>(?:<svg[^]*?<\/svg><span>)?Message</, 'Message keeps its label; v4.9.2 adds a decorative icon before it');
   assert.doesNotMatch(html, />Vacancy</);
   assert.doesNotMatch(html, />Salary</);
 });
@@ -61,15 +61,18 @@ test('Faction search/results keeps END MAN INT, last-online activity and domain-
   assert.match(html, /id="ra-faction-filter-int"/);
   assert.match(html, />Last Online</);
   assert.match(html, /2h ago/);
-  assert.match(html, /data-faction-recruit="456"[^>]*>Message</);
+  assert.match(html, /data-faction-recruit="456"[^>]*>(?:<svg[^]*?<\/svg><span>)?Message</, 'Message keeps its label; v4.9.2 adds a decorative icon before it');
   assert.doesNotMatch(html, />Specialist Profile</);
 });
 
 test('unknown Company and Faction work stats render as unknown rather than confirmed zero', () => {
   const company = CompanyUI.renderCandidates([{userId:'901',name:'Unknown Company',man:null,int:null,end:null,lastActive:null,doNotContact:false}], {filters:{},total:1});
   const faction = FactionUI.renderCandidates([{userId:'902',name:'Unknown Faction',man:null,int:null,end:null,lastActive:null,doNotContact:false}], {filters:{},total:1});
-  assert.match(company, /<td>—<\/td><td>—<\/td><td>—<\/td>/);
-  assert.match(faction, /<td>—<\/td><td>—<\/td><td>—<\/td>/);
-  assert.doesNotMatch(company, /<td>0<\/td>/);
-  assert.doesNotMatch(faction, /<td>0<\/td>/);
+  // v4.9.2: each unknown stat is the hatched Unknown chip (visible text stays the em-dash, announced as "Unknown").
+  const unknown = '<span class="vx-unk" role="img" aria-label="Unknown" title="Unknown: not known yet, never estimated">—</span>';
+  for (const html of [company, faction]) {
+    for (const col of ['man', 'int', 'end']) assert.ok(html.includes(`<td data-col="${col}">${unknown}</td>`), `${col} renders as Unknown`);
+    assert.doesNotMatch(html, /<td[^>]*>0<\/td>/);
+    assert.doesNotMatch(html, /vx-stat/);
+  }
 });

@@ -25,7 +25,7 @@ test('real app upgrades to DB15, exposes Faction repositories, renders Faction r
   await deleteDb();
   const dom1=installDom();
   const App1=freshApp();
-  assert.equal(await App1.start({indexedDB}),true);
+  assert.equal(await App1.start({indexedDB}),true);await App1._test.openApp();
   assert.equal(App1._test.state.db.version,15);
   for(const store of ['playerIntelligence','companyRecruitment','factionRecruitment','companyVacancies','companyCampaigns','companyRecruitmentConfig','companyRecruitmentSessions','factionSpecialistProfiles','factionCampaigns','factionRecruitmentConfig','factionRecruitmentSessions'])assert.equal(App1._test.state.db.objectStoreNames.contains(store),true,store);
   assert.ok(App1._test.factionRepositories);
@@ -35,7 +35,7 @@ test('real app upgrades to DB15, exposes Faction repositories, renders Faction r
   workspace.click();
   document.querySelector('[data-workspace-domain="faction"]').click();
   await tick(80);
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   let meta=await readMeta(App1._test.state.db);
   assert.equal(meta.settings.activePage,'faction-candidates');
   App1._test.state.db.close();
@@ -43,9 +43,9 @@ test('real app upgrades to DB15, exposes Faction repositories, renders Faction r
 
   const dom2=installDom();
   const App2=freshApp();
-  assert.equal(await App2.start({indexedDB}),true);
+  assert.equal(await App2.start({indexedDB}),true);await App2._test.openApp();
   await tick();
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   meta=await readMeta(App2._test.state.db);
   assert.equal(meta.settings.activePage,'faction-candidates');
   assert.equal(document.getElementById('ra-workspace-label').textContent,'Faction');

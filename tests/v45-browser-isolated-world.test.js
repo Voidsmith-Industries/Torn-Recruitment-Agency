@@ -8,7 +8,7 @@ const puppeteer = require('puppeteer-core');
 const sourceCompatibleBoot = require('./source-compatible-boot');
 
 const ROOT = path.join(__dirname, '..');
-const MODULES = ['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-operations.js','v46-company-workflow.js','v46-company-workflow-ui.js','v46-company-opportunity-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-operations.js','v47-faction-workflow.js','v47-faction-workflow-ui.js','v47-faction-opportunity-ui.js','v47-faction-platform.js','v45-app.js'];
+const MODULES = ['scout-core.js','results-core.js','global-core.js','match-core.js','forum-core.js','v45-runtime.js','v45-candidates.js','v45-discovery.js','v45-messaging.js','v46-domain-core.js','v46-storage-core.js','v46-navigation.js','v46-recruitment-shared.js','v46-company-core.js','v46-company-storage.js','v46-company-ui.js','v46-company-platform.js','v47-faction-core.js','v47-faction-storage.js','v47-faction-ui.js','v47-faction-platform.js','v45-app.js'];
 const BOOT = sourceCompatibleBoot(ROOT);
 
 function chromePath(){for(const cmd of ['google-chrome-stable','google-chrome','chromium-browser','chromium']){try{return execFileSync('which',[cmd],{encoding:'utf8'}).trim();}catch{}}throw new Error('No Chrome/Chromium executable found.');}
@@ -22,11 +22,11 @@ test('Chrome isolated userscript world can mount the public bootstrap and receiv
  for(const file of MODULES){const src=fs.readFileSync(path.join(ROOT,'src',file),'utf8');await isolatedEval(client,contextId,src);}
  assert.equal(await isolatedEval(client,contextId,`typeof RA_V45App`),'object');
  await isolatedEval(client,contextId,BOOT);
- await page.waitForFunction(()=>{if(!document.getElementById('ra-app'))return false;return ['#ra-sidebar-launcher','#ra-launch'].some(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';});},{timeout:10000});
+ await page.waitForFunction(()=>{return ['#ra-sidebar-launcher','#ra-launch'].some(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';});},{timeout:10000});
  assert.deepEqual(await isolatedEval(client,contextId,`__errors`),[]);
  const launcher=await page.evaluate(()=>['#ra-sidebar-launcher','#ra-launch'].find(s=>{const e=document.querySelector(s);return e&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden'})||'');assert.ok(launcher);await physicalClick(page,launcher);assert.equal(await page.$eval('#ra-app',e=>getComputedStyle(e).display),'block');
- await physicalClick(page,'[data-page="company-candidates"]');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Candidates',{timeout:10000});
- await physicalClick(page,'#ra-workspace-toggle');await physicalClick(page,'[data-workspace-domain="faction"]');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Faction Candidates',{timeout:10000});
- await physicalClick(page,'#ra-workspace-toggle');await physicalClick(page,'[data-workspace-domain="company"]');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Candidates',{timeout:10000});
+ await physicalClick(page,'[data-page="company-candidates"]');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Search & Results',{timeout:10000});
+ await physicalClick(page,'#ra-workspace-toggle');await physicalClick(page,'[data-workspace-domain="faction"]');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Faction Search & Results',{timeout:10000});
+ await physicalClick(page,'#ra-workspace-toggle');await physicalClick(page,'[data-workspace-domain="company"]');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Search & Results',{timeout:10000});
  await physicalClick(page,'#ra-settings-button');await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Settings',{timeout:10000});await physicalClick(page,'#ra-close');assert.equal(await page.$eval('#ra-app',e=>getComputedStyle(e).display),'none');assert.deepEqual(await isolatedEval(client,contextId,`__errors`),[]);
 }finally{await browser.close();await new Promise(r=>server.close(r));}});

@@ -21,8 +21,8 @@ test('source foundation remains wired beneath additive DB14 Company and DB15 Fac
   assert.doesNotMatch(app,/deleteObjectStore\s*\(/);
 });
 
-test('source foundation preserves API pacing and v4.8.3 core runtime contract',()=>{
-  assert.match(app,/SCRIPT_VERSION\s*=\s*'4\.8\.3'/);
+test('source foundation preserves API pacing and v4.9.2 core runtime contract',()=>{
+  assert.match(app,/SCRIPT_VERSION\s*=\s*'4\.9\.2'/);
   assert.match(app,/HARD_API_RATE\s*=\s*75/);
   assert.match(app,/MIN_API_GAP_MS\s*=\s*800/);
 });
@@ -33,10 +33,10 @@ test('new stores are owned by scoped reset and startup backfill runs before matc
   const returnIndex=app.indexOf('return Object.freeze',startIndex);
   assert.ok(startIndex>=0&&returnIndex>startIndex,'start function should be present');
   const startBlock=app.slice(startIndex,returnIndex);
-  const migrate=startBlock.indexOf('await migrateLegacyUsers()');
   const backfill=startBlock.indexOf('await repositories.backfillLegacy(Date.now())');
   const match=startBlock.indexOf('await ensureDefaultMatchProfile()');
-  assert.ok(migrate>=0&&backfill>migrate&&match>backfill,'startup migration/backfill/match order');
+  assert.equal(startBlock.includes('migrateLegacyUsers'),false,'the v4.4 users migration is removed');
+  assert.ok(backfill>=0&&match>backfill,'startup backfill/match order');
 });
 
 test('Scout and Fill Companies mirror only shared facts into player intelligence',()=>{

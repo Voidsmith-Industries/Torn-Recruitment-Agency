@@ -11,12 +11,9 @@ const ROOT = path.join(__dirname, '..');
 const MODULES = [
   'scout-core.js', 'results-core.js', 'global-core.js', 'match-core.js', 'forum-core.js',
   'v45-runtime.js', 'v45-candidates.js', 'v45-discovery.js', 'v45-messaging.js',
-  'v46-domain-core.js', 'v46-storage-core.js', 'v46-navigation.js', 'v46-company-core.js',
-  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-operations.js',
-  'v46-company-workflow.js', 'v46-company-workflow-ui.js', 'v46-company-opportunity-ui.js',
-  'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
-  'v47-faction-ui.js', 'v47-faction-operations.js', 'v47-faction-workflow.js',
-  'v47-faction-workflow-ui.js', 'v47-faction-opportunity-ui.js', 'v47-faction-platform.js',
+  'v46-domain-core.js', 'v46-storage-core.js', 'v46-navigation.js', 'v46-recruitment-shared.js', 'v46-company-core.js',
+  'v46-company-storage.js', 'v46-company-ui.js', 'v46-company-platform.js', 'v47-faction-core.js', 'v47-faction-storage.js',
+  'v47-faction-ui.js', 'v47-faction-platform.js',
   'v45-app.js'
 ];
 const BOOT = sourceCompatibleBoot(ROOT);
@@ -78,7 +75,7 @@ async function title(page) {
   return page.$eval('#ra-page-title', el => el.textContent);
 }
 
-test('public bootstrap keeps Faction Requirements active while its own in-page controls are used', { timeout: 60000 }, async () => {
+test('public bootstrap keeps Faction Search active while its profile editor controls are used', { timeout: 60000 }, async () => {
   const server = await serve();
   const port = server.address().port;
   const browser = await puppeteer.launch({
@@ -91,8 +88,12 @@ test('public bootstrap keeps Faction Requirements active while its own in-page c
     await page.setViewport({ width: 1440, height: 900 });
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle0' });
     await page.addScriptTag({ content: BOOT });
-    await page.waitForSelector('#ra-app', { timeout: 10000 });
+    await page.waitForSelector('#ra-sidebar-launcher,#ra-launch', { timeout: 10000 });
 
+    await page.waitForFunction(() => ['#ra-sidebar-launcher', '#ra-launch'].some(selector => {
+      const el = document.querySelector(selector);
+      return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    }), { timeout: 10000 }).catch(() => {});
     const launcher = await page.evaluate(() => {
       for (const selector of ['#ra-sidebar-launcher', '#ra-launch']) {
         const el = document.querySelector(selector);
@@ -104,21 +105,21 @@ test('public bootstrap keeps Faction Requirements active while its own in-page c
     await physicalClick(page, launcher);
 
     await page.evaluate(async()=>{
-      RA_V45App._test.state.settings.optionalModules.factionRequirements=true;
-      await RA_V45App._test.navigate('faction-requirements',false);
+      await RA_V45App._test.navigate('faction-candidates',false);
     });
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Requirements', { timeout: 10000 });
-    assert.equal(await title(page), 'Faction Requirements');
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Search & Results', { timeout: 10000 });
+    assert.equal(await title(page), 'Faction Search & Results');
+    await physicalClick(page, '#ra-faction-profile-editor > summary');
 
     const beforeCriteria = await page.$$eval('#ra-faction-baseline-criteria [data-faction-criterion-row]', els => els.length);
     await physicalClick(page, '#ra-faction-baseline-add');
     await page.waitForFunction(expected => document.querySelectorAll('#ra-faction-baseline-criteria [data-faction-criterion-row]').length === expected + 1, { timeout: 10000 }, beforeCriteria);
-    assert.equal(await title(page), 'Faction Requirements', 'Add Requirement must not send the app to Company Overview');
+    assert.equal(await title(page), 'Faction Search & Results', 'Add Requirement must not send the app elsewhere');
 
     const beforeProfiles = await page.$$eval('[data-faction-profile-card]', els => els.length);
     await physicalClick(page, '#ra-faction-profile-new');
     await page.waitForFunction(expected => document.querySelectorAll('[data-faction-profile-card]').length === expected + 1, { timeout: 10000 }, beforeProfiles);
-    assert.equal(await title(page), 'Faction Requirements', 'Create Specialist Profile must not send the app to Company Overview');
+    assert.equal(await title(page), 'Faction Search & Results', 'Create Specialist Profile must not send the app elsewhere');
 
     const errors = await page.evaluate(() => window.__runtimeErrors);
     assert.equal(errors, '', `runtime errors: ${errors}`);

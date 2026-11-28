@@ -29,87 +29,12 @@ test('an active per-requirement waiver changes eligibility without falsifying th
   assert.equal(evaluation.results[0].effectivePass,true);
 });
 
-test('vacancy normalization enforces approved states and preserves one vacancy with multiple openings',()=>{
-  const vacancy=Company.normalizeVacancy({id:'sales',name:'Sales Associate',role:'Sales',openings:3,status:'Open',criteria:[],weights:{fit:50,activity30:50}});
-  assert.equal(vacancy.vacancyId,'sales');
-  assert.equal(vacancy.openings,3);
-  assert.equal(vacancy.status,'Open');
-  assert.deepEqual(Company.VACANCY_STATES,['Draft','Open','Paused','Filled','Archived']);
-  assert.equal(Company.normalizeVacancy({id:'x',name:'X',status:'nonsense'}).status,'Draft');
-});
-
-test('vacancy evaluation preserves raw Match when a Hard requirement makes the vacancy ineligible',()=>{
-  const vacancy=Company.normalizeVacancy({id:'sales',name:'Sales',status:'Open',criteria:[
-    {id:'ee',field:'ee',operator:'gte',value:10,kind:'Hard',weight:30},
-    {id:'fit',field:'fit',operator:'gte',value:70,kind:'Preferred',weight:70}
-  ]});
-  const result=Company.evaluateVacancy(vacancy,facts,[]);
-  assert.equal(result.eligibility,'NOT ELIGIBLE');
-  assert.ok(result.matchScore>0,'raw Match remains useful even when Hard eligibility fails');
-  assert.equal(result.hardFailed,true);
-});
-
-test('vacancy suggestion selects best eligible result but never overwrites a manual pin',()=>{
-  const vacancies=[
-    Company.normalizeVacancy({id:'a',name:'A',status:'Open'}),
-    Company.normalizeVacancy({id:'b',name:'B',status:'Open'})
-  ];
-  const evaluations=[
-    {vacancyId:'a',eligible:true,matchScore:70},
-    {vacancyId:'b',eligible:true,matchScore:92}
-  ];
-  assert.deepEqual(Company.suggestVacancy(vacancies,evaluations,''),{suggestedVacancyId:'b',pinnedVacancyId:'',bestChanged:false});
-  assert.deepEqual(Company.suggestVacancy(vacancies,evaluations,'a'),{suggestedVacancyId:'b',pinnedVacancyId:'a',bestChanged:true});
-});
-
-test('Opportunity is deterministic, weighted and fully explainable',()=>{
-  const result=Company.computeOpportunity({
-    match:90,fit:80,availability:'Available',lastActiveAgeHours:2,intelligenceFreshness:'Fresh',contactPenalty:10,followUpDue:true
-  },{match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
-  assert.ok(result.score>=0&&result.score<=100);
-  assert.equal(result.breakdown.length,7);
-  assert.equal(result.breakdown.reduce((sum,row)=>sum+row.contribution,0),result.rawScore);
-  assert.equal(result.score,Math.round(Math.max(0,Math.min(100,result.rawScore-result.penalty))));
-  assert.match(result.explanation,/Match/);
-});
-
-test('stage aging warns but does not mutate pipeline stage',()=>{
-  const record={pipelineStage:'Contacted',stageChangedAt:Date.parse('2026-08-14T12:00:00Z')};
-  const status=Company.stageAgeStatus(record,{Contacted:5},Date.parse('2026-08-24T12:00:00Z'));
-  assert.equal(status.stale,true);
-  assert.equal(status.daysInStage,10);
-  assert.equal(record.pipelineStage,'Contacted');
-});
-
-test('Today queue surfaces replies, overdue follow-ups, stale and opportunity work without changing records',()=>{
-  const now=Date.parse('2026-08-24T12:00:00Z');
-  const records=[
-    {userId:'1',pipelineStage:'Replied',updatedAt:now-1000,followUps:[]},
-    {userId:'2',pipelineStage:'Contacted',stageChangedAt:now-8*86400000,followUps:[{id:'f1',dueAt:now-1000,state:'Open'}]},
-    {userId:'3',pipelineStage:'Not Contacted',newlyDiscoveredAt:now-1000,followUps:[]}
-  ];
-  const before=JSON.stringify(records);
-  const queue=Company.buildTodayQueue(records,{now,stageThresholds:{Contacted:5},opportunities:{'3':88}});
-  assert.deepEqual(queue.map(v=>v.userId),['1','2','3']);
-  assert.ok(queue.find(v=>v.userId==='1').reasons.includes('Reply waiting'));
-  assert.ok(queue.find(v=>v.userId==='2').reasons.some(v=>v.startsWith('Overdue follow-up')));
-  assert.ok(queue.find(v=>v.userId==='2').reasons.includes('Stale stage'));
-  assert.ok(queue.find(v=>v.userId==='3').reasons.includes('Newly discovered'));
-  assert.ok(queue.find(v=>v.userId==='3').reasons.includes('High opportunity'));
-  assert.equal(JSON.stringify(records),before);
-});
-
-
-test('unknown Company criteria and vacancy evidence remain unscored',()=>{
+test('unknown Company criteria remain unscored',()=>{
   const criteria=[{id:'fit',field:'fit',operator:'gte',value:80,kind:'Preferred',weight:1}];
   const baseline=Company.evaluateCriteria(criteria,{fit:null},[]);
   assert.equal(baseline.score,null);
   assert.equal(baseline.results[0].known,false);
-  const vacancy=Company.normalizeVacancy({id:'unknown',name:'Unknown',status:'Open',criteria});
-  const result=Company.evaluateVacancy(vacancy,{fit:null},[]);
-  assert.equal(result.matchScore,null);
 });
-
 
 test('unknown hard Company requirement is Unknown, not a failure',()=>{
   const criteria=[{id:'ee',field:'ee',operator:'gte',value:10,kind:'Hard',weight:1}];
@@ -119,16 +44,5 @@ test('unknown hard Company requirement is Unknown, not a failure',()=>{
   assert.equal(baseline.hardFailures.length,0);
   assert.equal(baseline.unknownHard.length,1);
   assert.equal(baseline.failures.length,0);
-  const vacancy=Company.evaluateVacancy(Company.normalizeVacancy({id:'u',name:'Unknown',status:'Open',criteria}),{ee:null},[]);
-  assert.equal(vacancy.eligibility,'Unknown');
-  assert.equal(vacancy.eligible,false);
-  assert.equal(vacancy.matchScore,null);
 });
 
-test('Company Opportunity is unknown when no substantive evidence is known',()=>{
-  const result=Company.computeOpportunity({
-    match:null,fit:null,availability:'Unknown',lastActiveAgeHours:null,intelligenceFreshness:'Unknown',followUpDue:false,contactPenalty:0
-  },{match:30,fit:20,availability:15,activity:15,freshness:10,followUp:10,contactPenalty:10});
-  assert.equal(result.score,null);
-  assert.equal(result.rawScore,null);
-});
