@@ -71,7 +71,7 @@ async function openSettings(page) {
 }
 
 test('Company search panel keeps profile extras out of the way and uses plain language', () => {
-  const html = CompanyUI.renderCandidates([], { profiles: [{ profileId: 'p1', name: 'Default Recruit' }], activeProfileId: '' });
+  const html = CompanyUI.renderCandidates([], { profiles: [{ profileId: 'p1', name: 'Default Recruit' }], activeProfileId: '', smartMatch: true });
   assert.doesNotMatch(html, /combined candidate intelligence/, 'search help text should be plain language');
   const more = html.match(/<details class="ra-profile-more"[^>]*>([\s\S]*?)<\/details>/);
   assert.ok(more, 'secondary profile actions should sit in a collapsed "More" disclosure');

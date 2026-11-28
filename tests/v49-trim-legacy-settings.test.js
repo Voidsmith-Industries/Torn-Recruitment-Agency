@@ -87,8 +87,10 @@ test('settings saved by a version with workflow pages still boot, fall back to S
     const keys = await page.$$eval('[data-optional-module]', els => els.map(el => el.dataset.optionalModule));
     assert.deepEqual(keys, ['companyDiscovery', 'scout', 'smartMatch', 'data'], 'no Optional Features toggles remain for removed pages');
     await page.evaluate(() => document.getElementById('ra-save-settings').click());
-    await page.waitForFunction(() => !Object.hasOwn(RA_V45App._test.state.settings.optionalModules, 'companyPipeline'), { timeout: 5000 });
+    await page.waitForFunction(() => [...document.querySelectorAll('.ra-toast')].some(t => /Settings saved/.test(t.textContent)), { timeout: 5000 });
     const saved = await page.evaluate(() => RA_V45App._test.state.settings.optionalModules);
+    // 4.9.2: flags this version no longer shows are kept on save so a rollback still finds them.
+    assert.equal(saved.companyPipeline, true);
     assert.equal(saved.companyDiscovery, true);
     assert.equal(saved.scout, true);
     assert.equal(await page.evaluate(() => window.__runtimeErrors), '');

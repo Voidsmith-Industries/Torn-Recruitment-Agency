@@ -52,7 +52,8 @@ test('v4.9 Company results surface local recruitment profiles without adding a s
       {profileId:'sales',name:'Sales Role'},
       {profileId:'trainer',name:'Trainer Role'}
     ],
-    activeProfileId:'trainer'
+    activeProfileId:'trainer',
+    smartMatch:true
   });
   assert.match(html,/id="ra-company-profile-select"/);
   assert.match(html,/Sales Role/);
@@ -62,6 +63,10 @@ test('v4.9 Company results surface local recruitment profiles without adding a s
   assert.match(html,/id="ra-company-profile-clear"/);
   assert.match(html,/id="ra-company-profile-save-search"/);
   assert.match(html,/id="ra-company-profile-manage"/);
+  // 4.9.2: Manage Profiles opens Smart Match, so it is replaced by a hint while Smart Match is off.
+  const off=CompanyUI.renderCandidates([],{profiles:[{profileId:'sales',name:'Sales Role'}]});
+  assert.doesNotMatch(off,/id="ra-company-profile-manage"/);
+  assert.match(off,/Turn on Smart Match in Settings/);
 });
 
 test('Company Results pagination shows filtered range without rendering the full result set',()=>{

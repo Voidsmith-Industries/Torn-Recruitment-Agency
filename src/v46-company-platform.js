@@ -65,7 +65,7 @@
     organizationInfo,buildRows,profileSearchFilters,
     async selectProfile(app){return{selected:typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null};},
     async beforePage(app,ctx){ctx.profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];ctx.activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;},
-    async renderHtml(app,sorted,options,ctx){const baselineHtml=CompanyUI.renderBaselineEditor(await getConfig(app),{open:runtime.baselineEditorOpen===true});return CompanyUI.renderCandidates(sorted,{...options,profiles:ctx.profiles,activeProfileId:ctx.activeProfile?.profileId||''})+baselineHtml;},
+    async renderHtml(app,sorted,options,ctx){const baselineHtml=CompanyUI.renderBaselineEditor(await getConfig(app),{open:runtime.baselineEditorOpen===true});return CompanyUI.renderCandidates(sorted,{...options,profiles:ctx.profiles,activeProfileId:ctx.activeProfile?.profileId||'',smartMatch:app._test.state.settings?.optionalModules?.smartMatch===true,hofOffset:runtime.hofOffset})+baselineHtml;},
     bindControls
   });
   const {runtime,renderPage,reportError}=P;
