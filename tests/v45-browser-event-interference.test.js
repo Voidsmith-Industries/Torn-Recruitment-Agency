@@ -71,17 +71,17 @@ test('primary navigation and in-page controls survive a hostile document-capture
     assert.equal(await page.$eval('#ra-app',e=>getComputedStyle(e).display),'block');
 
     await physicalClick(page,'[data-page="company-candidates"]');
-    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Candidates',{timeout:5000});
+    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Search & Results',{timeout:5000});
     await page.waitForSelector('#ra-company-filter-search',{visible:true});
     await physicalClick(page,'#ra-company-search-apply');
-    assert.equal(await page.$eval('#ra-page-title',e=>e.textContent),'Company Candidates','core Company search control must not change route');
+    assert.equal(await page.$eval('#ra-page-title',e=>e.textContent),'Company Search & Results','core Company search control must not change route');
 
     await physicalClick(page,'#ra-workspace-toggle');
     await physicalClick(page,'[data-workspace-domain="faction"]');
-    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Faction Candidates',{timeout:5000});
+    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Faction Search & Results',{timeout:5000});
     await page.waitForSelector('#ra-faction-filter-search',{visible:true});
     await physicalClick(page,'#ra-faction-search-apply');
-    assert.equal(await page.$eval('#ra-page-title',e=>e.textContent),'Faction Candidates','core Faction search control must survive capture blocker');
+    assert.equal(await page.$eval('#ra-page-title',e=>e.textContent),'Faction Search & Results','core Faction search control must survive capture blocker');
 
     await physicalClick(page,'#ra-settings-button');
     await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Settings',{timeout:5000});

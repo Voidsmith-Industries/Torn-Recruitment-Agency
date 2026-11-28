@@ -49,8 +49,8 @@
     const db=app._test.state.db;
     const[companyRecords,players,candidateLocals,config,activeProfile]=await Promise.all([dbGetAll(db,'companyRecruitment'),dbGetAll(db,'playerIntelligence'),dbGetAll(db,'candidateLocal'),getConfig(app),typeof app.getActiveMatchProfile==='function'?app.getActiveMatchProfile():Promise.resolve(null)]);
     const baseline=CompanyCore.normalizeBaseline(config.baseline||{});
-    const rows=CompanyUI.buildCandidateRows(companyRecords,players,{eligibilityFor:(record,player)=>CompanyCore.evaluateCriteria(baseline.criteria,player,record.waivers||[])});
     const candidateMap=new Map(candidateLocals.map(candidate=>[text(candidate?.userId??candidate?.id),candidate]));
+    const rows=CompanyUI.buildCandidateRows(companyRecords,players,{eligibilityFor:(record,player)=>CompanyCore.evaluateCriteria(baseline.criteria,Shared.factsWithStats(player,candidateMap.get(text(record.userId))),record.waivers||[])});
     return rows.map(row=>{
       const candidate=candidateMap.get(text(row.userId))||{};const stats=candidate.stats||{};const player=row.playerRecord||{};
       const enriched={...row,man:player.man??stats.man??candidate.man??null,int:player.int??stats.int??candidate.int??null,end:player.end??stats.end??candidate.end??null,total:player.total??stats.total??candidate.total??null,onlineStatus:text(player.onlineStatus)||text(row.onlineStatus),candidateLocal:candidate};
@@ -61,7 +61,7 @@
 
   const P=Shared.createResultsPlatform({
     domain:'company',label:'Company',logTag:'[RA v4.6 Company]',routes:COMPANY_ROUTES,implemented:['company-candidates'],goPageSelector:'#ra-content [data-go-page]',
-    meta:{'company-discover':['Forum Discovery','Official Torn forum recruitment sources.'],'company-candidates':['Company Candidates','Search and manage Company recruitment candidates.']},
+    meta:{'company-discover':['Forum Discovery','Official Torn forum recruitment sources.'],'company-candidates':['Company Search & Results','Find, filter and message Company recruitment candidates.']},
     organizationInfo,buildRows,profileSearchFilters,
     async selectProfile(app){return{selected:typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null};},
     async beforePage(app,ctx){ctx.profiles=typeof app.listMatchProfiles==='function'?await app.listMatchProfiles():[];ctx.activeProfile=typeof app.getActiveMatchProfile==='function'?await app.getActiveMatchProfile():null;},

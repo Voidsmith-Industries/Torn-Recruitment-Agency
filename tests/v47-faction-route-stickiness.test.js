@@ -40,11 +40,11 @@ test('Faction controls stay on the route the recruiter navigated to',async()=>{
   workspace.click();
   document.querySelector('[data-workspace-domain="faction"]').click();
   await tick(120);
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   assert.equal(App._test.state.page,'faction-candidates');
 
   await clickFactionRoute('faction-candidates');
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   assert.equal(App._test.state.page,'faction-candidates');
 
   const search=document.getElementById('ra-faction-filter-search');
@@ -53,7 +53,7 @@ test('Faction controls stay on the route the recruiter navigated to',async()=>{
   document.getElementById('ra-faction-search-apply').click();
   await tick(120);
 
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates','interacting with the selected core route must not snap back to another route');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results','interacting with the selected core route must not snap back to another route');
   assert.equal(App._test.state.page,'faction-candidates');
   assert.equal((await dbGet(App._test.state.db,'factionRecruitment','123')).pipelineStage,'Prospect','core search must not mutate Faction workflow state');
 

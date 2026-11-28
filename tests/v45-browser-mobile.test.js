@@ -95,7 +95,7 @@ test('421px mobile shell keeps hamburger sidebar open and routes Discover by phy
     assert.equal(after.clickable,true,`Discover must receive the physical click after hamburger: ${JSON.stringify(after)}`);
 
     await physicalClick(page,'[data-page="company-candidates"]');
-    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Candidates',{timeout:5000});
+    await page.waitForFunction(()=>document.getElementById('ra-page-title')?.textContent==='Company Search & Results',{timeout:5000});
     await page.waitForFunction(()=>!document.querySelector('.ra-shell')?.classList.contains('sidebar-open'),{timeout:5000});
     assert.equal(await page.$eval('.ra-shell',e=>e.classList.contains('sidebar-open')),false,'routing should close the mobile sidebar only after navigation');
   }finally{

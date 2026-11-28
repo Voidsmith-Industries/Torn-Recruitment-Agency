@@ -120,20 +120,20 @@ test('minified dist: header launcher opens the app on Search & Results for Compa
     await page.waitForFunction(() => (document.getElementById('ra-content')?.textContent || '').trim().length > 0, { timeout: 10000 });
     let state = await appState(page);
     assert.equal(state.open, true, 'launcher opens the app');
-    assert.equal(state.title, 'Company Candidates');
+    assert.equal(state.title, 'Company Search & Results');
     assert.ok(state.active.some(item => item.startsWith('company-candidates:') && item.includes('Search & Results')), `Company Search & Results is the active route, got ${state.active}`);
     assert.ok(state.controls > 0, 'Search & Results renders its controls');
 
     // Switch to the Faction workspace (its Search & Results) and back through the real selector.
     await physicalClick(page, '#ra-workspace-toggle');
     await physicalClick(page, '[data-workspace-domain="faction"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Search & Results', { timeout: 10000 });
     state = await appState(page);
     assert.ok(state.active.some(item => item.startsWith('faction-candidates:') && item.includes('Search & Results')), `Faction Search & Results is active, got ${state.active}`);
     assert.ok(state.controls > 0, 'Faction Search & Results renders its controls');
     await physicalClick(page, '#ra-workspace-toggle');
     await physicalClick(page, '[data-workspace-domain="company"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Search & Results', { timeout: 10000 });
 
     await physicalClick(page, '#ra-close');
     assert.equal((await appState(page)).open, false, 'close button closes the app');
@@ -146,7 +146,7 @@ test('minified dist: fallback launcher works when Torn has no header icons', { t
     await page.waitForFunction(() => (document.getElementById('ra-content')?.textContent || '').trim().length > 0, { timeout: 10000 });
     const state = await appState(page);
     assert.equal(state.open, true);
-    assert.equal(state.title, 'Company Candidates');
+    assert.equal(state.title, 'Company Search & Results');
     assert.ok(state.active.some(item => item.includes('Search & Results')), `Search & Results is active, got ${state.active}`);
   });
 });

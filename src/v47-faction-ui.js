@@ -52,6 +52,7 @@
         baselineEligibility:baselineEvaluation.eligibility,
         baselineScore:baselineEvaluation.score,
         hardFailed:baselineEvaluation.hardFailed===true,
+        ineligibleReasons:Shared.hardFailureReasons(baselineEvaluation),
         baselineEvaluation,
         pinnedSpecialistProfileId:text(record.pinnedSpecialistProfileId),
         specialistProfileId:text(record.specialistProfileId),
@@ -96,7 +97,7 @@
     const profiles=(Array.isArray(options.profiles)?options.profiles:[]).map(FactionCore.normalizeSpecialistProfile);
     const activeProfileId=text(options.activeProfileId);
     const profileOptions=`<option value="" ${activeProfileId?'':'selected'}>No profile</option>`+profiles.map(profile=>`<option value="${esc(profile.profileId)}" ${profile.profileId===activeProfileId?'selected':''}>${esc(profile.name||profile.profileId)}${profile.status==='Active'?'':' · '+esc(profile.status)}</option>`).join('');
-    const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">Message</button>`;
+    const messageCell=row=>row.doNotContact?`<button type="button" class="ra-btn ra-danger" data-faction-recruit-override="${esc(row.userId)}">Override &amp; Message</button>`:`<button type="button" class="ra-btn ra-primary" data-faction-recruit="${esc(row.userId)}">${Shared.icon('message')}<span>Message</span></button>`;
     const headActions=`<div class="ra-actions"><select id="ra-faction-results-profile" class="ra-btn" aria-label="Faction recruitment profile">${profileOptions}</select><button type="button" class="ra-btn" id="ra-faction-profile-apply">Apply Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-clear" ${activeProfileId?'':'hidden'}>Clear Profile</button><button type="button" class="ra-btn" id="ra-faction-profile-save-search" ${activeProfileId?'':'hidden'}>Save Search</button></div>`;
     return Shared.renderResults(rows,options,{domain:'faction',label:'Faction',orgHeader:'Faction',orgPlaceholder:'Faction name or ID',columns:COLUMNS,contactedStages:['contacted','replied','evaluating','invite ready','joined'],messageCell,headActions});
   }
