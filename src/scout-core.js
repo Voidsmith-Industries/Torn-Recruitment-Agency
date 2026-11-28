@@ -102,6 +102,7 @@
     let validWeight = 0;
 
     for (const key of METRICS) {
+      if (!known(window7[key]) || !known(window30[key])) continue;
       const recent = nonNegative(window7[key]) / 7;
       const baseline = nonNegative(window30[key]) / 30;
       if (baseline <= 0) continue;
@@ -119,26 +120,84 @@
     };
   }
 
+  function known(value) {
+    return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+  }
+
+  // Torn v2 nested personalstats category paths -> the flat stat names used by `stat=` requests.
+  const NESTED_STATS = [
+    ['xantaken', 'drugs', 'xanax'], ['timeplayed', 'other', 'activity', 'time'],
+    ['activestreak', 'other', 'activity', 'streak', 'current'], ['bestactivestreak', 'other', 'activity', 'streak', 'best'],
+    ['refills', 'other', 'refills', 'energy'], ['networth', 'networth', 'total'],
+    ['attackswon', 'attacking', 'attacks', 'won'], ['attackslost', 'attacking', 'attacks', 'lost'],
+    ['rankedwarhits', 'attacking', 'faction', 'ranked_war_hits'], ['statenhancersused', 'items', 'used', 'stat_enhancers']
+  ];
+
+  // Flattens a Torn personalstats payload. v2 `stat=` responses are [{name,value,timestamp}]; category responses are nested.
+  // Stats Torn did not return are simply absent (never 0).
+  function extractPersonalStats(data) {
+    const p = data && (data.personalstats || data.personal_stats || data.personalStats);
+    const out = {};
+    if (!p || typeof p !== 'object') return out;
+    if (Array.isArray(p)) {
+      for (const row of p) if (row && row.name && known(row.value)) out[String(row.name)] = Number(row.value);
+      return out;
+    }
+    for (const [name, ...path] of NESTED_STATS) {
+      let value = p;
+      for (const part of path) value = value && typeof value === 'object' ? value[part] : undefined;
+      if (known(value)) out[name] = Number(value);
+    }
+    for (const [name, value] of Object.entries(p)) if (!(name in out) && (typeof value === 'number' || typeof value === 'string') && known(value)) out[name] = Number(value);
+    return out;
+  }
+
+  const ZERO = Object.freeze({});
+
+  function statValue(stats, key) {
+    if (stats === ZERO) return 0;
+    const value = stats && (key === 'timeplayed' && !known(stats.timeplayed) ? stats.useractivity : stats[key]);
+    return known(value) ? Number(value) : null;
+  }
+
   function rawDelta(current, past, key) {
-    return Math.max(0, finiteNumber(current && current[key], 0) - finiteNumber(past && past[key], 0));
+    const a = statValue(current, key);
+    const b = statValue(past, key);
+    if (a === null || b === null) return null;
+    return Math.max(0, a - b);
+  }
+
+  function sumKnown(a, b) {
+    return a === null || b === null ? null : a + b;
+  }
+
+  function currentValue(current, key) {
+    const value = statValue(current, key);
+    return value === null ? null : Math.max(0, value);
   }
 
   function deltaStats(current = {}, past = {}) {
+    const activity = rawDelta(current, past, 'timeplayed');
     return {
       xanax: rawDelta(current, past, 'xantaken'),
-      activityHours: round(rawDelta(current, past, 'useractivity') / 3600, 4),
+      activityHours: activity === null ? null : round(activity / 3600, 4),
       refills: rawDelta(current, past, 'refills'),
-      attacks: rawDelta(current, past, 'attackswon') + rawDelta(current, past, 'attackslost'),
+      attacks: sumKnown(rawDelta(current, past, 'attackswon'), rawDelta(current, past, 'attackslost')),
       rwHits: rawDelta(current, past, 'rankedwarhits'),
       statEnhancers: rawDelta(current, past, 'statenhancersused'),
-      networth: nonNegative(current.networth),
-      activeStreak: nonNegative(current.activestreak),
-      bestActiveStreak: nonNegative(current.bestactivestreak)
+      networth: currentValue(current, 'networth'),
+      activeStreak: currentValue(current, 'activestreak'),
+      bestActiveStreak: currentValue(current, 'bestactivestreak')
     };
   }
 
   function metricsFromTotals(current = {}) {
-    return deltaStats(current, {});
+    return deltaStats(current, ZERO);
+  }
+
+  // True only when every Fit metric is a measured number; unknown inputs never produce a score.
+  function metricsComplete(metrics) {
+    return !!metrics && METRICS.every((key) => known(metrics[key]));
   }
 
   function projectWindow(metrics = {}, days, targetDays = 30) {
@@ -148,11 +207,13 @@
     const factor = destDays / sourceDays;
     const out = {};
 
-    for (const key of METRICS) out[key] = round(nonNegative(metrics[key]) * factor, 4);
-    out.statEnhancers = round(nonNegative(metrics.statEnhancers) * factor, 4);
-    out.networth = nonNegative(metrics.networth);
-    out.activeStreak = nonNegative(metrics.activeStreak);
-    out.bestActiveStreak = nonNegative(metrics.bestActiveStreak);
+    const scaled = (value) => (known(value) ? round(nonNegative(value) * factor, 4) : null);
+    const kept = (value) => (known(value) ? nonNegative(value) : null);
+    for (const key of METRICS) out[key] = scaled(metrics[key]);
+    out.statEnhancers = scaled(metrics.statEnhancers);
+    out.networth = kept(metrics.networth);
+    out.activeStreak = kept(metrics.activeStreak);
+    out.bestActiveStreak = kept(metrics.bestActiveStreak);
     return out;
   }
 
@@ -200,7 +261,7 @@
   function signature(stats = {}) {
     return [
       'xantaken',
-      'useractivity',
+      'timeplayed',
       'refills',
       'statenhancersused',
       'attackswon',
@@ -209,7 +270,7 @@
       'networth',
       'activestreak',
       'bestactivestreak'
-    ].map((key) => String(finiteNumber(stats[key], 0))).join('|');
+    ].map((key) => String(statValue(stats, key) ?? '')).join('|');
   }
 
   return {
@@ -219,8 +280,10 @@
     metricScore,
     scoreFit,
     computeTrend,
+    extractPersonalStats,
     deltaStats,
     metricsFromTotals,
+    metricsComplete,
     projectWindow,
     provisionalFit,
     provisionalConfidence,
