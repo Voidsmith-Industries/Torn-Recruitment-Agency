@@ -124,13 +124,13 @@ test('real Chrome hit-testing and physical clicks can navigate the public v4.8 c
     assert.equal(await page.$eval('#ra-app', el => getComputedStyle(el).display), 'block');
 
     await physicalClick(page, '[data-page="company-candidates"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Search & Results', { timeout: 10000 });
     await physicalClick(page, '#ra-workspace-toggle');
     await physicalClick(page, '[data-workspace-domain="faction"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Search & Results', { timeout: 10000 });
     await physicalClick(page, '#ra-workspace-toggle');
     await physicalClick(page, '[data-workspace-domain="company"]');
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Candidates', { timeout: 10000 });
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Company Search & Results', { timeout: 10000 });
 
     await physicalClick(page, '#ra-settings-button');
     await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Settings', { timeout: 10000 });

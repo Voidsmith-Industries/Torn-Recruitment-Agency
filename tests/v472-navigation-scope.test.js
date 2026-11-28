@@ -40,13 +40,13 @@ test('Recruitment Agency navigation never hijacks foreign Torn data-page control
     document.querySelector('[data-workspace-domain="faction"]').click();
     await settle(180);
     assert.equal(App._test.state.page,'faction-candidates');
-    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
 
     tornButton.click();
     await settle(180);
 
     assert.equal(App._test.state.page,'faction-candidates','foreign data-page values must never enter the Recruitment Agency router');
-    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
     assert.equal(tornClicks,1,'the Torn control must keep its own click handler');
   }finally{
     await settle(100);
@@ -67,14 +67,14 @@ test('invalid live navigation is rejected instead of falling back to Company Ove
     document.querySelector('[data-workspace-domain="faction"]').click();
     await settle(180);
     assert.equal(App._test.state.page,'faction-candidates');
-    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
 
     assert.equal(typeof App._test.navigate,'function','the live router must expose its test seam');
     assert.equal(await App._test.navigate('2'),false,'an invalid live route should be rejected');
     await settle(80);
 
     assert.equal(App._test.state.page,'faction-candidates');
-    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+    assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   }finally{
     await settle(100);
     App._test.state.db?.close?.();

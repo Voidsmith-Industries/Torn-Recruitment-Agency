@@ -107,19 +107,19 @@ test('public bootstrap keeps Faction Search active while its profile editor cont
     await page.evaluate(async()=>{
       await RA_V45App._test.navigate('faction-candidates',false);
     });
-    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Candidates', { timeout: 10000 });
-    assert.equal(await title(page), 'Faction Candidates');
+    await page.waitForFunction(() => document.getElementById('ra-page-title')?.textContent === 'Faction Search & Results', { timeout: 10000 });
+    assert.equal(await title(page), 'Faction Search & Results');
     await physicalClick(page, '#ra-faction-profile-editor > summary');
 
     const beforeCriteria = await page.$$eval('#ra-faction-baseline-criteria [data-faction-criterion-row]', els => els.length);
     await physicalClick(page, '#ra-faction-baseline-add');
     await page.waitForFunction(expected => document.querySelectorAll('#ra-faction-baseline-criteria [data-faction-criterion-row]').length === expected + 1, { timeout: 10000 }, beforeCriteria);
-    assert.equal(await title(page), 'Faction Candidates', 'Add Requirement must not send the app elsewhere');
+    assert.equal(await title(page), 'Faction Search & Results', 'Add Requirement must not send the app elsewhere');
 
     const beforeProfiles = await page.$$eval('[data-faction-profile-card]', els => els.length);
     await physicalClick(page, '#ra-faction-profile-new');
     await page.waitForFunction(expected => document.querySelectorAll('[data-faction-profile-card]').length === expected + 1, { timeout: 10000 }, beforeProfiles);
-    assert.equal(await title(page), 'Faction Candidates', 'Create Specialist Profile must not send the app elsewhere');
+    assert.equal(await title(page), 'Faction Search & Results', 'Create Specialist Profile must not send the app elsewhere');
 
     const errors = await page.evaluate(() => window.__runtimeErrors);
     assert.equal(errors, '', `runtime errors: ${errors}`);

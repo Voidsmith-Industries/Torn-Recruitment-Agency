@@ -48,7 +48,7 @@ test('v4.8 domain switch and core route persist without exposing optional naviga
   let meta=await readMeta(App1._test.state.db);
   assert.equal(meta.settings.activeDomain,'faction');
   assert.equal(meta.settings.activePage,'faction-candidates');
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   App1._test.state.db.close();
   dom1.window.close();
 
@@ -59,7 +59,7 @@ test('v4.8 domain switch and core route persist without exposing optional naviga
   meta=await readMeta(App2._test.state.db);
   assert.equal(meta.settings.activeDomain,'faction');
   assert.equal(meta.settings.activePage,'faction-candidates');
-  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Candidates');
+  assert.equal(document.getElementById('ra-page-title').textContent,'Faction Search & Results');
   App2._test.state.db.close();
   dom2.window.close();
 });
