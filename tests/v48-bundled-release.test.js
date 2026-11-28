@@ -25,7 +25,7 @@ function split(dist) {
 test('GitHub release builder emits one self-contained userscript with no remote runtime requires', () => {
   const dist = build();
   const { header, body } = split(dist);
-  assert.match(header, new RegExp(`^// @version\\s+${SOURCE_VERSION.replace(/\./g, '\\.')}$`, 'm'));
+  assert.match(header, new RegExp(`^// @version\\s+${SOURCE_VERSION.replace(/[\\^$.*+?()[\]{}|/-]/g, '\\$&')}$`, 'm'));
   assert.match(header, /^\/\/ @icon\s+data:image\/svg\+xml,/m);
   assert.doesNotMatch(dist, /^\/\/ @require\s+/m);
   assert.doesNotMatch(dist, /@require/);
