@@ -181,3 +181,48 @@ test('prefers-reduced-motion turns off row transitions', { timeout: 60000 }, asy
     assert.equal(duration, '0s');
   }, [{ name: 'prefers-reduced-motion', value: 'reduce' }]);
 });
+
+test('desktop Expanded at max scroll: the column beside the sticky Message column is fully visible (no text under it or its shadow)', { timeout: 90000 }, async () => {
+  for (const width of [1180, 1440]) {
+    await withApp({ width, height: 820 }, async page => {
+      await page.$eval('.ra-results-panel .ra-table-wrap', el => { el.scrollLeft = el.scrollWidth; });
+      const rows = await page.evaluate(() => [...document.querySelectorAll('#ra-content table.ra-results-expanded tr')].slice(0, 4).map(tr => {
+        const sticky = tr.querySelector('[data-col="message"]');
+        const prev = sticky.previousElementSibling;
+        const range = document.createRange(); range.selectNodeContents(prev);
+        const text = range.getBoundingClientRect(), cell = sticky.getBoundingClientRect();
+        // Leftmost pixel the sticky cell paints, including its box-shadow (offset + blur + spread, negative x).
+        const shadow = getComputedStyle(sticky).boxShadow.split(/,(?![^(]*\))/).map(part => (part.match(/-?[\d.]+px/g) || []).map(parseFloat))
+          .reduce((max, [x = 0, , blur = 0, spread = 0]) => Math.max(max, x < 0 ? -x + blur + spread : 0), 0);
+        return { col: prev.dataset.col, textRight: text.right, paintLeft: cell.left - shadow };
+      }));
+      for (const row of rows) assert.ok(row.textRight <= row.paintLeft, `${width}px: ${row.col} text ends at ${row.textRight.toFixed(1)} but the sticky Message column paints from ${row.paintLeft.toFixed(1)}`);
+    });
+  }
+});
+
+test('phone (390px): the title reads in full and Maximize is hidden', { timeout: 90000 }, async () => {
+  await withApp({ width: 390, height: 844, isMobile: true, hasTouch: true }, async page => {
+    const bar = await page.evaluate(() => {
+      const title = document.querySelector('.ra-title-copy strong');
+      const max = document.getElementById('ra-maximize');
+      return { truncated: title.scrollWidth > title.clientWidth + 1, text: title.textContent, maximize: max ? getComputedStyle(max).display : 'absent' };
+    });
+    assert.equal(bar.maximize === 'none' || bar.maximize === 'absent', true, `Maximize display ${bar.maximize}`);
+    assert.equal(bar.truncated, false, `title "${bar.text}" is not cut off`);
+  });
+});
+
+test('phone (390px): the Player Card shows its Recruit Fit pill once, on one line', { timeout: 90000 }, async () => {
+  await withApp({ width: 390, height: 844, isMobile: true, hasTouch: true }, async page => {
+    await page.evaluate(() => RA_V45App._test.repositories.players.ensure('900001', { name: 'Ashgrove', lastActive: Date.now() - 60000, onlineStatus: 'Online' }));
+    await page.$eval('#ra-content [data-player-card="900001"]', el => el.click());
+    await page.waitForSelector('#ra-drawer:not([hidden]) .vx-hero');
+    const pills = await page.evaluate(() => [...document.querySelectorAll('#ra-drawer .vx-fit, #ra-drawer .ra-player-card-score')]
+      .filter(el => getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0)
+      .map(el => { const r = el.getBoundingClientRect(); return { text: el.textContent, height: r.height, line: parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.3 }; }));
+    assert.equal(pills.length, 1, `one fit pill: ${JSON.stringify(pills)}`);
+    assert.match(pills[0].text, /\d/, 'the pill carries the known Fit');
+    assert.ok(pills[0].height < pills[0].line * 1.8, `the pill does not wrap ${JSON.stringify(pills[0])}`);
+  });
+});
