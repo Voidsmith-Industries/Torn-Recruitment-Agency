@@ -23,13 +23,13 @@ test('shipped dist declares one consistent release version and no remote require
   assert.ok(header,'dist must start with a userscript metadata block');
   assert.doesNotMatch(dist,/@require/,'dist must not load any remote runtime');
   const version=header.match(/^\/\/ @version\s+(\S+)$/m)?.[1];
-  assert.equal(version,'4.9.1');
+  assert.equal(version,'4.9.2');
   assert.equal(wrapper.match(/INSTALLER_VERSION\s*=\s*'([^']+)'/)?.[1],version,'INSTALLER_VERSION');
   assert.equal(wrapper.match(/EXPECTED_APP_VERSION\s*=\s*'([^']+)'/)?.[1],version,'EXPECTED_APP_VERSION');
   assert.equal(app.match(/SCRIPT_VERSION\s*=\s*'([^']+)'/)?.[1],version,'SCRIPT_VERSION');
 });
 
-test('executing the shipped dist reports SCRIPT_VERSION 4.9.1 and passes the runtime guard',async()=>{
+test('executing the shipped dist reports SCRIPT_VERSION 4.9.2 and passes the runtime guard',async()=>{
   const version=dist.match(/^\/\/ @version\s+(\S+)$/m)[1];
   const errors=[];
   const alerts=[];
@@ -50,7 +50,7 @@ test('executing the shipped dist reports SCRIPT_VERSION 4.9.1 and passes the run
     win.eval(dist);
     await new Promise(resolve=>setTimeout(resolve,200));
     assert.equal(win.RA_V45App?.SCRIPT_VERSION,version,'bundled runtime SCRIPT_VERSION');
-    assert.equal(win.RA_V45App.SCRIPT_VERSION,'4.9.1');
+    assert.equal(win.RA_V45App.SCRIPT_VERSION,'4.9.2');
     const guardMessages=[...errors,...alerts].filter(text=>/mismatched runtime|could not load its application module/i.test(text));
     assert.deepEqual(guardMessages,[],'the wrapper runtime guard must not fire');
     assert.equal(win.document.documentElement.getAttribute('data-r4g3-ra-v45-owner'),version,'owner guard carries the release version');
